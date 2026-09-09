@@ -16,7 +16,6 @@ Projetar, construir e validar, de forma totalmente autoral e integrada ao longo 
 
 ### Público-Alvo
 
-O público-alvo central do projeto é composto diretamente pelos estudantes de graduação das engenharias da FCTE/UnB (Engenharia de Software, Eletrônica, Automotiva, Aeroespacial e Energia):
 - Alunos cursando Projeto Integrador 1 e 2: Que necessitam de uma base sólida de engenharia multidisciplinar, arquitetura de sistemas, telemetria e documentação aberta como referência prática para os desafios da disciplina.
 - Membros de equipes acadêmicas de competição de robótica da UnB: Estudantes que desenvolvem veículos autônomos e robôs de serviço, os quais se beneficiam diretamente dos algoritmos de busca e mapeamento em grafos, estratégias de controle de motores e módulos de transmissão IoT.
 
@@ -65,7 +64,7 @@ Embora seja uma modalidade clássica amplamente documentada no exterior, os estu
 
 ### Orçamento estimado (R$)
 
-O orçamento geral estimado do projeto no semestre será de **R$ 810,00**, ou seja, **R$ 45,00** por membro do grupo (18 membros). Estima-se que este orçamento será dividido da seguinte forma: **~R$277,00** para componentes eletrônicos, **~R$138,00** para baterias, carregadores e conectores,**~R$220,00** para filamento, rodas echapas de MDF.
+O orçamento geral estimado do projeto no semestre será de **R$ 810,00**, ou seja, **R$ 45,00** por membro do grupo (18 membros). Estima-se que este orçamento será dividido da seguinte forma: **~R$277,00** para componentes eletrônicos, **~R$138,00** para baterias, carregadores e conectores,**~R$220,00** para filamento, rodas e chapas de MDF.
 
 ### Duração estimada (horas)
 
