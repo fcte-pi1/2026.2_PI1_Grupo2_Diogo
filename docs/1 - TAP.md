@@ -76,10 +76,10 @@ O orçamento geral estimado do projeto no semestre será de **R$ 810,00**, ou se
 
 ### Duração estimada (horas)
 
-- Carga horária semanal por membro: ~6 horas semanais (compreendendo ritos ágeis, desenvolvimento de código, montagem e testes em laboratório).
+- Carga horária semanal por membro: ~6 horas semanais (4 horas obrigatórias em aula, 2 aulas extra-classe, compreendendo ritos ágeis, desenvolvimento de código, montagem e testes em laboratório).
 - Duração do semestre letivo: 16 semanas.
 - Esforço estimado por membro: ~96 horas.
-- Esforço total estimado da equipe (6 integrantes): ~570 horas de trabalho.
+- Esforço total estimado da equipe (18 integrantes): ~1728 horas de trabalho.
 
 
 
