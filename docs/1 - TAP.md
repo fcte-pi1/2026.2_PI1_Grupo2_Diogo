@@ -53,7 +53,7 @@ A competição Micromouse consiste em resolver labirintos desconhecidos de forma
 | Pedro Henrique Raposo Lima | 251040416 | Engenharia Aeroespacial | raposolima.pedro@gmail.com | Sub-gerente de Estruturas |
 | Rian Ferreira Alencar | 251027817 | Engenharia Eletrônica | rianalencar6@gmail.com | Sub-gerente de Eletrônica |
 | Daniel Fernandes Silva | 222008459 | Engenharia de Software | danielaulounb@gmail.com | Sub-gerente de Software |
-| João Pedro Ferreira | | | | Sub-gerente de Energia |
+| João Pedro Ferreira | 211061940 | Engenharia de Software | jp1792464@gmail.com | Sub-gerente de Energia |
 | Pedro Henrique Inácio dos Santos | 241026001 | Engenharia de Software| pedrohenriquesantosinacio@gmail.com | Equipe de Estruturas |
 | João Pedro Rodrigues Duarte | 241025668 | Engenharia Aeroespacial | joaopedroduarte203@gmail.com | Equipe de Estruturas |
 | Rodrigo Átila Tavares de Oliveira | 241025855 | Engenharia de Software | 241025855@aluno.unb.br | Equipe de Estruturas |
@@ -65,13 +65,14 @@ A competição Micromouse consiste em resolver labirintos desconhecidos de forma
 | João Pedro Gonzaga dos Santos Souza | 231011551 | Engenharia de Software | 231011551@aluno.unb.br | Equipe de Software |
 | Cauã Henrique Moura Rodrigues | 231026661 | Engenharia de Software | cauahmourarodrigues@gmail.com | Equipe de Software |
 | Eduardo Silva Waski | 231011284 | Engenharia de Software | eduardowaski688@gmail.com | Equipe de Energia |
-| João Pedro Gomes | | | | Equipe de Energia |
-| Júlia Teixeira | | | | Equipe de Energia |
+| João Pedro Rodrigues Gomes da Silva | 231026966 | Engenharia de Software | 231026966@aluno.unb.br | Equipe de Energia |
+| Júlia Dos Reis Teixeira Massuda | 231035150 | Engenharia de Software | julia.massuda@gmail.com | Equipe de Energia |
 
 **Orientador:** Diogo Caetano Garcia
 
 ### Orçamento estimado (R$)
-Discutam dentro da equipe a verba possível disponível para o desenvolvimento do projeto, com base na complexidade do projeto, na quantidade de membros e na realidade de cada um.
+
+O orçamento geral estimado do projeto no semestre será de **R$ 810,00**, ou seja, **R$ 45,00** por membro do grupo (18 membros).
 
 ### Duração estimada (horas)
 
