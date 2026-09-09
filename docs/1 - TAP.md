@@ -12,38 +12,31 @@
 
 ### Objetivos
 
-- **Specific**: Desenvolver um robô autônomo (Micromouse) com dimensões máximas de $16,5 cm \times 16,5 cm$, capaz de mapear paredes, monitorar sua localização em tempo real e resolver $3$ configurações progressivas de labirintos desconhecidos ($4\times4$ com $72\times 72 cm^2$, $8\times4$ com $144\times72 cm^2$ e $12\times4$ com $216\times72 cm^2$) partindo de um canto e alcançando o objetivo no canto diametralmente oposto, além de construir um sistema web com banco de dados para recepção, exibição de telemetria em tempo real e consulta pós-desafio.
-- **Measurable**: 
-    - Cumprimento de cada labirinto dentro do limite máximo de 10 minutos por desafio.
-
-    - Conclusão do trajeto preferencialmente na 1ª tentativa (nota máxima 10,0 por labirinto).
-
-    - Exibição de $100\%$ dos dados de telemetria no sistema web durante as corridas (evitando o fator redutor de $0,75$ da avaliação).
-
-    - Construção e validação prévia de uma pista de testes simplificada $4 \times 4$.
-- **Agreed**: Alinhado entre a equipe multidisciplinar de estudantes e os professores responsáveis pela disciplina de PI1 (**Profs. Diogo C. Garcia, Juliana P. Rodrigues, Lui T. C. Habl, Bruno L. Pereira e Hilmer Rodrigues Neri**).
-
-- **Realistic**: Projeto concebido do zero integrando os conhecimentos das engenharias da FCTE (sem uso de soluções comerciais prontas de Micromouse), com cronograma estruturado em testes modulares (*AP12*) e testes de integração prévios (*AP18*) para mitigação de falhas e bugs antes da entrega final.
-- **Time Bound**: Finalização e homologação de todas as entregas dentro das $16$ semanas do semestre letivo $2026.2$, cumprindo os marcos de *AP2* a *AP20*.  
+Projetar, construir e validar, de forma totalmente autoral e integrada ao longo das $16$ semanas do semestre letivo $2026.2$, um robô móvel autônomo (Micromouse) com dimensões máximas de $16,5 cm \times 16,5 cm$ capaz de resolver três labirintos desconhecidos progressivos ($4\times4$ com $72\times72 cm^2$, $8\times4$ com $144\times72 cm^2$ e $12\times4$ com $216\times72 cm^2$) partindo de um canto até o oposto em até $10$ minutos por percurso e preferencialmente na 1ª tentativa, integrado a um sistema web com banco de dados para transmissão e consulta de telemetria em tempo real (trajeto, bateria, velocidade média, tempo e status de conclusão), cumprindo rigorosamente os marcos avaliativos de *AP2* a *AP20* da disciplina de Projeto Integrador 1.
 
 ### Público-Alvo
 
-- Público Direto: Corpo docente e banca avaliadora da disciplina de Projeto Integrador 1 (PI1) da FCTE/UnB. 
-- Público Indireto: Estudantes e equipes de robótica da UnB/FCTE interessados em reaproveitamento de código aberto, esquemáticos eletrônicos, modelos CAD e telemetria para competições acadêmicas de Micromouse.  
+O público-alvo central do projeto é composto diretamente pelos estudantes de graduação das engenharias da FCTE/UnB (Engenharia de Software, Eletrônica, Automotiva, Aeroespacial e Energia):
+- Alunos cursando Projeto Integrador 1 e 2: Que necessitam de uma base sólida de engenharia multidisciplinar, arquitetura de sistemas, telemetria e documentação aberta como referência prática para os desafios da disciplina.
+- Membros de equipes acadêmicas de competição de robótica da UnB: Estudantes que desenvolvem veículos autônomos e robôs de serviço, os quais se beneficiam diretamente dos algoritmos de busca e mapeamento em grafos, estratégias de controle de motores e módulos de transmissão IoT.
+
+- Estudantes em fase de Trabalho de Conclusão de Curso (TCC) e Iniciação Científica (PIBIC): Alunos que pesquisam robótica móvel, sistemas ciberfísicos, dinâmica veicular e plataformas de telemetria web.
 
 ### Descrição do Problema
 
-A competição Micromouse consiste em resolver labirintos desconhecidos de forma $100\%$ autônoma, sem nenhuma intervenção humana, alteração de código ou modificação de memória durante o trajeto. No contexto de *PI1* ($2026.2$), o robô deve navegar por células de $18 cm$ de lado com paredes brancas de $5 cm$ de altura e topo vermelho sobre chão preto, operando dentro do limite físico de $16,5 cm$ de largura/comprimento, em três configurações de pista distintas ($4\times4$, $8\times4$ e $12\times4$).  Além do desafio de sensoriamento, controle e algoritmo embarcado, o projeto exige a integração com um sistema web completo que receba e exiba dados telemétricos ao vivo (trajeto, bateria, velocidade média, tempo e cumprimento do objetivo) e armazene os dados em um banco para consultas posteriores por labirinto específico ou visão geral. O projeto se justifica pela concepção autoral multidisciplinar, mitigando riscos de falhas por meio de metodologias ágeis e testes de integração antecipados.
+A competição Micromouse é um dos torneios de robótica autônoma mais tradicionais e prestigiados do mundo, com histórico iniciado no final da década de 1970 sob a chancela do IEEE e edições anuais consolidadas em polos globais de tecnologia como Estados Unidos, Japão e Inglaterra. O desafio consiste em soltar um pequeno veículo robótico autônomo em um labirinto fechado e desconhecido, exigindo que a máquina explore o ambiente, construa um mapa interno em sua memória, encontre o caminho até a área de objetivo e execute o percurso no menor tempo possível, sem auxílio externo ou comunicação remota de controle.
+
+Embora seja uma modalidade clássica amplamente documentada no exterior, os estudantes de engenharia enfrentam uma barreira técnica significativa ao tentar projetar uma solução do zero: a integração entre controle de baixo nível (tempo de resposta dos sensores, odometria e acionamento de motores) e algoritmos de busca em grafos, agravada pela restrição dimensional (máximo de $16,5$ cm), pela ausência de contato prévio com a geometria da pista e pela proibição de intervenções humanas. No contexto acadêmico da UnB/FCTE, soma-se o desafio de desenvolver uma plataforma web de telemetria em tempo real, exigindo uma abordagem de engenharia integrada que transforme um problema competitivo global em uma oportunidade prática de formação multidisciplinar.
 
 ### Indicadores
 
-- Número de estudantes matriculados anualmente nas cinco engenharias da FCTE/UnB;
-- Número de turmas e grupos cursando as disciplinas de Projeto Integrador (PI1 e PI2) por semestre;
-- Número de equipes de competição acadêmica de robótica e automobilismo ativas na UnB;
-- Número de instituições de ensino superior (públicas e privadas) no Distrito Federal que ofertam cursos de Engenharia e Computação;
-- Número de laboratórios de prototipagem rápida e Makerspaces acadêmicos no DF;
-- Número de escolas de ensino médio e técnico profissionalizante (ex: IFB, SENAI-DF) no DF;
-- Número de empresas de automação, logística interna (AGVs) e tecnologia sediadas no Polo de Tecnologia do DF.
+- 280 estudantes: Quantidade média de alunos matriculados semestralmente nas cinco engenharias da Faculdade UnB Gama (FCTE/UnB), público potencial para reaproveitamento dos módulos desenvolvidos;
+- 5 turmas e 10 grupos: Número aproximado de turmas e grupos cursando semestralmente a disciplina de Projeto Integrador 1 no campus, que representam a demanda direta por referências de projetos de robótica autônoma.
+- 12 equipes de competição: Número estimado de equipes de extensão universitária ativas na UnB voltadas à robótica, drones e automobilismo acadêmico que demandam telemetria e algoritmos embarcados;
+- 15 instituições de ensino superior: Quantidade de faculdades e universidades públicas e privadas no Distrito Federal e entorno que ofertam cursos de Engenharia, Computação ou Mecatrônica com potencial para adotar o padrão Micromouse;
+- 20 laboratórios e Makerspaces: Espaços acadêmicos e técnicos de prototipagem rápida e impressão 3D instalados no DF capazes de replicar e aprimorar a estrutura mecânica e física dos labirintos propostos;
+- 25 unidades de ensino técnico: Escolas técnicas e centros de educação profissionalizante no DF (como IFB e unidades do SENAI) com potencial consumidor de plataformas didáticas de robótica móvel e IoT;
+- 40 empresas de base tecnológica e logística: Empresas de tecnologia, automação e logística interna sediadas no Polo Tecnológico do DF e região com interesse direto em algoritmos de navegação de veículos autônomos guiados (AGVs).
 
 ### Membros da Equipe
 
@@ -72,7 +65,7 @@ A competição Micromouse consiste em resolver labirintos desconhecidos de forma
 
 ### Orçamento estimado (R$)
 
-O orçamento geral estimado do projeto no semestre será de **R$ 810,00**, ou seja, **R$ 45,00** por membro do grupo (18 membros).
+O orçamento geral estimado do projeto no semestre será de **R$ 810,00**, ou seja, **R$ 45,00** por membro do grupo (18 membros). Estima-se que este orçamento será dividido da seguinte forma: **~R$277,00** para componentes eletrônicos, **~R$138,00** para baterias, carregadores e conectores,**~R$220,00** para filamento, rodas echapas de MDF.
 
 ### Duração estimada (horas)
 
