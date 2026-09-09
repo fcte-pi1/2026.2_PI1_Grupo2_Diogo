@@ -12,7 +12,7 @@
 
 ### Objetivos
 
-- **Specific**: Desenvolver um robô autônomo (Micromouse) com dimensões máximas de $16,5 cm \times 16,5 cm\ $, capaz de mapear paredes, monitorar sua localização em tempo real e resolver $3$ configurações progressivas de labirintos desconhecidos ($4\times4$ com $72\times 72 cm^2$, $8\times4$ com $144\times72 cm^2$ e $12\times4$ com $216\times72 cm^2$) partindo de um canto e alcançando o objetivo no canto diametralmente oposto, além de construir um sistema web com banco de dados para recepção, exibição de telemetria em tempo real e consulta pós-desafio.
+- **Specific**: Desenvolver um robô autônomo (Micromouse) com dimensões máximas de $16,5 cm \times 16,5 cm$, capaz de mapear paredes, monitorar sua localização em tempo real e resolver $3$ configurações progressivas de labirintos desconhecidos ($4\times4$ com $72\times 72 cm^2$, $8\times4$ com $144\times72 cm^2$ e $12\times4$ com $216\times72 cm^2$) partindo de um canto e alcançando o objetivo no canto diametralmente oposto, além de construir um sistema web com banco de dados para recepção, exibição de telemetria em tempo real e consulta pós-desafio.
 - **Measurable**: 
     - Cumprimento de cada labirinto dentro do limite máximo de 10 minutos por desafio.
 
