@@ -48,7 +48,7 @@ A competição Micromouse consiste em resolver labirintos desconhecidos de forma
 ### Membros da Equipe
 
 | **Nome** | **Matrícula** | **Curso** | **E-mail** | **Funções** |
-|----------|---------------|-----------|------------|-------------|
+|:------------------|:-----------:|:-----------------|:---------------------------|:---------------------------|
 | Yan Santos Rodrigues | 241025480 | Engenharia de Software | yansantosrodrigues.dev@gmail.com | Gerente Geral do Projeto |
 | Pedro Henrique Raposo Lima | 251040416 | Engenharia Aeroespacial | raposolima.pedro@gmail.com | Sub-gerente de Estruturas |
 | Rian Ferreira Alencar | 251027817 | Engenharia Eletrônica | rianalencar6@gmail.com | Sub-gerente de Eletrônica |
@@ -80,13 +80,6 @@ O orçamento geral estimado do projeto no semestre será de **R$ 810,00**, ou se
 - Duração do semestre letivo: 16 semanas.
 - Esforço estimado por membro: ~96 horas.
 - Esforço total estimado da equipe (6 integrantes): ~570 horas de trabalho.
-
-
-
-
-
-
-
 
 
 
