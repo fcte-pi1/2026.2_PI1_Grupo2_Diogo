@@ -3,11 +3,10 @@
 .vscode
 
 # Adicione outros arquivos a serem ignorados aqui
-# ...
-
-#env
-*.env
-
+.env
+.venv/
+__pycache__/
+*.pyc
 # LaTeX
 
 relatorio.pdf

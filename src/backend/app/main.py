@@ -1,0 +1,34 @@
+from fastapi import FastAPI
+
+from app.core.database import test_database_connection
+
+
+app = FastAPI(
+    title="Micromouse API",
+    version="0.1.0",
+)
+
+
+@app.get("/")
+def root():
+    return {
+        "message": "Micromouse API funcionando"
+    }
+
+
+@app.get("/health")
+def health():
+    try:
+        test_database_connection()
+
+        return {
+            "status": "ok",
+            "database": "connected",
+        }
+
+    except Exception as error:
+        return {
+            "status": "error",
+            "database": "disconnected",
+            "detail": str(error),
+        }
