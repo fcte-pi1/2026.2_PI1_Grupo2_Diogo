@@ -70,3 +70,24 @@ body {
   border-radius: 9999px;
   background: #e2e8f0;
 }
+
+
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0B1628;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1D293D;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #2A3A52;
+}
