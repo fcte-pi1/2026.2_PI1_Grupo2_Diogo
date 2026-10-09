@@ -1,17 +1,19 @@
-# Frontend — MicroNav
+# Frontend — Micromouse
 
-Interface web do projeto Micromouse. A aplicação permite acompanhar a telemetria do robô e visualizar/configurar o labirinto da execução.
+Interface web do projeto Micromouse permite acompanhar a telemetria do robô e visualizar e configurar o labirinto utilizado durante a execução.
 
 ## Tecnologias
 
-- React 19 e TypeScript
+- React 19 
+- TypeScript
 - Vite
 - Tailwind CSS
 - React Router
 
 ## Requisitos
 
-- Node.js e npm
+- Node.js
+- npm
 
 ## Instalação e execução
 
@@ -48,7 +50,7 @@ Execute-os dentro de `src/frontend/web-micromouse`:
 
 ## Funcionalidades
 
-- **Dashboard/Telemetria (`/`)**: apresenta bateria, velocidade, RPM dos motores, giroscópio e informações da execução.
+- **Dashboard/Telemetria (`/`)**: apresenta bateria, velocidade, RPM dos motores, giroscópio e dados da execução.
 - **Labirinto (`/labirinto`)**: permite selecionar o tamanho do labirinto e visualizar o percurso e os detalhes da execução.
 
 No momento, a telemetria do dashboard é simulada no frontend; a interface ainda não busca esses dados de uma API. Os dados da página de labirinto também ainda não estão conectados ao backend.
