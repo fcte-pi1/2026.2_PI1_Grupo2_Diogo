@@ -16,8 +16,8 @@ CREATE TABLE execucao(
     status varchar(20) NOT NULL CHECK(status IN ('em_execucao', 'concluido', 'interrompido')) DEFAULT 'em_execucao',
     resultado varchar(10) CHECK(resultado IN ('sucesso', 'falha')),
     velocidade_media_cm_s float,
-    criado_em timestamp NOT NULL DEFAULT now()
-
+    criado_em timestamp NOT NULL DEFAULT now(),
+    quantidade_celulas_visitadas integer
 );
 
 CREATE TABLE amostra_telemetria(

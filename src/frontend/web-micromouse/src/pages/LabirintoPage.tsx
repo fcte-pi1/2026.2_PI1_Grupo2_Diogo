@@ -1,17 +1,15 @@
 import { useState, type ReactNode } from 'react'
 import { Percurso } from '../components/Percurso'
 import { SeletorLabirinto } from '../components/SeletorLabirinto'
-import { LABIRINTOS, type Posicao, type Telemetria, type TipoLabirinto } from '../types'
+import { useLabirinto } from '../hooks/useLabirinto'
+import { LABIRINTOS, type TipoLabirinto } from '../types'
 
 const mmss = (ms: number) => new Date(ms).toISOString().slice(14, 19)
 
 export function LabirintoPage() {
   const [tipo, setTipo] = useState<TipoLabirinto>('4x4')
-  const { linhas, colunas } = LABIRINTOS[tipo]
-
-  //alterar pelos valores do banco de dados
-  const [telemetria] = useState<Telemetria | null>(null)
-  const [trajetoria] = useState<Posicao[]>([])
+  const { telemetria, trajetoria } = useLabirinto()
+  const{linhas, colunas} = telemetria?.labirinto ?? LABIRINTOS[tipo]
 
   const status = telemetria?.status ?? 'Sem conexão'
 

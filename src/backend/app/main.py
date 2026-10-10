@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from app.core.database import test_database_connection
+from app.routes import sessions
 
 
 app = FastAPI(
@@ -8,6 +9,7 @@ app = FastAPI(
     version="0.1.0",
 )
 
+app.include_router(sessions.router, prefix="/api")
 
 @app.get("/")
 def root():
