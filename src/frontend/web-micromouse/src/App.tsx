@@ -2,6 +2,7 @@ import { Route, Routes } from 'react-router-dom'
 import { Sidebar } from './components/Sidebar'
 import { LabirintoPage } from './pages/LabirintoPage'
 import { TelemetryPage } from './pages/TelemetryPage'
+import { HistoryPage } from './pages/HistoryPage'
 
 function App() {
   return (
@@ -10,6 +11,7 @@ function App() {
       <Routes>
         <Route path="/" element={<TelemetryPage />} />
         <Route path="/labirinto" element={<LabirintoPage />} />
+        <Route path="/historico" element={<HistoryPage />} />
       </Routes>
     </div>
   );
