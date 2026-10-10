@@ -27,3 +27,9 @@
 
 // Constantes mecânicas
 #define PULSOS_POR_VOLTA 210.0f
+#define WHEEL_DIAMETER_MM    32.0f   // Diâmetro da roda com pneu (em mm)
+#define TRACK_WIDTH_MM       75.0f   // Distância entre o centro das duas rodas (em mm)
+#define ENCODER_PPR_RODA     360.0f  // Pulsos totais por rotação completa da roda (com caixa de redução)
+
+// Constante calculada de pulsos para exatamente 90 graus
+#define PULSOS_90_GRAUS ((TRACK_WIDTH_MM * ENCODER_PPR_RODA) / (4.0f * WHEEL_DIAMETER_MM))

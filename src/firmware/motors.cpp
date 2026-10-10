@@ -1,6 +1,8 @@
 #include <Arduino.h>
+#include "config.h"
 #include "motors.h"
 #include "config.h"
+#include "imu.h"
 
 static volatile long countA = 0;
 static volatile long countB = 0;
@@ -89,4 +91,54 @@ void getEncoderSpeeds(float dt, float &rpsA, float &rpsB) {
 
   rpsA = (pA / PULSOS_POR_VOLTA) / dt;
   rpsB = (pB / PULSOS_POR_VOLTA) / dt;
+}
+
+void girar90Graus(bool paraDireita) {
+    // 1. Zera acumuladores de pulsos existentes no ficheiro
+    countA = 0;
+    countB = 0;
+
+    const float targetTicks = PULSOS_90_GRAUS;
+    const int pwmBase = 90;      // Potência suficiente para vencer o atrito estático
+    const int pwmMin = 45;       // Limite inferior para não travar o motor
+    const float kP = 0.4f;       // Ganho proporcional para desaceleração suave
+
+    bool concluido = false;
+    unsigned long timeout = millis() + 2000; // Timeout de segurança (2 segundos)
+
+    while (!concluido && millis() < timeout) {
+        // Média dos pulsos absolutos percorridos pelas rodas
+        long pulsoEsq = abs(countA);
+        long pulsoDir = abs(countB);
+        float mediaPulsos = (pulsoEsq + pulsoDir) / 2.0f;
+
+        float erro = targetTicks - mediaPulsos;
+
+        if (erro <= 2.0f) { // Tolerância de paragem (2 pulsos)
+            concluido = true;
+            break;
+        }
+
+        // Calcula velocidade decrescente suave
+        int esforco = (int)(erro * kP);
+        if (esforco > pwmBase) esforco = pwmBase;
+        if (esforco < pwmMin)  esforco = pwmMin;
+
+        // Sentido de rotação no próprio eixo:
+        if (paraDireita) {
+            setMotorSpeed(esforco, -esforco);
+        } else {
+            setMotorSpeed(-esforco, esforco);
+        }
+
+        delay(5); // Ciclo de amostragem (200 Hz)
+    }
+
+    // Trava ativa das rodas para travar a inércia
+    stopMotors();
+    delay(100);
+
+    float anguloMedidoIMU = getYawAngle();
+    Serial.printf("[GIRO 90] Concluido! Pulsos A: %ld | B: %ld | Angulo IMU: %.2f deg\n", 
+                  countA, countB, anguloMedidoIMU);
 }

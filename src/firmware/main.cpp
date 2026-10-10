@@ -6,46 +6,47 @@
 #include "lasers.h"
 #include "ota_manager.h"
 
-unsigned long tempoAnterior = 0;
-const unsigned long INTERVALO_MS = 100;
-
 void setup() {
-  Serial.begin(115200);
-  Wire.begin(21, 22);
-  Wire.setClock(400000);
+    Serial.begin(115200);
+    delay(1000);
+    Serial.println("\n--- [TESTE DE GIRO 90 GRAUS INICIADO] ---");
+    Serial.println("Comandos via Serial:");
+    Serial.println("  'd' -> Virar 90 graus para a DIREITA");
+    Serial.println("  'e' -> Virar 90 graus para a ESQUERDA");
+    Serial.println("  's' -> Parar motores de imediato");
 
-  initMotors();
-  initIMU();
-  initLasers();
-  initOTA();
+    // Inicializa I2C padrão do ESP32 (SDA=21, SCL=22) a 400kHz
+    Wire.begin();
+    Wire.setClock(400000);
 
-  Serial.println("\n--- Robô Inicializado com Sucesso ---");
-  tempoAnterior = millis();
+    initMotors();
+    initIMU();
+    initLasers();
+    initOTA();
 }
 
 void loop() {
-  handleOTA(); // Escuta requisições de gravação sem fio
+    handleOTA();
 
-  unsigned long agora = millis();
-  unsigned long delta = agora - tempoAnterior;
+    if (Serial.available() > 0) {
+        char comando = Serial.read();
 
-  if (delta >= INTERVALO_MS) {
-    float dt = delta / 1000.0f;
-    tempoAnterior = agora;
+        if (comando == '\n' || comando == '\r') return;
 
-    // Atualiza odometria e sensores
-    updateIMU(dt);
-
-    float rpsA = 0, rpsB = 0;
-    getEncoderSpeeds(dt, rpsA, rpsB);
-
-    int dEsq = -1, dFte = -1, dDir = -1;
-    readLasers(dEsq, dFte, dDir);
-
-    // Telemetria no Serial
-    Serial.printf("[MOTORES] A: %5.2f RPS | B: %5.2f RPS\n", rpsA, rpsB);
-    Serial.printf("[IMU]     Yaw: %6.1f deg | Taxa: %5.2f deg/s\n", getYawAngle(), getYawRate());
-    Serial.printf("[LASER]   Esq: %4d mm | Frente: %4d mm | Dir: %4d mm\n", dEsq, dFte, dDir);
-    Serial.println("--------------------------------------------------");
-  }
+        if (comando == 'd' || comando == 'D') {
+            Serial.println("[COMANDO] Executando giro de 90 graus a DIREITA...");
+            girar90Graus(true);
+        } 
+        else if (comando == 'e' || comando == 'E') {
+            Serial.println("[COMANDO] Executando giro de 90 graus a ESQUERDA...");
+            girar90Graus(false);
+        } 
+        else if (comando == 's' || comando == 'S') {
+            Serial.println("[COMANDO] Parada forcada dos motores.");
+            stopMotors();
+        } 
+        else {
+            Serial.printf("[AVISO] Comando desconhecido: '%c'. Use 'd', 'e' ou 's'.\n", comando);
+        }
+    }
 }
