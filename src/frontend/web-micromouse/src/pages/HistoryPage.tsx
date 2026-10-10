@@ -19,18 +19,7 @@ export function HistoryPage() {
         status: "Sucesso" ,
         resultado: "Meta atingida"
     }
-,
-{
-   id: 3,
-        labirinto: "LabirintoBA",
-        data: new Date('2026-09-18'),
-        tempo: "2:30",
-        algoritmo: "Flood Fill v2",
-        celulas: 123,
-        status: "Sucesso" ,
-        resultado: "Meta atingida"
-    
-}
+
     
 
 
