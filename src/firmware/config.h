@@ -28,6 +28,13 @@
 // Endereço I2C da IMU MPU-6050
 #define ADDR_IMU 0x68
 
+// Calibração do giroscópio
+#define IMU_AMOSTRAS_CALIBRACAO   800
+#define IMU_INTERVALO_AMOSTRA_MS  3
+#define IMU_TENTATIVAS_CALIBRACAO 3
+#define IMU_LIMITE_MOVIMENTO_DPS  0.5f  // Desvio acima disso indica robô em movimento
+#define IMU_ZONA_MORTA_DPS        0.25f
+
 // Sensor de energia INA219 (U12)
 #define INA219_ADDR 0x40
 
