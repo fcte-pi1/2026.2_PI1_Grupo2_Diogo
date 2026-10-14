@@ -133,3 +133,145 @@ Use `python -m pytest`, e não só `pytest`. O `-m` coloca a pasta atual no cami
 - **Labirintos retangulares (8×4 e 12×4):** o modelo `Maze` guarda um número só (`size`), então só representa labirintos quadrados. Para 8×4 e 12×4, ele vai precisar de linhas e colunas separadas. Quando isso mudar, o front também precisa mudar, em `src/api.ts` (tipo `ApiMaze`) e em `src/hooks/useLabirinto.ts` (`linhas` e `colunas`).
 - **Banco de dados (PostgreSQL):** é a próxima etapa. Hoje os dados somem quando o servidor reinicia.
 - **`requirements.txt`:** ainda não existe.
+
+## Telemetria em tempo real — RNF01
+
+A API disponibiliza o estado mais recente da telemetria do Micromouse através do endpoint:
+
+```http
+GET /api/telemetry/current
+```
+
+### Intervalo de atualização
+
+A telemetria utiliza atualmente os seguintes valores:
+
+- Intervalo de atualização: `1000 ms (1 segundo)`
+- Tolerância de latência: `250 ms`
+
+Esses valores são configuráveis através das variáveis de ambiente:
+
+```env
+TELEMETRY_UPDATE_INTERVAL_MS=1000
+TELEMETRY_LATENCY_TOLERANCE_MS=250
+```
+
+O limite para considerar um dado defasado é calculado por:
+
+```text
+intervalo de atualização + tolerância de latência
+```
+
+Com a configuração atual:
+
+```text
+1000 ms + 250 ms = 1250 ms
+```
+
+### Resposta da telemetria
+
+Cada resposta contém os dados atuais do Micromouse, além de informações utilizadas para verificar a atualização da telemetria.
+
+Exemplo:
+
+```json
+{
+  "position": {
+    "row": 3,
+    "col": 3
+  },
+  "metrics": {
+    "speed_cm_s": 18.0,
+    "rpm": 101.0,
+    "battery_pct": 97.0
+  },
+  "events": [],
+  "generated_at": "2026-10-14T18:01:39.019875Z",
+  "served_at": "2026-10-14T18:01:39.201955Z",
+  "age_ms": 182.08,
+  "stale": false
+}
+```
+
+Os campos relacionados ao controle de atualização são:
+
+- `generated_at`: instante em que o dado foi gerado;
+- `served_at`: instante em que a resposta foi preparada pelo backend;
+- `age_ms`: idade do dado em milissegundos;
+- `stale`: informa se o dado ultrapassou o intervalo esperado mais a tolerância.
+
+### Dados defasados
+
+Quando:
+
+```text
+age_ms > 1250 ms
+```
+
+o dado é considerado defasado e a API retorna:
+
+```json
+{
+  "stale": true
+}
+```
+
+O último dado válido continua disponível mesmo quando nenhuma nova atualização é recebida.
+
+Isso evita que perdas temporárias de dados deixem o frontend sem informação.
+
+### Dados fora de ordem
+
+Dados com `generated_at` anterior ou igual ao último dado aceito são ignorados.
+
+Dessa forma, um pacote atrasado não substitui uma informação mais recente.
+
+### Perda de atualizações
+
+Caso uma atualização não seja recebida, o backend mantém o último dado válido.
+
+Quando esse dado ultrapassa o limite de tempo configurado, ele passa a ser identificado com:
+
+```json
+{
+  "stale": true
+}
+```
+
+### Dados simulados
+
+Atualmente os dados de telemetria são fornecidos pelo simulador localizado em:
+
+```text
+app/mock/simulation.py
+```
+
+A integração com o Micromouse real não faz parte do escopo atual do RNF01.
+
+Para executar o backend utilizando a simulação:
+
+```bash
+python -m uvicorn app.mock.dev_server:app --reload
+```
+
+### Testes automatizados
+
+Os testes relacionados à atualização contínua da telemetria estão em:
+
+```text
+tests/test_telemetry_service.py
+```
+
+Os testes cobrem:
+
+- atualização dentro do intervalo esperado;
+- dados atrasados;
+- perda de atualização;
+- dados recebidos fora de ordem;
+- rajadas de dados.
+
+Para executar todos os testes do backend:
+
+```bash
+python -m pytest -v
+```

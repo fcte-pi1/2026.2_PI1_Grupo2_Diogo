@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     POSTGRES_DB: str
     POSTGRES_PORT: int = 5432
     POSTGRES_HOST: str = "localhost"
+    
+    TELEMETRY_UPDATE_INTERVAL_MS: int = 1000
+    TELEMETRY_LATENCY_TOLERANCE_MS: int = 250
 
     model_config = SettingsConfigDict(
         env_file=".env",

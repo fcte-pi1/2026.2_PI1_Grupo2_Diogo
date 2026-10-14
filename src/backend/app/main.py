@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 
 from app.core.database import test_database_connection
-from app.routes import sessions
+from app.routes import sessions, telemetry
 
 
 app = FastAPI(
@@ -10,6 +10,7 @@ app = FastAPI(
 )
 
 app.include_router(sessions.router, prefix="/api")
+app.include_router(telemetry.router, prefix="/api")
 
 @app.get("/")
 def root():
