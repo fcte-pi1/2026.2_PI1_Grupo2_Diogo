@@ -27,3 +27,16 @@
 
 // Constantes mecânicas
 #define PULSOS_POR_VOLTA 210.0f
+#define DIAMETRO_RODA_CM 3.4f
+
+// Configurações de Telemetria e Rede
+#define TELEMETRY_INTERVAL_MS   100   // Taxa de 10 Hz (intervalo <= 1s, atende RNF-SW01)
+#define TELEMETRY_SERVER_HOST   "192.168.4.2" // IP padrão da estação base conectada ao SoftAP do robô
+#define TELEMETRY_SERVER_PORT   8000
+#define TELEMETRY_ENDPOINT      "/api/telemetria"
+#define TELEMETRY_TIMEOUT_MS    80    // Timeout de envio HTTP para não sobrecarregar conexão
+#define TELEMETRY_MAX_RETRIES   3     // Tentativas antes de marcar desconectado
+
+// Opcional: Wi-Fi em modo Station (conectar a uma rede externa ou roteador)
+#define WIFI_STA_SSID           ""
+#define WIFI_STA_PASSWORD       ""

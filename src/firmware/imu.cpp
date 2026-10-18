@@ -9,6 +9,10 @@ static float yawAngle = 0.0f;
 static float yawRate = 0.0f;
 static float biasZ = 0.0f;
 
+static float gyroX = 0.0f;
+static float gyroY = 0.0f;
+static float gyroZ = 0.0f;
+
 bool initIMU() {
   if (!mpu.begin()) {
     Serial.println("[IMU] Falha ao iniciar MPU-6050!");
@@ -36,7 +40,11 @@ void updateIMU(float dt) {
   sensors_event_t a, g, temp;
   mpu.getEvent(&a, &g, &temp);
 
-  yawRate = (g.gyro.z * 57.2957795f) - biasZ;
+  gyroX = g.gyro.x * 57.2957795f;
+  gyroY = g.gyro.y * 57.2957795f;
+  gyroZ = (g.gyro.z * 57.2957795f) - biasZ;
+
+  yawRate = gyroZ;
   if (abs(yawRate) < 0.25f) yawRate = 0.0f; // Zona morta
 
   yawAngle += yawRate * dt;
@@ -44,4 +52,9 @@ void updateIMU(float dt) {
 
 float getYawAngle() { return yawAngle; }
 float getYawRate() { return yawRate; }
+void getGyroRates(float &gx, float &gy, float &gz) {
+  gx = gyroX;
+  gy = gyroY;
+  gz = gyroZ;
+}
 void resetYawAngle() { yawAngle = 0.0f; }
