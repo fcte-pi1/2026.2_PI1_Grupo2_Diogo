@@ -4,6 +4,8 @@
 #include "motors.h"
 #include "imu.h"
 #include "lasers.h"
+#include "power.h"
+#include "i2c_check.h"
 #include "ota_manager.h"
 #include "telemetry.h"
 
@@ -18,6 +20,8 @@ void setup() {
   initMotors();
   initIMU();
   initLasers();
+  initPower();
+  verificarI2C();
   initOTA();
   initTelemetry();
 
@@ -47,17 +51,22 @@ void loop() {
     float gx = 0.0f, gy = 0.0f, gz = 0.0f;
     getGyroRates(gx, gy, gz);
 
+    updatePower();
+    if (bateriaCritica()) stopMotors(); // Protege a LiPo contra descarga profunda
+
     // Alimenta o subsistema de telemetria
+    updateTelemetryBattery(obter_tensao_bateria(), obter_corrente_mA());
     updateTelemetryData(
         rpsA, rpsB,
         getYawAngle(), getYawRate(), gx, gy, gz,
         dEsq, dFte, dDir
     );
 
-    // Telemetria no Serial para depuração local
+    // Telemetria no Serial
     Serial.printf("[MOTORES]     A: %5.2f RPS | B: %5.2f RPS\n", rpsA, rpsB);
     Serial.printf("[IMU]         Yaw: %6.1f deg | Taxa: %5.2f deg/s\n", getYawAngle(), getYawRate());
     Serial.printf("[LASER]       Esq: %4d mm | Frente: %4d mm | Dir: %4d mm\n", dEsq, dFte, dDir);
+    Serial.printf("[ENERGIA]     %5.2f V | %7.1f mA | %7.1f mW | %5.1f %%\n", obter_tensao_bateria(), obter_corrente_mA(), obter_potencia_mW(), obter_bateria_pct());
     Serial.printf("[TELEMETRIA]  RTT: %3u ms | Enviados: %4u | Falhas: %2u | Conectado: %s\n",
                   getTelemetryLatency(), getTelemetryPacketsSent(), getTelemetryPacketsLost(),
                   isTelemetryConnected() ? "SIM" : "NAO");

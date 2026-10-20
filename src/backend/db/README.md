@@ -27,14 +27,16 @@ O modelo completo (MER e DER) está documentado em [4.4 - Projeto conceitual de 
 | Tabela | O que guarda |
 | :-- | :-- |
 | `labirinto` | Labirintos cadastrados (nome e tipo). |
-| `execucao` | Cada corrida do Micromouse em um labirinto: início, fim, tempo total, status, resultado e velocidade média. |
-| `amostra_telemetria` | Leituras recebidas durante a corrida: conexão, bateria, consumo, velocidade, RPM, giroscópio e posição. |
+| `execucao` | Cada corrida do Micromouse em um labirinto: início, fim, tempo total, status, algoritmo, resultado e velocidade média. |
+| `amostra_telemetria` | Leituras de bateria, consumo, velocidade e RPM recebidas durante a corrida. |
+| `amostra_movimento` | Leituras de posição e giroscópio recebidas durante a corrida. |
 | `parede_detectada` | Paredes mapeadas pelo Micromouse durante a corrida (célula e lado). |
 
 **Relacionamentos:**
 
 - Um `labirinto` tem várias `execucao` (1:N)
 - Uma `execucao` tem várias `amostra_telemetria` (1:N)
+- Uma `execucao` tem várias `amostra_movimento` (1:N)
 - Uma `execucao` tem várias `parede_detectada` (1:N)
 
 ### Valores aceitos
@@ -46,7 +48,6 @@ O banco recusa qualquer valor fora destas listas:
 | `labirinto.tipo` | `4x4`, `8x4`, `12x4` |
 | `execucao.status` | `em_execucao` (padrão), `concluido`, `interrompido` |
 | `execucao.resultado` | `sucesso`, `falha` (fica vazio enquanto a corrida não termina) |
-| `amostra_telemetria.status_conexao` | `conectado`, `desconectado` |
 | `amostra_telemetria.nivel_bateria_pct` | de `0` a `100` |
 | `parede_detectada.lado` | `norte`, `sul`, `leste`, `oeste` |
 
@@ -85,7 +86,7 @@ docker compose up -d
 Para conferir se deu certo:
 
 ```powershell
-docker compose logs db
+docker compose logs backend
 ```
 
 O log deve mostrar o `01-schema.sql` sendo executado e terminar com `database system is ready to accept connections`:
@@ -93,6 +94,7 @@ O log deve mostrar o `01-schema.sql` sendo executado e terminar com `database sy
 ```
 running /docker-entrypoint-initdb.d/01-schema.sql
 BEGIN
+CREATE TABLE
 CREATE TABLE
 CREATE TABLE
 CREATE TABLE
@@ -107,7 +109,7 @@ database system is ready to accept connections
 Pelo terminal, sem precisar instalar nada (não pede senha):
 
 ```powershell
-docker compose exec db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+docker compose exec backend sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 ```
 
 Comandos úteis dentro do `psql`:
@@ -139,22 +141,31 @@ docker compose up -d
 
 > 🚨 **O `-v` apaga todos os dados do banco**, incluindo o histórico de corridas. Use apenas em desenvolvimento.
 
+Para atualizar um banco existente preservando as amostras, execute o script de migração `db/migrations/02-separate-movement-samples.sql` pelo pgAdmin/DBeaver ou pelo `psql`. Não use `docker compose down -v` para essa atualização.
+
+No Bash, a partir de `src/backend`, aplique também o índice para acelerar consultas de amostras recentes:
+
+```bash
+docker compose exec -T backend sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < db/migrations/02-separate-movement-samples.sql
+docker compose exec -T backend sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < db/migrations/03-index-telemetry-samples.sql
+```
+
 ## Comandos de referência
 
 | Comando | Efeito |
 | :-- | :-- |
-| `docker compose up -d` | Liga o banco |
+| `docker compose up -d backend` | Liga o backend e o PostgreSQL integrado |
 | `docker compose down` | Desliga o banco e **mantém** os dados |
 | `docker compose down -v` | Desliga o banco e **apaga todos os dados** |
-| `docker compose ps` | Mostra se o banco está rodando |
-| `docker compose logs db` | Mostra o log do banco |
+| `docker compose ps` | Mostra se o backend/PostgreSQL está rodando |
+| `docker compose logs backend` | Mostra os logs do backend e PostgreSQL |
 
 ## No dia da apresentação
 
 1. Abrir o Docker Desktop e esperar ele iniciar.
 2. Em `src/backend`, criar o `.env` a partir do `.env.example` (seção [Configuração](#configuração)).
 3. Rodar `docker compose up -d`.
-4. Conferir com `docker compose logs db`.
+4. Conferir com `docker compose logs backend`.
 
 > 🚨 **Nunca rode `docker compose down -v` no dia**: o histórico de corridas será perdido. Para desligar, use apenas `docker compose down`.
 

@@ -286,7 +286,7 @@ src/backend
 execute:
 
 ```bash
-docker compose up -d db
+docker compose up -d backend
 ```
 
 O parâmetro:
@@ -653,7 +653,7 @@ Depois reinicie o container:
 
 ```bash
 docker compose down
-docker compose up -d db
+docker compose up -d backend
 ```
 
 Não é necessário alterar o `docker-compose.yml`.
@@ -682,9 +682,9 @@ no `.env` correspondem às configurações utilizadas pelo ambiente Docker.
 Para verificar as variáveis utilizadas pelo container:
 
 ```bash
-docker compose exec db printenv POSTGRES_USER
-docker compose exec db printenv POSTGRES_DB
-docker compose exec db printenv POSTGRES_PORT
+docker compose exec backend printenv POSTGRES_USER
+docker compose exec backend printenv POSTGRES_DB
+docker compose exec backend printenv POSTGRES_PORT
 ```
 
 Evite compartilhar ou registrar a senha real em logs, commits, issues ou pull requests.
@@ -696,7 +696,7 @@ Evite compartilhar ou registrar a senha real em logs, commits, issues ou pull re
 É possível executar:
 
 ```bash
-docker compose exec db psql -U micromouse -d micromouse
+docker compose exec backend psql -U micromouse -d micromouse
 ```
 
 Dentro do PostgreSQL:
@@ -757,7 +757,7 @@ Ativar o ambiente virtual:
 Iniciar o PostgreSQL:
 
 ```bash
-docker compose up -d db
+docker compose up -d backend
 ```
 
 Iniciar o FastAPI:

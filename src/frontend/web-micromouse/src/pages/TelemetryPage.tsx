@@ -1,6 +1,6 @@
 import { BatteryCard } from "../components/telemetria/BatteryCard";
 import { GyroscopeCard } from "../components/telemetria/GyroscopeCard";
-import { MotorRPMCard } from "../components/telemetria/MotorRPMCard";
+import { MotorRPMCard } from "../components/telemetria/MotorRPMCard"; 
 import { SpeedCard } from "../components/telemetria/SpeedCard";
 import { useTelemetry } from "../hooks/useTelemetry";
 
