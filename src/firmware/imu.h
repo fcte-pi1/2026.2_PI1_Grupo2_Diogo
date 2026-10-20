@@ -5,3 +5,4 @@ void updateIMU(float dt);
 float getYawAngle();
 float getYawRate();
 void resetYawAngle();
+bool imuCalibrada();
