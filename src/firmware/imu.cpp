@@ -12,6 +12,10 @@ static float yawRate = 0.0f;
 static float biasZ = 0.0f;
 static bool calibrada = false;
 
+static float gyroX = 0.0f;
+static float gyroY = 0.0f;
+static float gyroZ = 0.0f;
+
 static bool lerTaxaZ(float &taxa) {
   sensors_event_t a, g, temp;
   if (!mpu.getEvent(&a, &g, &temp)) return false;
@@ -71,14 +75,22 @@ bool initIMU() {
 }
 
 void updateIMU(float dt) {
-  float taxa;
-  if (lerTaxaZ(taxa)) {
-    yawRate = aplicarZonaMorta(taxa - biasZ, IMU_ZONA_MORTA_DPS);
+  sensors_event_t a, g, temp;
+  if (mpu.getEvent(&a, &g, &temp)) {
+    gyroX = g.gyro.x * 57.2957795f;
+    gyroY = g.gyro.y * 57.2957795f;
+    gyroZ = (g.gyro.z * 57.2957795f) - biasZ;
+    yawRate = aplicarZonaMorta(gyroZ, IMU_ZONA_MORTA_DPS);
   }
   yawAngle += yawRate * dt;
 }
 
 float getYawAngle() { return yawAngle; }
 float getYawRate() { return yawRate; }
+void getGyroRates(float &gx, float &gy, float &gz) {
+  gx = gyroX;
+  gy = gyroY;
+  gz = gyroZ;
+}
 void resetYawAngle() { yawAngle = 0.0f; }
 bool imuCalibrada() { return calibrada; }
