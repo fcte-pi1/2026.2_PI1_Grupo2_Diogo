@@ -15,14 +15,6 @@ static void IRAM_ATTR isrB() {
   else countB--;
 }
 
-// =============================================================================
-// CONTROLE DE PWM DOS MOTORES (CÓDIGO NOVO ATIVO)
-// =============================================================================
-// Configuração de canais PWM (LEDC) compatível com o framework Arduino-ESP32
-// instalado pelo PlatformIO. Utiliza canais 0 e 1 em 10 kHz com resolução de 8 bits.
-static const int PWM_CH_A = 0;
-static const int PWM_CH_B = 1;
-
 void initMotors() {
   pinMode(PIN_STBY, OUTPUT);
   pinMode(PIN_AIN1, OUTPUT);
@@ -30,67 +22,7 @@ void initMotors() {
   pinMode(PIN_BIN1, OUTPUT);
   pinMode(PIN_BIN2, OUTPUT);
 
-  // Inicializa canais PWM e associa aos pinos PWMA e PWMB
-  ledcSetup(PWM_CH_A, 10000, 8);
-  ledcAttachPin(PIN_PWMA, PWM_CH_A);
-  ledcSetup(PWM_CH_B, 10000, 8);
-  ledcAttachPin(PIN_PWMB, PWM_CH_B);
-
-  digitalWrite(PIN_STBY, HIGH);
-
-  pinMode(ENC_A_C1, INPUT_PULLUP);
-  pinMode(ENC_A_C2, INPUT_PULLUP);
-  pinMode(ENC_B_C1, INPUT_PULLUP);
-  pinMode(ENC_B_C2, INPUT_PULLUP);
-
-  attachInterrupt(digitalPinToInterrupt(ENC_A_C1), isrA, RISING);
-  attachInterrupt(digitalPinToInterrupt(ENC_B_C1), isrB, RISING);
-}
-
-void stopMotors() {
-  ledcWrite(PWM_CH_A, 0);
-  ledcWrite(PWM_CH_B, 0);
-}
-
-void setMotorSpeed(int pwmA, int pwmB) {
-  // Motor A
-  if (pwmA >= 0) {
-    digitalWrite(PIN_AIN1, HIGH);
-    digitalWrite(PIN_AIN2, LOW);
-  } else {
-    digitalWrite(PIN_AIN1, LOW);
-    digitalWrite(PIN_AIN2, HIGH);
-  }
-  ledcWrite(PWM_CH_A, constrain(abs(pwmA), 0, 255));
-
-  // Motor B
-  if (pwmB >= 0) {
-    digitalWrite(PIN_BIN1, HIGH);
-    digitalWrite(PIN_BIN2, LOW);
-  } else {
-    digitalWrite(PIN_BIN1, LOW);
-    digitalWrite(PIN_BIN2, HIGH);
-  }
-  ledcWrite(PWM_CH_B, constrain(abs(pwmB), 0, 255));
-}
-
-// =============================================================================
-// CÓDIGO ANTERIOR ORIGINAL (COMENTADO PARA REFERÊNCIA)
-// =============================================================================
-// Motivo do comentário: O código original abaixo utiliza a API do ESP32 Arduino Core v3
-// (`ledcAttach(pin, freq, res)` diretamente no pino). Como o pacote platform-espressif32
-// atual do projeto utiliza a API por canais (Core v2.x), a compilação gerava o erro:
-//   "error: 'ledcAttach' was not declared in this scope; suggested alternative: 'ledcAttachPin'"
-// Caso o projeto seja futuramente atualizado para o Core v3, o bloco abaixo pode ser reativado.
-// =============================================================================
-/*
-void initMotors_ORIGINAL() {
-  pinMode(PIN_STBY, OUTPUT);
-  pinMode(PIN_AIN1, OUTPUT);
-  pinMode(PIN_AIN2, OUTPUT);
-  pinMode(PIN_BIN1, OUTPUT);
-  pinMode(PIN_BIN2, OUTPUT);
-
+  // API do core 3 (plataforma pioarduino no platformio.ini). No core 2 seria ledcSetup + ledcAttachPin
   ledcAttach(PIN_PWMA, 10000, 8);
   ledcAttach(PIN_PWMB, 10000, 8);
   digitalWrite(PIN_STBY, HIGH);
@@ -104,12 +36,13 @@ void initMotors_ORIGINAL() {
   attachInterrupt(digitalPinToInterrupt(ENC_B_C1), isrB, RISING);
 }
 
-void stopMotors_ORIGINAL() {
+void stopMotors() {
   ledcWrite(PIN_PWMA, 0);
   ledcWrite(PIN_PWMB, 0);
 }
 
-void setMotorSpeed_ORIGINAL(int pwmA, int pwmB) {
+void setMotorSpeed(int pwmA, int pwmB) {
+  // Motor A
   if (pwmA >= 0) {
     digitalWrite(PIN_AIN1, HIGH);
     digitalWrite(PIN_AIN2, LOW);
@@ -119,6 +52,7 @@ void setMotorSpeed_ORIGINAL(int pwmA, int pwmB) {
   }
   ledcWrite(PIN_PWMA, constrain(abs(pwmA), 0, 255));
 
+  // Motor B
   if (pwmB >= 0) {
     digitalWrite(PIN_BIN1, HIGH);
     digitalWrite(PIN_BIN2, LOW);
@@ -128,7 +62,6 @@ void setMotorSpeed_ORIGINAL(int pwmA, int pwmB) {
   }
   ledcWrite(PIN_PWMB, constrain(abs(pwmB), 0, 255));
 }
-*/
 
 void setTurnEffort(int esforco) {
   esforco = constrain(esforco, -255, 255);
