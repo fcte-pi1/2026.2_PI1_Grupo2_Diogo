@@ -1,7 +1,6 @@
 #include <Arduino.h>
 #include "config.h"
 #include "motors.h"
-#include "config.h"
 #include "imu.h"
 #include "power.h"
 

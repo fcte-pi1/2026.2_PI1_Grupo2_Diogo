@@ -47,14 +47,12 @@
 #define I_SOBRECORRENTE_TEMPO_MS 500
 
 // Constantes mecânicas
-#define PULSOS_POR_VOLTA 210.0f
-#define DIAMETRO_RODA_CM 3.4f
-#define WHEEL_DIAMETER_MM    34.0f   // Diâmetro da roda com pneu (em mm)
-#define TRACK_WIDTH_MM       100.0f   // Distância entre o centro das duas rodas (em mm)
-#define ENCODER_PPR_RODA     210.0f  // Pulsos totais por rotação completa da roda (com caixa de redução)
+#define PULSOS_POR_VOLTA 210.0f  // Pulsos totais por rotação completa da roda (com caixa de redução)
+#define DIAMETRO_RODA_CM 3.4f    // Diâmetro da roda com pneu
+#define BITOLA_CM        10.0f   // Distância entre o centro das duas rodas
 
 // Constante calculada de pulsos para exatamente 90 graus
-#define PULSOS_90_GRAUS ((TRACK_WIDTH_MM * ENCODER_PPR_RODA) / (4.0f * WHEEL_DIAMETER_MM))
+#define PULSOS_90_GRAUS ((BITOLA_CM * PULSOS_POR_VOLTA) / (4.0f * DIAMETRO_RODA_CM))
 
 // Configurações de Telemetria e Rede
 #define TELEMETRY_INTERVAL_MS   100   // Taxa de 10 Hz (intervalo <= 1s, atende RNF-SW01)
