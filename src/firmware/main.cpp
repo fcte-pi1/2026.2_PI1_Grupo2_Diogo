@@ -15,6 +15,11 @@ const unsigned long INTERVALO_MS = 100;
 
 WebServer server(80); // Servidor HTTP na porta padrão 80
 
+static void girar(bool paraDireita) {
+  girar90Graus(paraDireita);
+  tempoAnterior = millis();
+}
+
 void setup() {
   Serial.begin(115200);
   Wire.begin(21, 22);
@@ -31,12 +36,12 @@ void setup() {
   // Configuração dos endpoints de comando via Wi-Fi
   server.on("/direita", []() {
     server.send(200, "text/plain", "Girando 90 graus a DIREITA");
-    girar90Graus(true);
+    girar(true);
   });
 
   server.on("/esquerda", []() {
     server.send(200, "text/plain", "Girando 90 graus a ESQUERDA");
-    girar90Graus(false);
+    girar(false);
   });
 
   server.on("/parar", []() {
@@ -58,8 +63,8 @@ void loop() {
   // Mantém a escuta por cabo USB ativa em paralelo
   if (Serial.available() > 0) {
     char comando = Serial.read();
-    if (comando == 'd' || comando == 'D') girar90Graus(true);
-    if (comando == 'e' || comando == 'E') girar90Graus(false);
+    if (comando == 'd' || comando == 'D') girar(true);
+    if (comando == 'e' || comando == 'E') girar(false);
     if (comando == 's' || comando == 'S') stopMotors();
   }
 

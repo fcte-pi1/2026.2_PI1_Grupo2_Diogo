@@ -3,6 +3,7 @@
 #include "motors.h"
 #include "config.h"
 #include "imu.h"
+#include "power.h"
 
 static volatile long countA = 0;
 static volatile long countB = 0;
@@ -106,8 +107,17 @@ void girar90Graus(bool paraDireita) {
 
     bool concluido = false;
     unsigned long timeout = millis() + 2000; // Timeout de segurança (2 segundos)
+    unsigned long ultimaLeitura = millis();
 
     while (!concluido && millis() < timeout) {
+        // O giro bloqueia o loop principal, então a IMU e a bateria são lidas aqui
+        unsigned long agora = millis();
+        updateIMU((agora - ultimaLeitura) / 1000.0f);
+        ultimaLeitura = agora;
+
+        updatePower();
+        if (bateriaCritica()) break;
+
         // Média dos pulsos absolutos percorridos pelas rodas
         long pulsoEsq = abs(countA);
         long pulsoDir = abs(countB);
@@ -137,7 +147,13 @@ void girar90Graus(bool paraDireita) {
 
     // Trava ativa das rodas para travar a inércia
     stopMotors();
-    delay(100);
+    unsigned long inicioFreio = millis();
+    while (millis() - inicioFreio < 100) { // Continua integrando a IMU enquanto o robô para
+        unsigned long agora = millis();
+        updateIMU((agora - ultimaLeitura) / 1000.0f);
+        ultimaLeitura = agora;
+        delay(5);
+    }
 
     float anguloMedidoIMU = getYawAngle();
     Serial.printf("[GIRO 90] Concluido! Pulsos A: %ld | B: %ld | Angulo IMU: %.2f deg\n", 
