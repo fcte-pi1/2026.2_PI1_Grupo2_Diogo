@@ -12,7 +12,7 @@ static TaskHandle_t telemetryTaskHandle = NULL;
 static unsigned long tempoInicioMissao = 0;
 static uint8_t falhasConsecutivas = 0;
 
-static char jsonBuffer[640];
+static char jsonBuffer[1024];
 
 void initTelemetry() {
   tempoInicioMissao = millis();
@@ -185,10 +185,17 @@ size_t serializeTelemetryJSON(char* buffer, size_t bufferSize) {
   doc["tempo_relativo_ms"] = snap.tempo_relativo_ms;
   doc["timestamp_envio_ms"] = snap.timestamp_envio_ms;
 
-  JsonObject bat = doc["bateria"].to<JsonObject>();
-  bat["nivel_pct"] = round(snap.bateria_nivel_pct * 10.0f) / 10.0f;
-  bat["tensao_v"] = round(snap.bateria_tensao_v * 100.0f) / 100.0f;
-  bat["consumo_ma"] = round(snap.bateria_consumo_ma * 10.0f) / 10.0f;
+  // Campos lidos pelo backend em POST /api/telemetry (EspTelemetryInput).
+  // O backend recusa valores negativos: o percentual vai 0 enquanto o INA219
+  // nao tem leitura (-1) e velocidade/rpm vao em modulo.
+  float nivelPct = snap.bateria_nivel_pct < 0.0f ? 0.0f : snap.bateria_nivel_pct;
+  doc["bateria"] = round(nivelPct * 10.0f) / 10.0f;
+  doc["velocidade"] = round(fabsf(snap.velocidade_cm_s) * 10.0f) / 10.0f;
+  doc["rpm_motor"] = (abs(snap.rpm_esq) + abs(snap.rpm_dir)) / 2;
+
+  JsonObject energia = doc["energia"].to<JsonObject>();
+  energia["tensao_v"] = round(snap.bateria_tensao_v * 100.0f) / 100.0f;
+  energia["consumo_ma"] = round(snap.bateria_consumo_ma * 10.0f) / 10.0f;
 
   JsonObject mot = doc["motores"].to<JsonObject>();
   mot["rpm_esq"] = snap.rpm_esq;

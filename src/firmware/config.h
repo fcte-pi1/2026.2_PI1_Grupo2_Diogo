@@ -54,7 +54,7 @@
 #define TELEMETRY_INTERVAL_MS   100   // Taxa de 10 Hz (intervalo <= 1s, atende RNF-SW01)
 #define TELEMETRY_SERVER_HOST   "192.168.4.2" // IP padrão da estação base conectada ao SoftAP do robô
 #define TELEMETRY_SERVER_PORT   8000
-#define TELEMETRY_ENDPOINT      "/api/telemetria"
+#define TELEMETRY_ENDPOINT      "/api/telemetry"
 #define TELEMETRY_TIMEOUT_MS    80    // Timeout de envio HTTP para não sobrecarregar conexão
 #define TELEMETRY_MAX_RETRIES   3     // Tentativas antes de marcar desconectado
 
