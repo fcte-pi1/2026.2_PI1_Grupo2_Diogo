@@ -50,6 +50,7 @@ void loop() {
 
     updatePower();
     if (bateriaCritica()) stopMotors(); // Protege a LiPo contra descarga profunda
+    updateTelemetryBattery(obter_tensao_bateria(), obter_corrente_mA(), obter_bateria_pct());
 
     float gx = 0.0f, gy = 0.0f, gz = 0.0f;
     getGyroRates(gx, gy, gz);

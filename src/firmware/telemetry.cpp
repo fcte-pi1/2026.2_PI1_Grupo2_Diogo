@@ -23,9 +23,9 @@ void initTelemetry() {
   currentTelemetry.tempo_relativo_ms = 0;
   currentTelemetry.timestamp_envio_ms = 0;
 
-  currentTelemetry.bateria_nivel_pct = 100.0f;
-  currentTelemetry.bateria_tensao_v = 7.4f;
-  currentTelemetry.bateria_consumo_ma = 280.0f;
+  currentTelemetry.bateria_nivel_pct = 0.0f;
+  currentTelemetry.bateria_tensao_v = 0.0f;
+  currentTelemetry.bateria_consumo_ma = 0.0f;
 
   currentTelemetry.rps_esq = 0.0f;
   currentTelemetry.rps_dir = 0.0f;
@@ -165,14 +165,11 @@ void updateTelemetryData(
   portEXIT_CRITICAL(&telemetryMux);
 }
 
-void updateTelemetryBattery(float tensao_v, float consumo_ma) {
+void updateTelemetryBattery(float tensao_v, float consumo_ma, float nivel_pct) {
   portENTER_CRITICAL(&telemetryMux);
   currentTelemetry.bateria_tensao_v = tensao_v;
   currentTelemetry.bateria_consumo_ma = consumo_ma;
-
-  // Estimativa percentual para bateria LiPo 2S (corte 6.6V - carga cheia 8.4V)
-  float pct = ((tensao_v - 6.6f) / (8.4f - 6.6f)) * 100.0f;
-  currentTelemetry.bateria_nivel_pct = constrain(pct, 0.0f, 100.0f);
+  currentTelemetry.bateria_nivel_pct = nivel_pct;
   portEXIT_CRITICAL(&telemetryMux);
 }
 
