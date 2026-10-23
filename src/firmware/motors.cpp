@@ -1,144 +1,102 @@
-#include <Arduino.h>
-#include "config.h"
 #include "motors.h"
 #include "config.h"
-#include "imu.h"
+#include <esp_arduino_version.h>
 
-static volatile long countA = 0;
-static volatile long countB = 0;
+static bool pwmConfigurado = false;
 
-static void IRAM_ATTR isrA() {
-  if (digitalRead(ENC_A_C2) == HIGH) countA++;
-  else countA--;
+#if ESP_ARDUINO_VERSION_MAJOR < 3
+constexpr uint8_t CANAL_ESQ = 0;
+constexpr uint8_t CANAL_DIR = 1;
+#endif
+
+static void pwmEsq(uint8_t duty) {
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+    ledcWrite(PIN_PWMA, duty);
+#else
+    ledcWrite(CANAL_ESQ, duty);
+#endif
 }
 
-static void IRAM_ATTR isrB() {
-  if (digitalRead(ENC_B_C2) == HIGH) countB++;
-  else countB--;
+static void pwmDir(uint8_t duty) {
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+    ledcWrite(PIN_PWMB, duty);
+#else
+    ledcWrite(CANAL_DIR, duty);
+#endif
 }
 
-void initMotors() {
-  pinMode(PIN_STBY, OUTPUT);
-  pinMode(PIN_AIN1, OUTPUT);
-  pinMode(PIN_AIN2, OUTPUT);
-  pinMode(PIN_BIN1, OUTPUT);
-  pinMode(PIN_BIN2, OUTPUT);
-
-  ledcAttach(PIN_PWMA, 10000, 8);
-  ledcAttach(PIN_PWMB, 10000, 8);
-  digitalWrite(PIN_STBY, HIGH);
-
-  pinMode(ENC_A_C1, INPUT_PULLUP);
-  pinMode(ENC_A_C2, INPUT_PULLUP);
-  pinMode(ENC_B_C1, INPUT_PULLUP);
-  pinMode(ENC_B_C2, INPUT_PULLUP);
-
-  attachInterrupt(digitalPinToInterrupt(ENC_A_C1), isrA, RISING);
-  attachInterrupt(digitalPinToInterrupt(ENC_B_C1), isrB, RISING);
-}
-
-void stopMotors() {
-  ledcWrite(PIN_PWMA, 0);
-  ledcWrite(PIN_PWMB, 0);
-}
-
-void setMotorSpeed(int pwmA, int pwmB) {
-  // Motor A
-  if (pwmA >= 0) {
-    digitalWrite(PIN_AIN1, HIGH);
-    digitalWrite(PIN_AIN2, LOW);
-  } else {
+void setupMotors() {
+    // Desabilita o driver durante a configuração.
+    pinMode(PIN_STBY, OUTPUT);
+    digitalWrite(PIN_STBY, LOW);
+    pinMode(PIN_AIN1, OUTPUT);
+    pinMode(PIN_AIN2, OUTPUT);
+    pinMode(PIN_BIN1, OUTPUT);
+    pinMode(PIN_BIN2, OUTPUT);
     digitalWrite(PIN_AIN1, LOW);
-    digitalWrite(PIN_AIN2, HIGH);
-  }
-  ledcWrite(PIN_PWMA, constrain(abs(pwmA), 0, 255));
-
-  // Motor B
-  if (pwmB >= 0) {
-    digitalWrite(PIN_BIN1, HIGH);
-    digitalWrite(PIN_BIN2, LOW);
-  } else {
+    digitalWrite(PIN_AIN2, LOW);
     digitalWrite(PIN_BIN1, LOW);
-    digitalWrite(PIN_BIN2, HIGH);
-  }
-  ledcWrite(PIN_PWMB, constrain(abs(pwmB), 0, 255));
-}
-
-void setTurnEffort(int esforco) {
-  esforco = constrain(esforco, -255, 255);
-  int pwm = abs(esforco);
-  if (pwm > 0 && pwm < 45) pwm = 45; // Vence atrito estático
-
-  if (esforco > 0) {
-    // Giro anti-horário (A recua, B avança)
-    setMotorSpeed(-pwm, pwm);
-  } else if (esforco < 0) {
-    // Giro horário (A avança, B recua)
-    setMotorSpeed(pwm, -pwm);
-  } else {
-    stopMotors();
-  }
-}
-
-void getEncoderSpeeds(float dt, float &rpsA, float &rpsB) {
-  if (dt <= 0.0f) return;
-  noInterrupts();
-  long pA = countA;
-  long pB = countB;
-  countA = 0;
-  countB = 0;
-  interrupts();
-
-  rpsA = (pA / PULSOS_POR_VOLTA) / dt;
-  rpsB = (pB / PULSOS_POR_VOLTA) / dt;
-}
-
-void girar90Graus(bool paraDireita) {
-    // 1. Zera acumuladores de pulsos existentes no ficheiro
-    countA = 0;
-    countB = 0;
-
-    const float targetTicks = PULSOS_90_GRAUS;
-    const int pwmBase = 90;      // Potência suficiente para vencer o atrito estático
-    const int pwmMin = 45;       // Limite inferior para não travar o motor
-    const float kP = 0.4f;       // Ganho proporcional para desaceleração suave
-
-    bool concluido = false;
-    unsigned long timeout = millis() + 2000; // Timeout de segurança (2 segundos)
-
-    while (!concluido && millis() < timeout) {
-        // Média dos pulsos absolutos percorridos pelas rodas
-        long pulsoEsq = abs(countA);
-        long pulsoDir = abs(countB);
-        float mediaPulsos = (pulsoEsq + pulsoDir) / 2.0f;
-
-        float erro = targetTicks - mediaPulsos;
-
-        if (erro <= 2.0f) { // Tolerância de paragem (2 pulsos)
-            concluido = true;
-            break;
-        }
-
-        // Calcula velocidade decrescente suave
-        int esforco = (int)(erro * kP);
-        if (esforco > pwmBase) esforco = pwmBase;
-        if (esforco < pwmMin)  esforco = pwmMin;
-
-        // Sentido de rotação no próprio eixo:
-        if (paraDireita) {
-            setMotorSpeed(esforco, -esforco);
-        } else {
-            setMotorSpeed(-esforco, esforco);
-        }
-
-        delay(5); // Ciclo de amostragem (200 Hz)
+    digitalWrite(PIN_BIN2, LOW);
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+    bool okE = ledcAttach(PIN_PWMA, PWM_FREQUENCIA_HZ, PWM_RESOLUCAO_BITS);
+    bool okD = ledcAttach(PIN_PWMB, PWM_FREQUENCIA_HZ, PWM_RESOLUCAO_BITS);
+    pwmConfigurado = okE && okD;
+    if (!pwmConfigurado) {
+        Serial.println("ERRO: falha ao configurar PWM LEDC.");
     }
+#else
+    double freqE = ledcSetup(CANAL_ESQ, PWM_FREQUENCIA_HZ, PWM_RESOLUCAO_BITS);
+    double freqD = ledcSetup(CANAL_DIR, PWM_FREQUENCIA_HZ, PWM_RESOLUCAO_BITS);
+    pwmConfigurado = freqE > 0 && freqD > 0;
+    ledcAttachPin(PIN_PWMA, CANAL_ESQ);
+    ledcAttachPin(PIN_PWMB, CANAL_DIR);
+#endif
+    pwmEsq(0);
+    pwmDir(0);
+    digitalWrite(PIN_STBY, pwmConfigurado ? HIGH : LOW);
+    pararMotores();
+}
 
-    // Trava ativa das rodas para travar a inércia
-    stopMotors();
-    delay(100);
+bool motorHardwareReady() { return pwmConfigurado; }
 
-    float anguloMedidoIMU = getYawAngle();
-    Serial.printf("[GIRO 90] Concluido! Pulsos A: %ld | B: %ld | Angulo IMU: %.2f deg\n", 
-                  countA, countB, anguloMedidoIMU);
+void setMotorEsq(int pwm, bool frente) {
+    pwm = constrain(pwm, 0, 255);
+    pwmEsq(0);
+    digitalWrite(PIN_AIN1, (pwm && !frente) ? HIGH : LOW);
+    digitalWrite(PIN_AIN2, (pwm && frente) ? HIGH : LOW);
+    pwmEsq(static_cast<uint8_t>(pwm));
+}
+
+void setMotorDir(int pwm, bool frente) {
+    pwm = constrain(pwm, 0, 255);
+    pwmDir(0);
+    digitalWrite(PIN_BIN1, (pwm && frente) ? HIGH : LOW);
+    digitalWrite(PIN_BIN2, (pwm && !frente) ? HIGH : LOW);
+    pwmDir(static_cast<uint8_t>(pwm));
+}
+
+void pararMotores() {
+    pwmEsq(0);
+    pwmDir(0);
+    digitalWrite(PIN_AIN1, LOW);
+    digitalWrite(PIN_AIN2, LOW);
+    digitalWrite(PIN_BIN1, LOW);
+    digitalWrite(PIN_BIN2, LOW);
+}
+
+void frearMotorEsq() {
+    digitalWrite(PIN_AIN1, HIGH);
+    digitalWrite(PIN_AIN2, HIGH);
+    pwmEsq(255);
+}
+
+void frearMotorDir() {
+    digitalWrite(PIN_BIN1, HIGH);
+    digitalWrite(PIN_BIN2, HIGH);
+    pwmDir(255);
+}
+
+void frearMotoresTudo() {
+    frearMotorEsq();
+    frearMotorDir();
 }

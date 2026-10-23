@@ -1,55 +1,47 @@
 #include <Arduino.h>
 #include <Wire.h>
-#include <WebServer.h> // Adicionado para controlo via rede
+#include <WebServer.h>
 #include "config.h"
 #include "motors.h"
-#include "imu.h"
-#include "lasers.h"
+#include "encoders.h"
+#include "battery.h"
 #include "ota_manager.h"
+#include "web_telemetry.h"
 
-WebServer server(80); // Servidor HTTP na porta padrão 80
+WebServer server(80);
 
 void setup() {
     Serial.begin(115200);
-    delay(1000);
-
-    Wire.begin();
+    delay(300);
+    Serial.println("\n=== MICROMOUSE | BANCADA DE CALIBRACAO ===");
+    setupMotors(); // mantém motores parados desde a inicialização
+    if (!motorHardwareReady()) {
+        Serial.println("FALHA FATAL NO PWM. Desabilitando drivers.");
+        while (true) { delay(1000); }
+    }
+    Wire.begin(PIN_SDA, PIN_SCL);
     Wire.setClock(400000);
-
-    initMotors();
-    initIMU();
-    initLasers();
-    initOTA(); // Cria o AP Xaropinho-WiFi no IP 192.168.4.1
-
-    // Configuração dos endpoints de comando via Wi-Fi
-    server.on("/direita", []() {
-        server.send(200, "text/plain", "Girando 90 graus a DIREITA");
-        girar90Graus(true);
-    });
-
-    server.on("/esquerda", []() {
-        server.send(200, "text/plain", "Girando 90 graus a ESQUERDA");
-        girar90Graus(false);
-    });
-
-    server.on("/parar", []() {
-        stopMotors();
-        server.send(200, "text/plain", "Motores parados");
-    });
-
+    initBattery();
+    bool ok = iniciarEncoders();
+    if (!ok) {
+        Serial.println("FALHA FATAL NO PCNT. Reinicie após conferir os pinos.");
+        while (true) { frearMotoresTudo(); delay(1000); }
+    }
+    initOTA();
+    setupTelemetry(); // TODAS as rotas antes do begin()
     server.begin();
-    Serial.println("[HTTP] Servidor Web ativo em http://192.168.4.1");
+    Serial.println("Painel: http://192.168.4.1/");
+    Serial.println("Serial: digite 's' para frear imediatamente.");
 }
 
 void loop() {
+    atualizarEncoders();
+    updateBattery();
+    loopTelemetry();   // deadlines de PWM e watchdog não bloqueantes
+    server.handleClient();
     handleOTA();
-    server.handleClient(); // Processa pedidos recebidos por Wi-Fi
-
-    // Mantém a escuta por cabo USB ativa em paralelo
-    if (Serial.available() > 0) {
-        char comando = Serial.read();
-        if (comando == 'd' || comando == 'D') girar90Graus(true);
-        if (comando == 'e' || comando == 'E') girar90Graus(false);
-        if (comando == 's' || comando == 'S') stopMotors();
+    while (Serial.available()) {
+        char c = static_cast<char>(Serial.read());
+        if (c == 's' || c == 'S') pararTesteDeEmergencia("parado_por_usb");
     }
 }

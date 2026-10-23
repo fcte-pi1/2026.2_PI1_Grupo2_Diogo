@@ -1,35 +1,45 @@
+#include "ota_manager.h"
+#include "config.h"
+#include "motors.h"
 #include <Arduino.h>
 #include <WiFi.h>
 #include <ArduinoOTA.h>
-#include "ota_manager.h"
-#include "motors.h"
+#include <cstring>
 
-static const char* ap_ssid = "Xaropinho-WiFi";
-static const char* ap_password = "pi12pi34";
+static bool otaAtivo = false;
 
 void initOTA() {
-  WiFi.mode(WIFI_AP);
-  WiFi.softAP(ap_ssid, ap_password);
+    WiFi.mode(WIFI_AP);
+    WiFi.softAPConfig(IPAddress(192,168,4,1),
+                      IPAddress(192,168,4,1),
+                      IPAddress(255,255,255,0));
+    if (!WiFi.softAP(WIFI_SSID, WIFI_PASSWORD)) {
+        Serial.println("ERRO: nao foi possivel iniciar AP Wi-Fi.");
+        return;
+    }
+    Serial.printf("AP %s, IP %s\n", WIFI_SSID,
+                  WiFi.softAPIP().toString().c_str());
 
-  Serial.println("\n[OTA] Access Point Criado!");
-  Serial.printf("[OTA] Conecte no Wi-Fi: %s\n", ap_ssid);
-  Serial.print("[OTA] IP da placa: ");
-  Serial.println(WiFi.softAPIP()); // Sempre 192.168.4.1
-
-  ArduinoOTA.setHostname("xaropinho-esp32");
-
-  ArduinoOTA.onStart([]() {
-    stopMotors(); // Segurança fundamental: trava motores durante o flash
-    Serial.println("[OTA] Gravando novo firmware via Wi-Fi...");
-  });
-
-  ArduinoOTA.onEnd([]() {
-    Serial.println("\n[OTA] Gravacao concluida!");
-  });
-
-  ArduinoOTA.begin();
+    if (strcmp(OTA_PASSWORD, "DEFINA_SENHA_OTA_AQUI") == 0 ||
+        strlen(OTA_PASSWORD) < 12) {
+        Serial.println("OTA DESABILITADO: defina OTA_PASSWORD (12+ caracteres) em config.h.");
+        return;
+    }
+    ArduinoOTA.setHostname("micromouse-calibracao");
+    ArduinoOTA.setPassword(OTA_PASSWORD);
+    ArduinoOTA.onStart([]() {
+        frearMotoresTudo();
+        Serial.println("OTA: motores frenados. Iniciando atualizacao.");
+    });
+    ArduinoOTA.onEnd([]() { Serial.println("OTA concluido."); });
+    ArduinoOTA.onError([](ota_error_t e) {
+        Serial.printf("Falha no OTA: %u\n", static_cast<unsigned>(e));
+    });
+    ArduinoOTA.begin();
+    otaAtivo = true;
+    Serial.println("OTA habilitado com senha.");
 }
 
 void handleOTA() {
-  ArduinoOTA.handle();
-} 
+    if (otaAtivo) ArduinoOTA.handle();
+}
