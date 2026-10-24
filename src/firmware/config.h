@@ -41,16 +41,28 @@ constexpr uint32_t TESTE_DURACAO_MAX_MS = 10000;
 constexpr uint32_t TESTE_DURACAO_MIN_MS = 250;
 constexpr uint32_t WATCHDOG_WEB_MS = 1200;
 
-// V3: limites CONSERVADORES, apenas para bancada com rodas suspensas.
+// V3.1: limites de bancada; primeiro com rodas suspensas; solo somente em area livre.
 constexpr float RPM_MAX_TESTE = 120.0f;
 constexpr float RPM_MAX_POSICAO = 75.0f;
-constexpr float RPM_ACELERACAO_POR_SEG = 200.0f;
-constexpr float REV_DESACEL_POR_SEG2 = 2.0f;
+constexpr float RPM_ACELERACAO_POR_SEG = 160.0f;
+constexpr float REV_DESACEL_POR_SEG2 = 2.4f;
 constexpr int PWM_LIMITE_CONTROLE = 130;
-constexpr int PWM_MINIMO_TENTATIVA = 35;
+// Na V3 o piso fixo de 35 impedia regular 40 RPM sem carga.
+// V3.1 permite duty abaixo de 35, com ajuda TEMPORARIA de partida.
+constexpr int PWM_MINIMO_CONTROLE = 0;
+constexpr int PWM_AJUDA_PARTIDA = 65;
+constexpr int PWM_AJUDA_PARTIDA_CURTA = 55;
+constexpr int PWM_AJUDA_APROXIMACAO = 43;
+constexpr uint32_t PARTIDA_SEM_PULSOS_MS = 140;
+constexpr uint32_t PARTIDA_AJUDA_ATE_MS = 850;
+constexpr float KP_RPM = 0.40f;                 // parametros experimentais
+constexpr float KI_RPM = 1.25f;                 // PWM/(RPM*s)
+constexpr float FF_PWM_BASE = 8.0f;
+constexpr float FF_PWM_POR_RPM = 0.44f;
+constexpr float LIMITE_INTEGRAL_PWM = 70.0f;
 constexpr int POSICAO_TOLERANCIA_CONTAGENS = 4;
 constexpr int POSICAO_META_MAX_CONTAGENS = 2000;
-constexpr uint32_t CONTROLE_STALL_MS = 900;
+constexpr uint32_t CONTROLE_STALL_MS = 1200;
 constexpr uint32_t FREIO_MEDICAO_FINAL_MS = 1000;
 
 constexpr char WIFI_SSID[] = "Xaropinho-WiFi";

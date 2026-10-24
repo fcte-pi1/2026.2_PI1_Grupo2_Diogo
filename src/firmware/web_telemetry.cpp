@@ -178,6 +178,12 @@ static void handleStatus() {
     json += ",\"progressoE\":" + inteiro64(ctrl.progressoE);
     json += ",\"progressoD\":" + inteiro64(ctrl.progressoD);
     json += ",\"referenciaRpmE\":" + numeroOuNull(ctrl.desejadoE);
+    json += ",\"rampaRpmE\":" + numeroOuNull(ctrl.rampaE);
+    json += ",\"rampaRpmD\":" + numeroOuNull(ctrl.rampaD);
+    json += ",\"ajudaPartidaE\":" + String(ctrl.ajudaPartidaE ? "true" : "false");
+    json += ",\"ajudaPartidaD\":" + String(ctrl.ajudaPartidaD ? "true" : "false");
+    json += ",\"semPulsosMsE\":" + String(ctrl.semPulsosMsE);
+    json += ",\"semPulsosMsD\":" + String(ctrl.semPulsosMsD);
     json += ",\"referenciaRpmD\":" + numeroOuNull(ctrl.desejadoD);
     json += ",\"realControleRpmE\":" + numeroOuNull(ctrl.realE);
     json += ",\"realControleRpmD\":" + numeroOuNull(ctrl.realD);

@@ -12,6 +12,9 @@ struct ControleInfo {
     float limiteRpm = 0;
     float desejadoE = 0, desejadoD = 0;
     float realE = 0, realD = 0;
+    float rampaE = 0, rampaD = 0; // referencia realmente usada no PI
+    bool ajudaPartidaE = false, ajudaPartidaD = false;
+    uint32_t semPulsosMsE = 0, semPulsosMsD = 0;
     int pwmE = 0, pwmD = 0;
     bool finalizouE = false, finalizouD = false;
 };
