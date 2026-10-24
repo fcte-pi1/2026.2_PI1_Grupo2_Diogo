@@ -15,6 +15,11 @@ const unsigned long INTERVALO_MS = 100;
 
 WebServer server(80); // Servidor HTTP na porta padrão 80
 
+// A telemetria só conhece -1 para "sem dado"; o serial mostra o código real
+static int distanciaParaTelemetria(int leitura) {
+  return leitura >= 0 ? leitura : -1;
+}
+
 static void girar(bool paraDireita) {
   girar90Graus(paraDireita);
   tempoAnterior = millis();
@@ -81,8 +86,9 @@ void loop() {
     float rpsA = 0, rpsB = 0;
     getEncoderSpeeds(dt, rpsA, rpsB);
 
-    int dEsq = -1, dFte = -1, dDir = -1;
-    readLasers(dEsq, dFte, dDir);
+    int dEsq = ler_distancia_mm(LASER_ESQ);
+    int dFte = ler_distancia_mm(LASER_FTE);
+    int dDir = ler_distancia_mm(LASER_DIR);
 
     updatePower();
     if (bateriaCritica()) stopMotors(); // Protege a LiPo contra descarga profunda
@@ -95,7 +101,7 @@ void loop() {
     updateTelemetryData(
         rpsA, rpsB,
         getYawAngle(), getYawRate(), gx, gy, gz,
-        dEsq, dFte, dDir
+        distanciaParaTelemetria(dEsq), distanciaParaTelemetria(dFte), distanciaParaTelemetria(dDir)
     );
 
     // Telemetria no Serial para depuração local
