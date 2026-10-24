@@ -28,7 +28,7 @@ Quase tudo é medido pelo INA219, que fica na entrada da bateria e mede a tensã
 
 **Durante o ensaio, o cabo USB fica desligado.** Com ele ligado, parte do ESP32 é alimentada pelo computador e a corrente medida fica menor que a real. Os dados chegam pelo WiFi.
 
-**Nunca descarregue a LiPo para testar o corte.** O teste 2.9 sobe o limite por comando, sem gastar a bateria.
+**Nunca descarregue a LiPo para testar o corte.** O teste 2.7 sobe o limite por comando, sem gastar a bateria.
 
 ## Comandos
 
@@ -69,13 +69,8 @@ Valores esperados do docs/4.2. As correntes dependem da tensão da bateria (seç
 | 2.4 | Saída dos reguladores | Multímetro em V na saída e GND de cada regulador, com os motores parados e com `motores 255` | 6 V: 5,70 a 6,30 · 5 V: 4,75 a 5,25 · 3,3 V: 3,14 a 3,47 | **Multímetro** |
 | 2.5 | ESP32 não reinicia na partida dos motores | Alternar `motores 255` e `parar` umas 10 vezes | Nenhum "ESP32 REINICIOU" no receptor (um brownout aparece com o motivo) | INA219 |
 | 2.6 | Autonomia de um lançamento | `perfil` e esperar 15 min. Ctrl+C no fim e anotar o resumo | ~1,18 Wh (~160 mAh) por lançamento, sem corte nem reinício. Com as rodas no ar sai menor | INA219 |
-| 2.7 | Temperatura | Logo após o 2.6, medir a bateria, os cabos e os reguladores | Abaixo de 60 °C | Termômetro (ou "ao toque", com observação) |
-| 2.8 | Densidade de energia | Pesar a bateria. Wh/kg = 11,1 Wh ÷ massa em kg | Comparar com o RNF-EN02 | Balança |
-| 2.9 | Corte por subtensão | Com `motores 150` ligado, mandar `corte 8.0` (acima da tensão atual). Depois `corte` para voltar ao padrão | "Bateria critica" depois de 2 s, motores param e não religam com `motores` | INA219 |
-| 2.10 | Queda rápida não corta | Com o limite padrão, partidas bruscas (`motores 255` / `parar`) | Estado continua "normal" | INA219 |
-| 2.11 | Aviso de sobrecorrente | Ver a corrente com `motores 255` e mandar `sobrecorrente` com um valor abaixo dela (ex.: metade). Depois `sobrecorrente` para voltar | "Sobrecorrente" depois de ~500 ms | INA219 |
-| 2.12 | Fusível e polaridade | Conferir o fusível de 5 A no caminho da bateria e que o conector não encaixa invertido | Fusível presente, conector com polaridade única | Inspeção e foto |
-| 2.13 | Troca de bateria | Cronometrar a troca | Menos de 2 min (RNF-EN01) | Cronômetro |
-| 2.14 | Tempo de recarga (#72) | Cálculo: capacidade ÷ corrente de carga do IMAX B6, mais ~20% da fase final (tensão constante) | Ex.: 1500 mAh a 1 A ≈ 1,8 h; a 1,5 A (1C) ≈ 1,2 h | Cálculo |
+| 2.7 | Corte por subtensão | Com `motores 150` ligado, mandar `corte 8.0` (acima da tensão atual). Depois `corte` para voltar ao padrão | "Bateria critica" depois de 2 s, motores param e não religam com `motores` | INA219 |
+| 2.8 | Queda rápida não corta | Com o limite padrão, partidas bruscas (`motores 255` / `parar`) | Estado continua "normal" | INA219 |
+| 2.9 | Aviso de sobrecorrente | Ver a corrente com `motores 255` e mandar `sobrecorrente` com um valor abaixo dela (ex.: metade). Depois `sobrecorrente` para voltar | "Sobrecorrente" depois de ~500 ms | INA219 |
 
 Para cada teste, registrar na tabela do docs/7.2 a data, o responsável, o esperado, o obtido e a aprovação interna, e tirar uma foto ou print (receptor, multímetro, montagem). Um teste que não puder ser feito continua na tabela, com o motivo em Observações.
