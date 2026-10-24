@@ -2,6 +2,9 @@
 #include <Arduino.h>
 
 // === PINOS ORIGINAIS DO SEU MICROMOUSE (mantidos) ===
+// CANAL A (PWMA/AIN1/AIN2) = roda fisica DIREITA
+// CANAL B (PWMB/BIN1/BIN2) = roda fisica ESQUERDA
+// ENCODER ESQ (32/33) = roda esquerda; ENCODER DIR (14/13) = roda direita
 #define PIN_STBY 5
 #define PIN_PWMA 15
 #define PIN_AIN1 2
@@ -17,10 +20,12 @@
 #define PIN_SDA 21
 #define PIN_SCL 22
 
-// Ajuste para -1 se um encoder contar ao contrário do desejado.
-// Isso não modifica os fios nem o sentido físico do motor.
+// Pelos testes CSV anteriores, durante a marcha a re no firmware antigo:
+// ENC_ESQ diminuia, ENC_DIR aumentava. Ao inverter ambos os motores,
+// esperamos ambos os encoders POSITIVOS ao andar para FRENTE com o
+// sinal da direita invertido. CONFIRMAR em teste com rodas suspensas.
 #define SINAL_ENCODER_ESQ 1
-#define SINAL_ENCODER_DIR 1
+#define SINAL_ENCODER_DIR -1
 
 // Valores geométricos NOMINAIS: NÃO são calibração concluída.
 constexpr float DIAMETRO_RODA_MM = 34.0f;
