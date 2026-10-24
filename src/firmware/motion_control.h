@@ -2,7 +2,7 @@
 #include <Arduino.h>
 #include <stdint.h>
 
-enum class TipoControle { INATIVO, RPM, POSICAO };
+enum class TipoControle { INATIVO, RPM, POSICAO, GIRO_ENCODER, GIRO_IMU };
 
 struct ControleInfo {
     TipoControle tipo = TipoControle::INATIVO;
@@ -17,6 +17,15 @@ struct ControleInfo {
     uint32_t semPulsosMsE = 0, semPulsosMsD = 0;
     int pwmE = 0, pwmD = 0;
     bool finalizouE = false, finalizouD = false;
+    float syncErroMm = 0, distanciaE = 0, distanciaD = 0;
+    float syncCorrecaoRpm = 0;
+    float syncErroMaxMm = 0;
+    bool pausaSyncE = false, pausaSyncD = false;
+    float alvoYawGraus = 0;
+    float yawNoInicio = 0;
+    float yawMedido = 0;
+    float erroYaw = 0;
+    bool usandoIMU = false;
 };
 
 // Iniciar apenas em repouso. Dados CPR devem estar validados e >0.
@@ -27,3 +36,7 @@ bool iniciarControlePosicao(int32_t alvoE, int32_t alvoD,
 const char* atualizarControleMovimento();
 void desativarControleMovimento();
 ControleInfo lerControleMovimento();
+
+// Giro positivo = direita, negativo = esquerda; angulo fixo +/-90 deg.
+bool iniciarControleGiro(bool direita, bool usaImu, float limiteRpm,
+                         float cprE, float cprD);

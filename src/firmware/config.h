@@ -71,3 +71,24 @@ constexpr char WIFI_PASSWORD[] = "pi12pi34";
 // Por segurança, o OTA ficará DESLIGADO enquanto esta senha não for alterada.
 // Coloque uma senha forte e diferente da senha Wi-Fi para habilitar o OTA.
 constexpr char OTA_PASSWORD[] = "DEFINA_SENHA_OTA_AQUI";
+
+// ===== V4 GIROS COMPARATIVOS =====
+// MPU-6050 com face superior para cima e eixo Z vertical.
+// Se o Yaw manual indicar sinal inverso, ajuste para +1 APOS validar fisicamente.
+constexpr int IMU_SINAL_DIREITA = -1;
+constexpr uint32_t IMU_INTERVALO_US = 5000;  // ~200 Hz
+constexpr uint32_t IMU_MAX_IDADE_MS = 100;
+constexpr int IMU_AMOSTRAS_BIAS = 400;     // ~2 s, com o robo IMOVEL
+constexpr float IMU_RUIDO_MAX_DPS = 1.4f;
+constexpr float IMU_TAXA_PARADO_MAX_DPS = 4.0f;
+constexpr float IMU_TOLERANCIA_ANGULO_GRAUS = 1.5f;
+constexpr float IMU_ACEL_ANGULAR_DESACEL_DPS2 = 270.0f;
+constexpr float GIRO_RPM_PADRAO = 40.0f;
+constexpr float GIRO_RPM_MAX = 60.0f;
+constexpr float GIRO_SYNC_K_RPM_POR_MM = 2.8f;
+constexpr float GIRO_SYNC_CORRECAO_RPM_MAX = 10.0f;
+constexpr float GIRO_SYNC_PAUSA_MM = 3.2f;   // trava a roda adiantada
+constexpr float GIRO_SYNC_RETOMADA_MM = 1.6f;
+constexpr float GIRO_SYNC_FALHA_MM = 13.0f;
+constexpr uint32_t GIRO_SYNC_FALHA_MS = 600;
+constexpr float GIRO_LIMITE_DESLOCAMENTO_REL = 1.28f; // IMU nao pode girar indefinidamente

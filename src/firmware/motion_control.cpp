@@ -2,6 +2,7 @@
 #include "config.h"
 #include "motors.h"
 #include "encoders.h"
+#include "imu.h"
 #include <math.h>
 #include <stdlib.h>
 
@@ -20,6 +21,10 @@ struct EstadoPI {
     bool ajudaAtiva = false;
 };
 EstadoPI estadoE, estadoD;
+int sentidoGiro = 1;  // +1 direita; E frente D tras
+uint32_t syncForaDesde = 0;
+float alvoFisicoMm = 0;
+
 
 float limitar(float x, float minimo, float maximo) {
     return x < minimo ? minimo : (x > maximo ? maximo : x);
@@ -40,6 +45,7 @@ void inicializarBase(float cprE, float cprD) {
     estadoE = EstadoPI{};
     estadoD = EstadoPI{};
     estadoE.ultimoPulsoMs = estadoD.ultimoPulsoMs = anteriorMs;
+    syncForaDesde = 0;
     estadoE.ultimaContagem = d.esq;
     estadoD.ultimaContagem = d.dir;
 }
@@ -137,6 +143,28 @@ bool iniciarControlePosicao(int32_t alvoE, int32_t alvoD,
     return true;
 }
 
+
+bool iniciarControleGiro(bool direita, bool usaImu, float limiteRpm,
+                         float cprE, float cprD) {
+    if (info.tipo != TipoControle::INATIVO || cprE <= 0 || cprD <= 0 ||
+        limiteRpm < 20 || limiteRpm > GIRO_RPM_MAX) return false;
+    if (usaImu && !zerarYawIMU()) return false;
+    inicializarBase(cprE, cprD);
+    sentidoGiro = direita ? +1 : -1;
+    const float distancia = 3.14159265358979323846f * ENTRE_RODAS_MM * 0.25f;
+    alvoFisicoMm = distancia;
+    info.tipo = usaImu ? TipoControle::GIRO_IMU : TipoControle::GIRO_ENCODER;
+    info.usandoIMU = usaImu;
+    info.alvoYawGraus = direita ? 90.0f : -90.0f;
+    // No encoder puro, o IMU NAO interfere: le apenas para o CSV.
+    DadosIMU g = lerIMU();
+    info.yawNoInicio = g.confiavel ? g.yawDireitaGraus : 0;
+    info.alvoE = sentidoGiro * (int32_t)lroundf(distancia * cprE / (3.14159265358979323846f * DIAMETRO_RODA_MM));
+    info.alvoD = -sentidoGiro * (int32_t)lroundf(distancia * cprD / (3.14159265358979323846f * DIAMETRO_RODA_MM));
+    info.limiteRpm = limiteRpm;
+    return true;
+}
+
 const char* atualizarControleMovimento() {
     if (info.tipo == TipoControle::INATIVO) return nullptr;
     uint32_t agora = millis();
@@ -153,13 +181,83 @@ const char* atualizarControleMovimento() {
 
     if (d.esq != estadoE.ultimaContagem) {
         estadoE.ultimoPulsoMs = agora;
-        estadoE.ultimaContagem = d.esq;
+        syncForaDesde = 0;
+    estadoE.ultimaContagem = d.esq;
     }
     if (d.dir != estadoD.ultimaContagem) {
         estadoD.ultimoPulsoMs = agora;
         estadoD.ultimaContagem = d.dir;
     }
 
+    // V4: giro simetrico com duas rodas obrigatoriamente sincronizadas.
+    const bool giroE = info.tipo == TipoControle::GIRO_ENCODER;
+    const bool giroI = info.tipo == TipoControle::GIRO_IMU;
+    const bool girando = giroE || giroI;
+    DadosIMU imu = lerIMU();
+    if (girando) {
+        info.yawMedido = imu.confiavel ? imu.yawDireitaGraus - info.yawNoInicio : NAN;
+        info.erroYaw = imu.confiavel ? info.alvoYawGraus - info.yawMedido : NAN;
+        const float cir = 3.14159265358979323846f * DIAMETRO_RODA_MM;
+        const float viagemE = (float)(sentidoGiro * info.progressoE) * cir / cprE_;
+        const float viagemD = (float)(-sentidoGiro * info.progressoD) * cir / cprD_;
+        info.distanciaE = viagemE;
+        info.distanciaD = viagemD;
+        info.syncErroMm = viagemE - viagemD;
+        info.syncErroMaxMm = fmaxf(info.syncErroMaxMm, fabsf(info.syncErroMm));
+        if (viagemE < -2.0f || viagemD < -2.0f) return "giro_sentido_encoder_incorreto";
+        if (fabsf(info.syncErroMm) > GIRO_SYNC_FALHA_MM) {
+            if (!syncForaDesde) syncForaDesde = agora;
+            if (agora - syncForaDesde > GIRO_SYNC_FALHA_MS) return "dessincronia_limite";
+        } else syncForaDesde = 0;
+
+        float rpmBase = 0;
+        if (giroE) {
+            // Meta encoder = distancia ideal; sincronismo atua DURANTE o movimento.
+            const float faltandoE = alvoFisicoMm - viagemE;
+            const float faltandoD = alvoFisicoMm - viagemD;
+            if (faltandoE <= 0.5f && faltandoD <= 0.5f) return "giro_encoder_concluido";
+            const float rpmEsq = referenciaPosicao((int64_t)lroundf(fmaxf(0, faltandoE) * cprE_ / cir), cprE_, info.limiteRpm);
+            const float rpmDir = referenciaPosicao((int64_t)lroundf(fmaxf(0, faltandoD) * cprD_ / cir), cprD_, info.limiteRpm);
+            rpmBase = fminf(fabsf(rpmEsq), fabsf(rpmDir));
+        } else {
+            if (!imu.confiavel) return "imu_indisponivel_ou_atrasada";
+            if (viagemE > alvoFisicoMm * GIRO_LIMITE_DESLOCAMENTO_REL ||
+                viagemD > alvoFisicoMm * GIRO_LIMITE_DESLOCAMENTO_REL) return "imu_limite_encoder_excedido";
+            const float progressoYaw = (float)sentidoGiro * info.yawMedido;
+            if (fmaxf(viagemE, viagemD) > 8.0f && progressoYaw < -3.0f)
+                return "imu_sentido_inverso_conferir_montagem";
+            if (progressoYaw > 112.0f) return "imu_angulo_limite_excedido";
+            float falta = 90.0f - progressoYaw;
+            // Freia ao atingir o angulo dentro da tolerancia, sem trocar
+            // de sentido; resultado final e conferido depois do freio.
+            if (falta <= IMU_TOLERANCIA_ANGULO_GRAUS) {
+                if (fabsf(info.syncErroMm) > GIRO_SYNC_PAUSA_MM)
+                    return "imu_alvo_com_dessincronia";
+                return "giro_imu_concluido";
+            }
+            const float ganhoAngular = 6.0f * DIAMETRO_RODA_MM / ENTRE_RODAS_MM; // graus/s por RPM
+            const float taxaMax = sqrtf(2.0f * IMU_ACEL_ANGULAR_DESACEL_DPS2 * fmaxf(falta, 0));
+            rpmBase = limitar(taxaMax / ganhoAngular, 17.0f, info.limiteRpm);
+        }
+        if (rpmBase <= 0) rpmBase = 17.0f;
+        // Distancias NORMALIZADAS pelas CPRs individuais: mesma distancia
+        // fisica percorrida em sentidos opostos => giro no centro do eixo.
+        const float corr = limitar(GIRO_SYNC_K_RPM_POR_MM * info.syncErroMm,
+                                  -GIRO_SYNC_CORRECAO_RPM_MAX, GIRO_SYNC_CORRECAO_RPM_MAX);
+        info.syncCorrecaoRpm = corr;
+        // Histerese evita alternar rapidamente freio/potencia.
+        if (info.pausaSyncE && info.syncErroMm < GIRO_SYNC_RETOMADA_MM) info.pausaSyncE = false;
+        if (info.pausaSyncD && info.syncErroMm > -GIRO_SYNC_RETOMADA_MM) info.pausaSyncD = false;
+        if (info.syncErroMm > GIRO_SYNC_PAUSA_MM) info.pausaSyncE = true;
+        if (info.syncErroMm < -GIRO_SYNC_PAUSA_MM) info.pausaSyncD = true;
+        info.desejadoE = info.pausaSyncE ? 0 : sentidoGiro * fmaxf(16.0f, rpmBase - corr);
+        info.desejadoD = info.pausaSyncD ? 0 : -sentidoGiro * fmaxf(16.0f, rpmBase + corr);
+        // Não deixa o encoder ultrapassar o limite de curso no modo IMU.
+        if (giroI) {
+            if (viagemE > alvoFisicoMm * GIRO_LIMITE_DESLOCAMENTO_REL - 2.0f) info.desejadoE = 0;
+            if (viagemD > alvoFisicoMm * GIRO_LIMITE_DESLOCAMENTO_REL - 2.0f) info.desejadoD = 0;
+        }
+    }
     int64_t restanteE = 0, restanteD = 0;
     if (info.tipo == TipoControle::POSICAO) {
         restanteE = (int64_t)info.alvoE - info.progressoE;
@@ -184,18 +282,23 @@ const char* atualizarControleMovimento() {
             info.desejadoD = copysignf(fabsf(info.desejadoD), (float)info.alvoD);
     }
 
+    // A logica de POSICAO original continua intacta para movimentos normais.
     float passoMax = RPM_ACELERACAO_POR_SEG * dt;
     velocidadeAlvoE = aproximar(velocidadeAlvoE, info.desejadoE, passoMax);
     velocidadeAlvoD = aproximar(velocidadeAlvoD, info.desejadoD, passoMax);
     if (info.tipo == TipoControle::POSICAO && info.finalizouE) velocidadeAlvoE = 0;
     if (info.tipo == TipoControle::POSICAO && info.finalizouD) velocidadeAlvoD = 0;
+    if (girando && info.pausaSyncE) velocidadeAlvoE = 0;
+    if (girando && info.pausaSyncD) velocidadeAlvoD = 0;
 
     info.rampaE = velocidadeAlvoE;
     info.rampaD = velocidadeAlvoD;
     info.pwmE = acionarRoda(velocidadeAlvoE, info.realE, dt, estadoE, true,
-                           info.tipo == TipoControle::POSICAO, restanteE, agora);
+                           info.tipo == TipoControle::POSICAO || girando, restanteE, agora);
     info.pwmD = acionarRoda(velocidadeAlvoD, info.realD, dt, estadoD, false,
-                           info.tipo == TipoControle::POSICAO, restanteD, agora);
+                           info.tipo == TipoControle::POSICAO || girando, restanteD, agora);
+    if (girando && info.pausaSyncE) info.pwmE = 0;
+    if (girando && info.pausaSyncD) info.pwmD = 0;
     info.ajudaPartidaE = estadoE.ajudaAtiva;
     info.ajudaPartidaD = estadoD.ajudaAtiva;
     info.semPulsosMsE = agora - estadoE.ultimoPulsoMs;
