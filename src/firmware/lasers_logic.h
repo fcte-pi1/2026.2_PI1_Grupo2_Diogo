@@ -20,6 +20,17 @@ inline int classificarLeitura(bool erroComunicacao, uint8_t rangeStatus, uint16_
   return distanciaMm;
 }
 
+// Período entre medições no modo contínuo: o orçamento (arredondado para cima
+// em ms) mais uma margem. Não pode ser menor que o orçamento.
+inline uint16_t periodoMedicaoMs(uint32_t orcamentoUs, uint16_t margemMs) {
+  return (uint16_t)((orcamentoUs + 999u) / 1000u + margemMs);
+}
+
+// Quanto tempo sem dado novo até a última leitura deixar de valer
+inline uint32_t validadeLeituraMs(uint16_t periodoMs, uint8_t ciclos) {
+  return (uint32_t)periodoMs * ciclos;
+}
+
 inline bool leituraVencida(uint32_t agoraMs, uint32_t ultimaMs, uint32_t validadeMs) {
   return (agoraMs - ultimaMs) > validadeMs;
 }

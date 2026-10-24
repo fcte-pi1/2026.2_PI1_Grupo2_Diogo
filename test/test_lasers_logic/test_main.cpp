@@ -66,6 +66,21 @@ void test_validade_funciona_no_estouro_do_millis() {
   TEST_ASSERT_TRUE(leituraVencida(ultima + 300u, ultima, 250));
 }
 
+void test_periodo_e_orcamento_mais_margem() {
+  TEST_ASSERT_EQUAL(60, periodoMedicaoMs(50000, 10));
+  TEST_ASSERT_EQUAL(210, periodoMedicaoMs(200000, 10));  // alta precisão
+}
+
+void test_periodo_arredonda_o_orcamento_para_cima() {
+  TEST_ASSERT_EQUAL(44, periodoMedicaoMs(33500, 10));
+  TEST_ASSERT_TRUE(periodoMedicaoMs(33001, 0) * 1000u >= 33001u);
+}
+
+void test_validade_e_multiplo_do_periodo() {
+  TEST_ASSERT_EQUAL(240, validadeLeituraMs(60, 4));
+  TEST_ASSERT_EQUAL(840, validadeLeituraMs(210, 4));
+}
+
 int main(int, char **) {
   UNITY_BEGIN();
   RUN_TEST(test_leitura_valida_devolve_a_distancia);
@@ -79,5 +94,8 @@ int main(int, char **) {
   RUN_TEST(test_leitura_dentro_da_validade_nao_vence);
   RUN_TEST(test_leitura_alem_da_validade_vence);
   RUN_TEST(test_validade_funciona_no_estouro_do_millis);
+  RUN_TEST(test_periodo_e_orcamento_mais_margem);
+  RUN_TEST(test_periodo_arredonda_o_orcamento_para_cima);
+  RUN_TEST(test_validade_e_multiplo_do_periodo);
   return UNITY_END();
 }

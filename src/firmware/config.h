@@ -29,10 +29,21 @@
 #define LASER_DIST_MIN_MM 20
 #define LASER_DIST_MAX_MM 2000
 
-// Medição contínua dos lasers (provisória: ajustar com os testes 3.3/3.4)
-#define LASER_ORCAMENTO_US       50000  // Tempo de cada medição no sensor (long range)
-#define LASER_PERIODO_MEDICAO_MS 60     // Intervalo entre medições; deve ser >= orçamento
-#define LASER_VALIDADE_MS        250    // Sem dado novo por mais que isso = timeout
+// Modo e temporização dos lasers (provisórios: decidir com os testes 3.3/3.4)
+// Perfis da biblioteca Adafruit_VL53L0X e o orçamento (tempo de cada medição) de cada um:
+//   PADRAO         orçamento padrão do chip
+//   LONG_RANGE     33 ms, alcance maior (aqui trocado por LASER_ORCAMENTO_US)
+//   ALTA_VELOC     30 ms, limites de sinal mais rígidos
+//   ALTA_PRECISAO  200 ms, mais exato e bem mais lento
+#define LASER_MODO_PADRAO        0
+#define LASER_MODO_LONG_RANGE    1
+#define LASER_MODO_ALTA_VELOC    2
+#define LASER_MODO_ALTA_PRECISAO 3
+#define LASER_MODO               LASER_MODO_LONG_RANGE
+
+#define LASER_ORCAMENTO_US      50000  // Troca o orçamento do modo; 0 = manter o do próprio modo
+#define LASER_MARGEM_PERIODO_MS 10     // Período entre medições = orçamento + esta margem
+#define LASER_CICLOS_VALIDADE   4      // Dado vence após este número de períodos sem atualização
 
 // Endereço I2C da IMU MPU-6050
 #define ADDR_IMU 0x68
