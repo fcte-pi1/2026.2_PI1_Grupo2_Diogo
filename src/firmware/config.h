@@ -25,6 +25,10 @@
 #define ADDR_LASER_FTE 0x31
 #define ADDR_LASER_DIR 0x32
 
+// Faixa aceita nas leituras dos lasers (provisória: ajustar com os testes 3.3/3.4)
+#define LASER_DIST_MIN_MM 20
+#define LASER_DIST_MAX_MM 2000
+
 // Endereço I2C da IMU MPU-6050
 #define ADDR_IMU 0x68
 

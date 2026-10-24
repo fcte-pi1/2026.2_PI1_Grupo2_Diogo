@@ -41,24 +41,33 @@ void initLasers() {
   digitalWrite(XSHUT_DIR, LOW);
   delay(50);
 
-  // A ordem importa: um por vez, cada um já sai do 0x29 antes do próximo ligar.
   laserEsqAtivo = iniciarLaser(loxEsq, XSHUT_ESQ, ADDR_LASER_ESQ, "U2 (Esq)");
   laserFteAtivo = iniciarLaser(loxFte, XSHUT_FTE, ADDR_LASER_FTE, "U3 (Fte)");
   laserDirAtivo = iniciarLaser(loxDir, XSHUT_DIR, ADDR_LASER_DIR, "U4 (Dir)");
 }
 
-static int extrairDistancia(Adafruit_VL53L0X &sensor, bool ativo) {
-  if (!ativo) return -1;  // nunca inicializou: não toca no I2C
-  VL53L0X_RangingMeasurementData_t m;
-  sensor.rangingTest(&m, false);
-  if (m.RangeStatus == 0 && m.RangeMilliMeter < 2000 && m.RangeMilliMeter > 20) {
-    return m.RangeMilliMeter;
+int ler_distancia_mm(SensorLaser id) {
+  Adafruit_VL53L0X *sensor = nullptr;
+  bool ativo = false;
+  switch (id) {
+    case LASER_ESQ: sensor = &loxEsq; ativo = laserEsqAtivo; break;
+    case LASER_FTE: sensor = &loxFte; ativo = laserFteAtivo; break;
+    case LASER_DIR: sensor = &loxDir; ativo = laserDirAtivo; break;
   }
-  return -1;
+  if (sensor == nullptr || !ativo) return LASER_SEM_LEITURA;  // não toca no I2C
+
+  VL53L0X_RangingMeasurementData_t m = {};
+  VL53L0X_Error status = sensor->rangingTest(&m, false);
+  return classificarLeitura(status != VL53L0X_ERROR_NONE, m.RangeStatus,
+                            m.RangeMilliMeter, LASER_DIST_MIN_MM, LASER_DIST_MAX_MM);
+}
+
+static int paraLegado(int leitura) {
+  return leitura >= 0 ? leitura : -1;
 }
 
 void readLasers(int &distEsq, int &distFte, int &distDir) {
-  distEsq = extrairDistancia(loxEsq, laserEsqAtivo);
-  distFte = extrairDistancia(loxFte, laserFteAtivo);
-  distDir = extrairDistancia(loxDir, laserDirAtivo);
+  distEsq = paraLegado(ler_distancia_mm(LASER_ESQ));
+  distFte = paraLegado(ler_distancia_mm(LASER_FTE));
+  distDir = paraLegado(ler_distancia_mm(LASER_DIR));
 }
