@@ -21,9 +21,9 @@ Quase tudo é medido pelo INA219, que fica na entrada da bateria e mede a tensã
    ```
 3. Conectar o computador na rede WiFi **Xaropinho-Teste** (aberta, sem senha) e rodar:
    ```
-   python3 src/firmware/testes/receptor_energia.py
+   python3 src/firmware/testes/receptor_energia.py 2.3
    ```
-   O receptor mostra a tensão, a corrente, a potência, a carga e a energia a cada segundo. O que for digitado nele vai para o robô como comando. **Ctrl+C** encerra e mostra o resumo. As amostras ficam em `ensaio-*.csv` e o relatório em `relatorio-energia.md`, na pasta onde o script rodou. Se nenhum dado chegar, verifique o firewall (`sudo ufw allow 4210/udp`).
+   O número é o ID do teste no roteiro abaixo. Rode o receptor uma vez para cada teste e encerre com **Ctrl+C** antes de passar ao próximo. Ele mostra a tensão, a corrente, a potência, a carga e a energia a cada segundo, e o que for digitado nele vai para o robô como comando. As amostras ficam em `ensaio-<teste>-*.csv`, na pasta onde o script rodou. No Ctrl+C, o resumo do teste (tensão, correntes, carga, energia, corrente média em cada PWM e os eventos com horário) é acrescentado ao `relatorio-energia.md`, que acaba juntando todos os testes. Se nenhum dado chegar, verifique o firewall (`sudo ufw allow 4210/udp`).
 4. Ao terminar, gravar de novo o firmware do robô: `pio run -e esp32dev -t upload`. Para gravar pelo USB, comente as linhas `espota` do `platformio.ini`.
 
 **Durante o ensaio, o cabo USB fica desligado.** Com ele ligado, parte do ESP32 é alimentada pelo computador e a corrente medida fica menor que a real. Os dados chegam pelo WiFi.
