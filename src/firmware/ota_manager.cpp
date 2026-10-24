@@ -1,6 +1,7 @@
 #include "ota_manager.h"
 #include "config.h"
 #include "motors.h"
+#include "web_telemetry.h"
 #include <Arduino.h>
 #include <WiFi.h>
 #include <ArduinoOTA.h>
@@ -28,8 +29,8 @@ void initOTA() {
     ArduinoOTA.setHostname("micromouse-calibracao");
     ArduinoOTA.setPassword(OTA_PASSWORD);
     ArduinoOTA.onStart([]() {
-        frearMotoresTudo();
-        Serial.println("OTA: motores frenados. Iniciando atualizacao.");
+        pararTesteDeEmergencia("ota_iniciada");
+        Serial.println("OTA: controle cancelado e motores frenados.");
     });
     ArduinoOTA.onEnd([]() { Serial.println("OTA concluido."); });
     ArduinoOTA.onError([](ota_error_t e) {

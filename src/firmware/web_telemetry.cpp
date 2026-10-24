@@ -4,6 +4,8 @@
 #include "encoders.h"
 #include "battery.h"
 #include "config.h"
+#include "motion_control.h"
+#include "brake_monitor.h"
 #include <Arduino.h>
 #include <WebServer.h>
 #include <Preferences.h>
@@ -14,8 +16,10 @@ extern WebServer server;
 static Preferences prefs;
 static bool prefsOk = false;
 
-enum class Modo { PARADO, MANUAL, PWM };
+enum class Modo { PARADO, MANUAL, PWM, RPM, POSICAO };
 static Modo modo = Modo::PARADO;
+static bool modoMotorizado() { return modo == Modo::PWM || modo == Modo::RPM || modo == Modo::POSICAO; }
+static const char* nomeModo() { switch (modo) { case Modo::MANUAL: return "MANUAL"; case Modo::PWM: return "PWM"; case Modo::RPM: return "RPM"; case Modo::POSICAO: return "POSICAO"; default: return "PARADO"; } }
 static String ultimoMotivo = "pronto";
 
 static float cprE = 0, cprD = 0; // não assumir 210 ou 1400!
@@ -96,24 +100,27 @@ static bool floatValido(const String& nome, float& saida) {
     return true;
 }
 
-static void encerrarTestePWM(const char* motivo) {
+static void encerrarTeste(const char* motivo) {
+    bool estavaMotorizado = modoMotorizado();
+    if (estavaMotorizado) {
+        // PRIMEIRO captura contagens; depois manda o TB6612 frear.
+        iniciarMedicaoFreio();
+    }
+    frearMotoresTudo();
     if (modo == Modo::PWM) {
-        // Primeiro manda frear; registra as contagens naquele instante.
-        frearMotoresTudo();
         DadosEncoder d = lerEncoders();
         ultimoTesteDeltaE = d.esq - testeInicioE;
         ultimoTesteDeltaD = d.dir - testeInicioD;
-    } else {
-        frearMotoresTudo();
     }
+    desativarControleMovimento();
     pwmE = pwmD = 0;
     modo = Modo::PARADO;
-    ultimoMotivo = motivo;
-    Serial.printf("PARADA: %s\n", motivo);
+    if (estavaMotorizado || ultimoMotivo == "pronto") ultimoMotivo = motivo;
+    if (estavaMotorizado) Serial.printf("PARADA: %s\n", motivo);
 }
 
 void pararTesteDeEmergencia(const char* motivo) {
-    encerrarTestePWM(motivo);
+    encerrarTeste(motivo);
 }
 
 static void handleStatus() {
@@ -121,13 +128,16 @@ static void handleStatus() {
     uint32_t agora = millis();
     int64_t deltaManualE = (modo == Modo::MANUAL) ? d.esq - manualInicioE : 0;
     int64_t deltaManualD = (modo == Modo::MANUAL) ? d.dir - manualInicioD : 0;
-    uint32_t decorrido = modo == Modo::PWM ? agora - testeInicio : 0;
-    uint32_t restante = modo == Modo::PWM && decorrido < duracaoTeste ? duracaoTeste - decorrido : 0;
+    uint32_t decorrido = modoMotorizado() ? agora - testeInicio : 0;
+    uint32_t restante = modoMotorizado() && decorrido < duracaoTeste ? duracaoTeste - decorrido : 0;
+    ControleInfo ctrl = lerControleMovimento();
+    DadosFreio f = lerMedicaoFreio();
+    const bool emControle = modo == Modo::RPM || modo == Modo::POSICAO;
 
     String json;
-    json.reserve(900);
+    json.reserve(1850);
     json += "{\"ms\":" + String(agora);
-    json += ",\"modo\":\"" + String(modo == Modo::PWM ? "PWM" : (modo == Modo::MANUAL ? "MANUAL" : "PARADO")) + "\"";
+    json += ",\"modo\":\"" + String(nomeModo()) + "\"";
     json += ",\"motivo\":\"" + ultimoMotivo + "\"";
     json += ",\"contE\":" + inteiro64(d.esq);
     json += ",\"contD\":" + inteiro64(d.dir);
@@ -137,8 +147,8 @@ static void handleStatus() {
     json += ",\"cprD\":" + numeroOuNull(cprD);
     json += ",\"rpmE\":" + (cprE > 0 ? numeroOuNull(d.cpsEsq * 60.0f / cprE) : String("null"));
     json += ",\"rpmD\":" + (cprD > 0 ? numeroOuNull(d.cpsDir * 60.0f / cprD) : String("null"));
-    json += ",\"pwmE\":" + String(pwmE);
-    json += ",\"pwmD\":" + String(pwmD);
+    json += ",\"pwmE\":" + String(emControle ? ctrl.pwmE : pwmE);
+    json += ",\"pwmD\":" + String(emControle ? ctrl.pwmD : pwmD);
     json += ",\"frenteE\":" + String(frenteE ? "true" : "false");
     json += ",\"frenteD\":" + String(frenteD ? "true" : "false");
     json += ",\"tensao\":" + numeroOuNull(getVoltage());
@@ -163,6 +173,30 @@ static void handleStatus() {
     json += ",\"restanteMs\":" + String(restante);
     json += ",\"testeDeltaE\":" + inteiro64(ultimoTesteDeltaE);
     json += ",\"testeDeltaD\":" + inteiro64(ultimoTesteDeltaD);
+    json += ",\"alvoE\":" + String(ctrl.alvoE);
+    json += ",\"alvoD\":" + String(ctrl.alvoD);
+    json += ",\"progressoE\":" + inteiro64(ctrl.progressoE);
+    json += ",\"progressoD\":" + inteiro64(ctrl.progressoD);
+    json += ",\"referenciaRpmE\":" + numeroOuNull(ctrl.desejadoE);
+    json += ",\"referenciaRpmD\":" + numeroOuNull(ctrl.desejadoD);
+    json += ",\"realControleRpmE\":" + numeroOuNull(ctrl.realE);
+    json += ",\"realControleRpmD\":" + numeroOuNull(ctrl.realD);
+    json += ",\"controleLimiteRpm\":" + numeroOuNull(ctrl.limiteRpm);
+    json += ",\"chegouE\":" + String(ctrl.finalizouE ? "true" : "false");
+    json += ",\"chegouD\":" + String(ctrl.finalizouD ? "true" : "false");
+    json += ",\"freioValido\":" + String(f.valido ? "true" : "false");
+    json += ",\"freio300Pronto\":" + String(f.tem300 ? "true" : "false");
+    json += ",\"freio1000Pronto\":" + String(f.tem1000 ? "true" : "false");
+    json += ",\"freioInicioE\":" + inteiro64(f.inicialE);
+    json += ",\"freioInicioD\":" + inteiro64(f.inicialD);
+    json += ",\"freio300E\":" + inteiro64(f.em300E);
+    json += ",\"freio300D\":" + inteiro64(f.em300D);
+    json += ",\"freio1000E\":" + inteiro64(f.em1000E);
+    json += ",\"freio1000D\":" + inteiro64(f.em1000D);
+    json += ",\"freioDelta300E\":" + inteiro64(f.tem300 ? f.em300E - f.inicialE : 0);
+    json += ",\"freioDelta300D\":" + inteiro64(f.tem300 ? f.em300D - f.inicialD : 0);
+    json += ",\"freioDelta1000E\":" + inteiro64(f.tem1000 ? f.em1000E - f.inicialE : 0);
+    json += ",\"freioDelta1000D\":" + inteiro64(f.tem1000 ? f.em1000D - f.inicialD : 0);
     json += ",\"meta90E\":" + (cprE > 0 ? numeroOuNull(ENTRE_RODAS_MM * cprE / (4 * DIAMETRO_RODA_MM)) : String("null"));
     json += ",\"meta90D\":" + (cprD > 0 ? numeroOuNull(ENTRE_RODAS_MM * cprD / (4 * DIAMETRO_RODA_MM)) : String("null"));
     json += "}";
@@ -171,7 +205,7 @@ static void handleStatus() {
 }
 
 static void handleManualStart() {
-    if (modo != Modo::PARADO) return respostaErro(409, "Encerre o teste anterior primeiro");
+    if (modo != Modo::PARADO || aguardandoMedicaoFreio()) return respostaErro(409, "Finalize teste e aguarde 1 s apos o freio");
     String lado = server.arg("lado");
     if (!lateralValida(lado)) return respostaErro(400, "Lado invalido");
     pararMotores(); // libera as rodas; sem PWM
@@ -232,17 +266,18 @@ static void handleSalvarCpr() {
         return respostaErro(400, "CPR deve estar entre 1 e 100000 para cada roda");
     }
     if (!prefsOk) return respostaErro(500, "NVS indisponivel: nao foi possivel salvar CPR");
+    if (!prefs.putFloat("cprE", e) || !prefs.putFloat("cprD", d)) {
+        return respostaErro(500, "Falha ao gravar CPR na memoria NVS");
+    }
     cprE = e;
     cprD = d;
-    prefs.putFloat("cprE", cprE);
-    prefs.putFloat("cprD", cprD);
     ultimoMotivo = "cpr_salvo";
     respostaOk("CPR salvo na memoria; RPM e referencia teorica de 90 graus ativados");
 }
 
 static void handlePWMStart() {
     if (!motorHardwareReady()) return respostaErro(503, "Driver PWM nao inicializado");
-    if (modo != Modo::PARADO) return respostaErro(409, "Encerre o teste anterior primeiro");
+    if (modo != Modo::PARADO || aguardandoMedicaoFreio()) return respostaErro(409, "Finalize teste e aguarde 1 s apos o freio");
     String lado = server.arg("lado");
     if (!lateralValida(lado)) return respostaErro(400, "Lado invalido");
     int e = 0, d = 0, duracao = 0;
@@ -277,8 +312,69 @@ static void handlePWMStart() {
 }
 
 static void handleHeartbeat() {
-    if (modo == Modo::PWM) ultimoHeartbeat = millis();
+    if (modoMotorizado()) ultimoHeartbeat = millis();
     respostaOk("heartbeat");
+}
+
+static bool inteiroComSinal(const String& nome, int minimo, int maximo, int& saida) {
+    if (!server.hasArg(nome)) return false;
+    String s = server.arg(nome);
+    if (s.isEmpty()) return false;
+    char* fim = nullptr;
+    long v = strtol(s.c_str(), &fim, 10);
+    if (fim == s.c_str() || *fim != '\0' || v < minimo || v > maximo) return false;
+    saida = static_cast<int>(v);
+    return true;
+}
+
+static bool podeIniciarControle() {
+    return motorHardwareReady() && cprE > 0 && cprD > 0 &&
+           modo == Modo::PARADO && !aguardandoMedicaoFreio();
+}
+
+static void iniciarRelogioMotorizado(int duracao, Modo novoModo) {
+    testeInicio = millis();
+    ultimoHeartbeat = testeInicio;
+    duracaoTeste = static_cast<uint32_t>(duracao);
+    pwmE = pwmD = 0;
+    modo = novoModo;
+}
+
+static void handlePosicaoStart() {
+    if (!podeIniciarControle())
+        return respostaErro(409, "Exige CPR salvo, motores prontos, PARADO e freio concluido");
+    int e, d, duracao;
+    float rpm;
+    if (!inteiroComSinal("alvoE", -POSICAO_META_MAX_CONTAGENS, POSICAO_META_MAX_CONTAGENS, e) ||
+        !inteiroComSinal("alvoD", -POSICAO_META_MAX_CONTAGENS, POSICAO_META_MAX_CONTAGENS, d) ||
+        !inteiroEmFaixa("duracao", 500, TESTE_DURACAO_MAX_MS, duracao) ||
+        !floatValido("rpm", rpm) || rpm < 20 || rpm > RPM_MAX_POSICAO ||
+        (e == 0 && d == 0))
+        return respostaErro(400, "Metas -2000..2000, RPM 20..75, duracao 500..10000");
+    if (!iniciarControlePosicao(e, d, rpm, cprE, cprD))
+        return respostaErro(409, "Controlador nao iniciou");
+    iniciarRelogioMotorizado(duracao, Modo::POSICAO);
+    ultimoMotivo = "controle_posicao_iniciado";
+    respostaOk("Movimento iniciado; rodas SUSPENSAS; acompanhe progresso e erro");
+}
+
+static void handleRpmStart() {
+    if (!podeIniciarControle())
+        return respostaErro(409, "Exige CPR salvo, motores prontos, PARADO e freio concluido");
+    int duracao;
+    float e, d;
+    if (!floatValido("rpmE", e) || !floatValido("rpmD", d) ||
+        fabsf(e) > RPM_MAX_TESTE || fabsf(d) > RPM_MAX_TESTE ||
+        !inteiroEmFaixa("duracao", 500, TESTE_DURACAO_MAX_MS, duracao) ||
+        (fabsf(e) < 10.0f && fabsf(d) < 10.0f) ||
+        (e != 0 && fabsf(e) < 10.0f) ||
+        (d != 0 && fabsf(d) < 10.0f))
+        return respostaErro(400, "RPM por roda entre -120 e 120; duracao 500..10000; pelo menos um motor >= 10 RPM");
+    if (!iniciarControleRpm(e, d, cprE, cprD))
+        return respostaErro(409, "Controlador nao iniciou");
+    iniciarRelogioMotorizado(duracao, Modo::RPM);
+    ultimoMotivo = "controle_rpm_iniciado";
+    respostaOk("Teste RPM iniciado; compare RPM desejado e medido");
 }
 
 void setupTelemetry() {
@@ -297,6 +393,8 @@ void setupTelemetry() {
     server.on("/api/manual/clear", HTTP_POST, handleLimparEstatisticas);
     server.on("/api/cpr", HTTP_POST, handleSalvarCpr);
     server.on("/api/pwm/start", HTTP_POST, handlePWMStart);
+    server.on("/api/pos/start", HTTP_POST, handlePosicaoStart);
+    server.on("/api/rpm/start", HTTP_POST, handleRpmStart);
     server.on("/api/pwm/stop", HTTP_POST, []() {
         pararTesteDeEmergencia("parado_pela_pagina");
         respostaOk("Motores frenados");
@@ -306,11 +404,16 @@ void setupTelemetry() {
 }
 
 void loopTelemetry() {
-    if (modo != Modo::PWM) return;
+    atualizarMedicaoFreio();
+    if (!modoMotorizado()) return;
     uint32_t agora = millis();
+    // Segurança vem antes do cálculo de controle.
     if (agora - ultimoHeartbeat > WATCHDOG_WEB_MS) {
-        encerrarTestePWM("watchdog_conexao_perdida");
+        encerrarTeste("watchdog_conexao_perdida");
     } else if (agora - testeInicio >= duracaoTeste) {
-        encerrarTestePWM("teste_pwm_tempo_concluido");
+        encerrarTeste("limite_de_tempo");
+    } else if (modo == Modo::RPM || modo == Modo::POSICAO) {
+        const char* motivo = atualizarControleMovimento();
+        if (motivo != nullptr) encerrarTeste(motivo);
     }
 }

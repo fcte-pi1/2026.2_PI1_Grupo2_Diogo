@@ -6,7 +6,7 @@ const char PAGINA_HTML[] PROGMEM = R"HTML(
 <!DOCTYPE html>
 <html lang="pt-BR"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Micromouse | Bancada de calibração</title>
+<title>Micromouse V3 | Bancada de calibração</title>
 <style>
 :root{color-scheme:dark;--bg:#101826;--box:#1b2739;--bd:#32435a;--text:#eff5ff;--muted:#9fb1c8;--green:#4ce2a7;--blue:#60b7ff;--red:#ff697d}
 *{box-sizing:border-box}body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,sans-serif;margin:0;padding:22px;line-height:1.5}
@@ -38,12 +38,26 @@ main{max-width:1090px;margin:auto}h1{font-size:clamp(1.35rem,3vw,2.3rem);margin:
 <div class="row"><div class="field"><label>PWM esquerdo</label><input id="pwmTesteE" type="number" min="0" max="180" value="80"></div><div class="field"><label>Sentido esquerdo</label><select id="sentidoE"><option value="frente">Frente</option><option value="tras">Trás</option></select></div><div class="field"><label>PWM direito</label><input id="pwmTesteD" type="number" min="0" max="180" value="80"></div><div class="field"><label>Sentido direito</label><select id="sentidoD"><option value="frente">Frente</option><option value="tras">Trás</option></select></div></div>
 <div class="actions"><button class="green" onclick="pwmIniciar()">▶ Iniciar ensaio</button><button class="danger" onclick="parar()">■ FREAR</button></div>
 <div class="bar"><div id="barra"></div></div><div class="output" id="saidaTeste">Nenhum ensaio PWM executado.</div></section>
-<section class="card"><h2>4. Velocidade em tempo real</h2><small>Verde = roda esquerda; azul = roda direita (CPS). Histórico recente sem bibliotecas externas.</small><canvas id="grafico" width="800" height="235"></canvas><div class="top"><span class="tag" id="batV">Tensão: —</span><span class="tag" id="batI">Corrente: —</span></div></section>
+<section class="card"><h2>4. Controle de velocidade por RPM (V3)</h2>
+<p>Malha PI independente em cada motor. <strong>RPM positivo = frente</strong>; RPM negativo = trás; zero = roda freada. O ajuste é preliminar e serve para rodas suspensas.</p>
+<div class="row"><div class="field"><label for="rpmAlvoE">RPM alvo esquerda (-120 a 120)</label><input id="rpmAlvoE" type="number" min="-120" max="120" value="50" step="5"></div><div class="field"><label for="rpmAlvoD">RPM alvo direita (-120 a 120)</label><input id="rpmAlvoD" type="number" min="-120" max="120" value="50" step="5"></div><div class="field"><label for="tempoRpm">Duração (ms)</label><input id="tempoRpm" type="number" min="500" max="10000" value="2500"></div></div>
+<div class="actions"><button class="green" onclick="iniciarRpm()">▶ Testar RPM</button><button class="secondary" onclick="fixarRpm(40,40)">40 / 40 RPM</button><button class="secondary" onclick="fixarRpm(60,60)">60 / 60 RPM</button><button class="danger" onclick="parar()">■ FREAR</button></div>
+<small>Primeiro teste: 40/0 RPM por 2500 ms; depois 0/40 RPM. Confirme o sentido físico e a contagem positiva antes de testar ambas.</small></section>
+<section class="card"><h2>5. Movimento por contagens de encoder (V3)</h2>
+<p>Metas relativas ao início do teste. Valores positivos = frente; negativos = trás. Cada motor freia individualmente ao atingir sua meta. O controle <strong>não usa a IMU</strong> e ainda não garante um giro de 90°.</p>
+<div class="row"><div class="field"><label for="alvoPosE">Meta esquerda (-2000 a 2000)</label><input id="alvoPosE" type="number" min="-2000" max="2000" step="1" value="100"></div><div class="field"><label for="alvoPosD">Meta direita (-2000 a 2000)</label><input id="alvoPosD" type="number" min="-2000" max="2000" step="1" value="0"></div><div class="field"><label for="velPos">Limite RPM (20 a 75)</label><input id="velPos" type="number" min="20" max="75" value="40"></div><div class="field"><label for="tempoPos">Tempo máximo (ms)</label><input id="tempoPos" type="number" min="500" max="10000" value="5000"></div></div>
+<div class="actions"><button class="secondary" onclick="presetPos(100,0)">E +100</button><button class="secondary" onclick="presetPos(0,100)">D +100</button><button class="secondary" onclick="presetPos(300,300)">Ambas +300</button><button class="secondary" onclick="presetPos(600,-600)">Simular giro ±600</button></div>
+<div class="actions"><button class="green" onclick="iniciarPosicao()">▶ Executar posição</button><button class="danger" onclick="parar()">■ FREAR</button></div>
+<div class="output" id="saidaPosicao">Nenhum ensaio de posição executado.</div>
+<small>Inicie apenas com roda esquerda +100, depois direita +100. A opção ±600 é somente para rodas suspensas e exige que os testes menores estejam aprovados.</small></section>
+<section class="card"><h2>6. Frenagem medida na ESP32 (V3)</h2><p>O contador é registrado imediatamente antes do comando de freio, depois aproximadamente 300 ms e 1000 ms. Espere concluir a medição antes de iniciar outro ensaio.</p><div class="output" id="saidaFreio">Nenhuma frenagem capturada.</div></section>
+<section class="card"><h2>7. Gráficos de referência × medição</h2><small>Linhas verde/azul = medição E/D; linhas tracejadas = referências E/D. A coleta ocorre enquanto esta página está aberta.</small><p>RPM: alvo e velocidade medida</p><canvas id="graficoRPM" width="800" height="235"></canvas><p>Posição: meta relativa e progresso (contagens)</p><canvas id="graficoPosicao" width="800" height="235"></canvas></section>
+<section class="card"><h2>8. Velocidade em tempo real</h2><small>Verde = roda esquerda; azul = roda direita (CPS). Histórico recente sem bibliotecas externas.</small><canvas id="grafico" width="800" height="235"></canvas><div class="top"><span class="tag" id="batV">Tensão: —</span><span class="tag" id="batI">Corrente: —</span></div></section>
 <section class="card"><h2>Orientações de segurança</h2><p>O botão vermelho freia por software. Ele não substitui uma chave física que corte a energia dos motores. Evite movimentos no chão nesta etapa. Não deixe o robô sem supervisão.</p><div class="notice warn">Se a página parar de enviar sinais por mais de 1,2 s durante um teste PWM, os motores serão frenados. Um ensaio também tem duração máxima de 10 s.</div></section>
-<div class="footer">Contagens absolutas de encoder são independentes de CPR. A meta de 90° exibida é apenas geométrica; nenhum comando autônomo de giro está habilitado nesta versão.</div>
+<div class="footer">Contagens absolutas de encoder são independentes de CPR. A meta de 90° é geométrica; testes ±600 são exclusivos de rodas suspensas e não garantem ângulo exato.</div>
 </main><script>
 const $=id=>document.getElementById(id);
-let ultimo=null,travado=false,amostras=[],historico=[];
+let ultimo=null,travado=false,amostras=[],historico=[],historicoRPM=[],historicoPosicao=[];
 let ultimoStatusOk=0,consultaEmCurso=false;
 const limiteHistorico=150;
 function fmt(v,n=1){return v===null||v===undefined||!Number.isFinite(Number(v))?'—':Number(v).toFixed(n)}
@@ -62,6 +76,23 @@ function manualFinalizar(){return post('/api/manual/finish',{voltas:$('voltas').
 function limparMedicoes(){if(confirm("Limpar a média e o histórico da sessão? Isso não apaga o CPR salvo."))post("/api/manual/clear")}
 function salvarCPR(){return post('/api/cpr',{esq:$('cprE').value,dir:$('cprD').value})}
 function pwmIniciar(){if(!confirm('Rodas suspensas, alimentação conferida e chave física acessível?'))return;return post('/api/pwm/start',{lado:$('ladoPwm').value,pwmE:$('pwmTesteE').value,pwmD:$('pwmTesteD').value,duracao:$('tempoPwm').value,sentidoE:$('sentidoE').value,sentidoD:$('sentidoD').value})}
+function fixarRpm(e,d){$('rpmAlvoE').value=e;$('rpmAlvoD').value=d}
+function presetPos(e,d){$('alvoPosE').value=e;$('alvoPosD').value=d}
+function iniciarRpm(){if(!confirm('Teste RPM: rodas SUSPENSAS, mapeamento dos motores validado e chave acessível?'))return;return post('/api/rpm/start',{rpmE:$('rpmAlvoE').value,rpmD:$('rpmAlvoD').value,duracao:$('tempoRpm').value})}
+function iniciarPosicao(){if(!confirm('Teste de POSIÇÃO: as duas rodas estão SUSPENSAS? Confirmou os sinais positivos ao andar para frente?'))return;return post('/api/pos/start',{alvoE:$('alvoPosE').value,alvoD:$('alvoPosD').value,rpm:$('velPos').value,duracao:$('tempoPos').value})}
+function desenharV3(id,lista,keys){
+ const cv=$(id),ctx=cv.getContext('2d'),w=cv.width,h=cv.height;
+ ctx.fillStyle='#101b2b';ctx.fillRect(0,0,w,h);
+ ctx.strokeStyle='#31435b';ctx.lineWidth=1;
+ for(let i=1;i<=4;i++){const y=12+i*(h-28)/5;ctx.beginPath();ctx.moveTo(45,y);ctx.lineTo(w-12,y);ctx.stroke()}
+ if(lista.length<2)return;
+ const max=Math.max(10,...lista.flatMap(a=>keys.map(k=>Math.abs(Number(a[k.key])||0))))*1.15;
+ ctx.font='12px system-ui';ctx.fillStyle='#a4bdd4';ctx.fillText('+'+max.toFixed(0),2,18);ctx.fillText('0',21,h/2);ctx.fillText('-'+max.toFixed(0),2,h-8);
+ keys.forEach(({key,color,dash})=>{
+  ctx.beginPath();ctx.strokeStyle=color;ctx.lineWidth=dash?1.5:2.5;ctx.setLineDash(dash?[7,4]:[]);
+  lista.forEach((a,i)=>{const x=47+i*(w-64)/(limiteHistorico-1),y=h/2-(Number(a[key])||0)/max*(h-30)/2;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)});ctx.stroke();ctx.setLineDash([]);
+ });
+}
 function cprCopiarUltimos(){if(!ultimo)return;if(ultimo.mediaE>0)$('cprE').value=ultimo.mediaE;if(ultimo.mediaD>0)$('cprD').value=ultimo.mediaD}
 function desenhar(){
   let cv=$('grafico'),ctx=cv.getContext('2d'),w=cv.width,h=cv.height;
@@ -89,23 +120,30 @@ async function atualizar(){
   $('batV').textContent='Barramento: '+fmt(d.tensao,2)+' V';$('batI').textContent='INA219: '+fmt(d.corrente,1)+' mA';
   $('saidaManual').textContent=(d.modo==='MANUAL'?'MEDINDO AGORA\n':'ÚLTIMA MEDIÇÃO\n')+'Δ contagens esq: '+(d.modo==='MANUAL'?d.manualDeltaE:d.manualUltDeltaE)+'\nΔ contagens dir: '+(d.modo==='MANUAL'?d.manualDeltaD:d.manualUltDeltaD)+'\nVoltas declaradas: '+d.ultimaQuantidadeVoltas+'\nCPR esq medido: '+fmt(d.ultimaMedidaE,4)+'\nCPR dir medido: '+fmt(d.ultimaMedidaD,4)+'\n\nMédia ESQ ('+d.nE+' medições): '+fmt(d.mediaE,4)+' ± '+fmt(d.desvioE,4)+'\nMédia DIR ('+d.nD+' medições): '+fmt(d.mediaD,4)+' ± '+fmt(d.desvioD,4);
   $('referencia').textContent='CPR salvo: E='+fmt(d.cprE,4)+'; D='+fmt(d.cprD,4)+'\nMeta TEÓRICA por roda no giro de 90°: E='+fmt(d.meta90E,2)+'; D='+fmt(d.meta90D,2)+' contagens';
+  $('saidaPosicao').textContent='Progresso E: '+d.progressoE+' / '+d.alvoE+' contagens\nProgresso D: '+d.progressoD+' / '+d.alvoD+' contagens\nErro final/atual E: '+(Number(d.alvoE)-Number(d.progressoE))+' contagens\nErro final/atual D: '+(Number(d.alvoD)-Number(d.progressoD))+' contagens\nRPM solicitada E: '+fmt(d.referenciaRpmE)+'; medida E: '+fmt(d.rpmE)+'\nRPM solicitada D: '+fmt(d.referenciaRpmD)+'; medida D: '+fmt(d.rpmD)+'\nRoda E concluiu: '+d.chegouE+' | Roda D concluiu: '+d.chegouD;
+  $('saidaFreio').textContent=d.freioValido ? 'Contagem no comando: E='+d.freioInicioE+' D='+d.freioInicioD+'\n300 ms: '+(d.freio300Pronto?'E='+d.freio300E+' D='+d.freio300D+' | ΔE='+d.freioDelta300E+' ΔD='+d.freioDelta300D:'ainda não disponível')+'\n1000 ms: '+(d.freio1000Pronto?'E='+d.freio1000E+' D='+d.freio1000D+' | ΔE='+d.freioDelta1000E+' ΔD='+d.freioDelta1000D:'aguardando') : 'Nenhum freio registrado ainda';
   $('saidaTeste').textContent='Estado: '+d.modo+'\nMotivo da última parada: '+d.motivo+'\nTempo restante: '+d.restanteMs+' ms\nΔ último ensaio E: '+d.testeDeltaE+'\nΔ último ensaio D: '+d.testeDeltaD;
-  $('barra').style.width=d.modo==='PWM'&&d.duracaoMs>0?(100*d.decorridoMs/d.duracaoMs).toFixed(1)+'%':'0%';
+  $('barra').style.width=['PWM','RPM','POSICAO'].includes(d.modo)&&d.duracaoMs>0?(100*d.decorridoMs/d.duracaoMs).toFixed(1)+'%':'0%';
   if(!$('cprE').dataset.iniciado){if(d.cprE>0)$('cprE').value=d.cprE;if(d.cprD>0)$('cprD').value=d.cprD;$('cprE').dataset.iniciado='1'}
   historico.push({e:Number(d.cpsE)||0,d:Number(d.cpsD)||0});if(historico.length>limiteHistorico)historico.shift();desenhar();
+  historicoRPM.push({e:Number(d.rpmE)||0,d:Number(d.rpmD)||0,te:['RPM','POSICAO'].includes(d.modo)?Number(d.referenciaRpmE)||0:0,td:['RPM','POSICAO'].includes(d.modo)?Number(d.referenciaRpmD)||0:0});
+  historicoPosicao.push({e:Number(d.progressoE)||0,d:Number(d.progressoD)||0,te:Number(d.alvoE)||0,td:Number(d.alvoD)||0});
+  if(historicoRPM.length>limiteHistorico)historicoRPM.shift();if(historicoPosicao.length>limiteHistorico)historicoPosicao.shift();
+  desenharV3('graficoRPM',historicoRPM,[{key:'e',color:'#4ce2a7'},{key:'d',color:'#60b7ff'},{key:'te',color:'#4ce2a7',dash:true},{key:'td',color:'#60b7ff',dash:true}]);
+  desenharV3('graficoPosicao',historicoPosicao,[{key:'e',color:'#4ce2a7'},{key:'d',color:'#60b7ff'},{key:'te',color:'#4ce2a7',dash:true},{key:'td',color:'#60b7ff',dash:true}]);
   amostras.push({hora:new Date().toISOString(),...d});if(amostras.length>3000)amostras.shift();
  }catch(e){if(Date.now()-ultimoStatusOk>800){$('online').textContent='Sem conexão';$('online').className='tag bad'}}
  finally{consultaEmCurso=false}
 }
 function baixarCSV(){
  if(!amostras.length){msg('Ainda sem dados para exportar',true);return}
- const chaves=['hora','ms','modo','contE','contD','cpsE','cpsD','rpmE','rpmD','pwmE','pwmD','tensao','corrente','motivo'];
+ const chaves=['hora','ms','modo','contE','contD','cpsE','cpsD','rpmE','rpmD','pwmE','pwmD','alvoE','alvoD','progressoE','progressoD','referenciaRpmE','referenciaRpmD','realControleRpmE','realControleRpmD','freioValido','freio300Pronto','freio1000Pronto','freioDelta300E','freioDelta300D','freioDelta1000E','freioDelta1000D','tensao','corrente','motivo'];
  const linhas=[chaves.join(';'),...amostras.map(a=>chaves.map(k=>String(a[k]??'').replaceAll(';',',')).join(';'))];
  const blob=new Blob(['\ufeff'+linhas.join('\r\n')],{type:'text/csv;charset=utf-8'});
  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='micromouse_telemetria_'+Date.now()+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 setInterval(atualizar,200);
-setInterval(async()=>{if(ultimo&&ultimo.modo==='PWM'){try{await fetch('/api/heartbeat',{method:'POST',cache:'no-store'})}catch(e){}}},350);
+setInterval(async()=>{if(ultimo&&['PWM','RPM','POSICAO'].includes(ultimo.modo)){try{await fetch('/api/heartbeat',{method:'POST',cache:'no-store'})}catch(e){}}},350);
 window.addEventListener('keydown',e=>{if(e.key==='Escape')parar()});
 atualizar();
 </script></body></html>
