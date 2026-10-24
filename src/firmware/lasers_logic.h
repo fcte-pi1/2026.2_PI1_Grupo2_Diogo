@@ -2,14 +2,12 @@
 
 #include <stdint.h>
 
-// Códigos negativos devolvidos no lugar da distância (mm >= 0 é leitura válida)
-static const int LASER_SEM_LEITURA = -1;  // Sensor inativo ou leitura sem qualidade
-static const int LASER_FORA_ESCALA = -2;  // Sem alvo ao alcance ou além do limite
-static const int LASER_TIMEOUT = -3;  // Falha de comunicação/tempo esgotado no I2C
+static const int LASER_SEM_LEITURA = -1;
+static const int LASER_FORA_ESCALA = -2;
+static const int LASER_TIMEOUT = -3;
 
-// Valores do RangeStatus da biblioteca
 static const uint8_t LASER_STATUS_VALIDO = 0;
-static const uint8_t LASER_STATUS_FASE = 4;  // Phase Fail: sem alvo ao alcance
+static const uint8_t LASER_STATUS_FASE = 4;
 
 inline int classificarLeitura(bool erroComunicacao, uint8_t rangeStatus, uint16_t distanciaMm, int minMm, int maxMm) {
   if (erroComunicacao) return LASER_TIMEOUT;
@@ -20,13 +18,10 @@ inline int classificarLeitura(bool erroComunicacao, uint8_t rangeStatus, uint16_
   return distanciaMm;
 }
 
-// Período entre medições no modo contínuo: o orçamento (arredondado para cima
-// em ms) mais uma margem. Não pode ser menor que o orçamento.
 inline uint16_t periodoMedicaoMs(uint32_t orcamentoUs, uint16_t margemMs) {
   return (uint16_t)((orcamentoUs + 999u) / 1000u + margemMs);
 }
 
-// Quanto tempo sem dado novo até a última leitura deixar de valer
 inline uint32_t validadeLeituraMs(uint16_t periodoMs, uint8_t ciclos) {
   return (uint32_t)periodoMs * ciclos;
 }

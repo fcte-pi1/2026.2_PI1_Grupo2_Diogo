@@ -37,7 +37,6 @@ void test_demais_status_sao_sem_leitura() {
 }
 
 void test_erro_de_comunicacao_tem_prioridade() {
-  // Mesmo com status 0 e uma distância plausível, o dado não vale nada
   TEST_ASSERT_EQUAL(LASER_TIMEOUT, classificarLeitura(true, LASER_STATUS_VALIDO, 150, MIN_MM, MAX_MM));
   TEST_ASSERT_EQUAL(LASER_TIMEOUT, classificarLeitura(true, LASER_STATUS_FASE, 8190, MIN_MM, MAX_MM));
 }
@@ -62,7 +61,7 @@ void test_leitura_alem_da_validade_vence() {
 
 void test_validade_funciona_no_estouro_do_millis() {
   const uint32_t ultima = 0xFFFFFFF0u;  // 16 ms antes do estouro
-  TEST_ASSERT_FALSE(leituraVencida(ultima + 200u, ultima, 250));  // agora já passou de 0
+  TEST_ASSERT_FALSE(leituraVencida(ultima + 200u, ultima, 250));
   TEST_ASSERT_TRUE(leituraVencida(ultima + 300u, ultima, 250));
 }
 
