@@ -4,62 +4,81 @@
 #include "lasers.h"
 #include "config.h"
 
-static Adafruit_VL53L0X loxEsq = Adafruit_VL53L0X();
-static Adafruit_VL53L0X loxFte = Adafruit_VL53L0X();
-static Adafruit_VL53L0X loxDir = Adafruit_VL53L0X();
+// Estado de cada sensor, indexado por SensorLaser
+struct Laser {
+  Adafruit_VL53L0X sensor;
+  bool ativo = false;                      // begin() e início da medição deram certo
+  int ultimaLeitura = LASER_SEM_LEITURA;   // última classificação (mm ou código)
+  uint32_t ultimaAtualizacaoMs = 0;        // quando chegou o último dado novo
+};
 
-static bool laserEsqAtivo = false;
-static bool laserFteAtivo = false;
-static bool laserDirAtivo = false;
+static Laser lasers[3];
+
+static const uint8_t PINOS_XSHUT[3]  = {XSHUT_ESQ, XSHUT_FTE, XSHUT_DIR};
+static const uint8_t ENDERECOS[3]    = {ADDR_LASER_ESQ, ADDR_LASER_FTE, ADDR_LASER_DIR};
+static const char *const NOMES[3]    = {"U2 (Esq)", "U3 (Fte)", "U4 (Dir)"};
 
 static void configLongRange(Adafruit_VL53L0X &sensor) {
   sensor.configSensor(Adafruit_VL53L0X::VL53L0X_SENSE_LONG_RANGE);
-  sensor.setMeasurementTimingBudgetMicroSeconds(50000);
+  sensor.setMeasurementTimingBudgetMicroSeconds(LASER_ORCAMENTO_US);
 }
 
-static bool iniciarLaser(Adafruit_VL53L0X &sensor, uint8_t pinoXshut,
-                         uint8_t endereco, const char *nome) {
-  digitalWrite(pinoXshut, HIGH);
+// true se o sensor respondeu no endereço novo e começou a medir sozinho.
+// Sensor que falha volta para XSHUT LOW: senão ele fica ligado no 0x29 de
+// fábrica e colide com o próximo sensor liberado.
+static bool iniciarLaser(SensorLaser id) {
+  Laser &l = lasers[id];
+
+  digitalWrite(PINOS_XSHUT[id], HIGH);
   delay(15);
-  if (sensor.begin(endereco)) {
-    configLongRange(sensor);
-    Serial.printf("[LASER] %s inicializado em 0x%02X\n", nome, endereco);
-    return true;
+  if (l.sensor.begin(ENDERECOS[id])) {
+    // Ordem importa: o modo e o orçamento são configurados antes de medir
+    configLongRange(l.sensor);
+    if (l.sensor.startRangeContinuous(LASER_PERIODO_MEDICAO_MS)) {
+      Serial.printf("[LASER] %s inicializado em 0x%02X (medição contínua)\n",
+                    NOMES[id], ENDERECOS[id]);
+      return true;
+    }
   }
-  digitalWrite(pinoXshut, LOW);
-  Serial.printf("[LASER] %s FALHOU (begin em 0x%02X); XSHUT desligado\n", nome, endereco);
+
+  digitalWrite(PINOS_XSHUT[id], LOW);
+  Serial.printf("[LASER] %s FALHOU (begin/início em 0x%02X); XSHUT desligado\n",
+                NOMES[id], ENDERECOS[id]);
   return false;
 }
 
 void initLasers() {
-  pinMode(XSHUT_ESQ, OUTPUT);
-  pinMode(XSHUT_FTE, OUTPUT);
-  pinMode(XSHUT_DIR, OUTPUT);
-
-  digitalWrite(XSHUT_ESQ, LOW);
-  digitalWrite(XSHUT_FTE, LOW);
-  digitalWrite(XSHUT_DIR, LOW);
+  for (int i = 0; i < 3; i++) {
+    pinMode(PINOS_XSHUT[i], OUTPUT);
+    digitalWrite(PINOS_XSHUT[i], LOW);
+  }
   delay(50);
 
-  laserEsqAtivo = iniciarLaser(loxEsq, XSHUT_ESQ, ADDR_LASER_ESQ, "U2 (Esq)");
-  laserFteAtivo = iniciarLaser(loxFte, XSHUT_FTE, ADDR_LASER_FTE, "U3 (Fte)");
-  laserDirAtivo = iniciarLaser(loxDir, XSHUT_DIR, ADDR_LASER_DIR, "U4 (Dir)");
+  // A ordem importa: um por vez, cada um já sai do 0x29 antes do próximo ligar.
+  for (int i = 0; i < 3; i++) {
+    lasers[i].ativo = iniciarLaser((SensorLaser)i);
+    lasers[i].ultimaAtualizacaoMs = millis();
+  }
 }
 
+// Consulta se há dado novo. Sem dado novo, devolve a
+// última classificação; se o sensor ficar mudo além da validade, é timeout.
 int ler_distancia_mm(SensorLaser id) {
-  Adafruit_VL53L0X *sensor = nullptr;
-  bool ativo = false;
-  switch (id) {
-    case LASER_ESQ: sensor = &loxEsq; ativo = laserEsqAtivo; break;
-    case LASER_FTE: sensor = &loxFte; ativo = laserFteAtivo; break;
-    case LASER_DIR: sensor = &loxDir; ativo = laserDirAtivo; break;
-  }
-  if (sensor == nullptr || !ativo) return LASER_SEM_LEITURA;  // não toca no I2C
+  if (id < LASER_ESQ || id > LASER_DIR) return LASER_SEM_LEITURA;
+  Laser &l = lasers[id];
+  if (!l.ativo) return LASER_SEM_LEITURA;  // não toca no I2C
 
-  VL53L0X_RangingMeasurementData_t m = {};
-  VL53L0X_Error status = sensor->rangingTest(&m, false);
-  return classificarLeitura(status != VL53L0X_ERROR_NONE, m.RangeStatus,
-                            m.RangeMilliMeter, LASER_DIST_MIN_MM, LASER_DIST_MAX_MM);
+  uint32_t agora = millis();
+  if (l.sensor.isRangeComplete()) {
+    uint16_t mm = l.sensor.readRangeResult();
+    bool erro = l.sensor.Status != VL53L0X_ERROR_NONE;
+    l.ultimaLeitura = classificarLeitura(erro, l.sensor.readRangeStatus(), mm,
+                                         LASER_DIST_MIN_MM, LASER_DIST_MAX_MM);
+    l.ultimaAtualizacaoMs = agora;
+  } else if (leituraVencida(agora, l.ultimaAtualizacaoMs, LASER_VALIDADE_MS)) {
+    l.ultimaLeitura = LASER_TIMEOUT;
+  }
+  return l.ultimaLeitura;
 }
 
 static int paraLegado(int leitura) {

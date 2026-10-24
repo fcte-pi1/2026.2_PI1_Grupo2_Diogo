@@ -29,6 +29,11 @@
 #define LASER_DIST_MIN_MM 20
 #define LASER_DIST_MAX_MM 2000
 
+// Medição contínua dos lasers (provisória: ajustar com os testes 3.3/3.4)
+#define LASER_ORCAMENTO_US       50000  // Tempo de cada medição no sensor (long range)
+#define LASER_PERIODO_MEDICAO_MS 60     // Intervalo entre medições; deve ser >= orçamento
+#define LASER_VALIDADE_MS        250    // Sem dado novo por mais que isso = timeout
+
 // Endereço I2C da IMU MPU-6050
 #define ADDR_IMU 0x68
 

@@ -51,6 +51,21 @@ void test_codigos_sao_negativos_e_distintos() {
   TEST_ASSERT_NOT_EQUAL(LASER_FORA_ESCALA, LASER_TIMEOUT);
 }
 
+void test_leitura_dentro_da_validade_nao_vence() {
+  TEST_ASSERT_FALSE(leituraVencida(1000, 1000, 250));
+  TEST_ASSERT_FALSE(leituraVencida(1250, 1000, 250));  // exatamente no limite
+}
+
+void test_leitura_alem_da_validade_vence() {
+  TEST_ASSERT_TRUE(leituraVencida(1251, 1000, 250));
+}
+
+void test_validade_funciona_no_estouro_do_millis() {
+  const uint32_t ultima = 0xFFFFFFF0u;  // 16 ms antes do estouro
+  TEST_ASSERT_FALSE(leituraVencida(ultima + 200u, ultima, 250));  // agora já passou de 0
+  TEST_ASSERT_TRUE(leituraVencida(ultima + 300u, ultima, 250));
+}
+
 int main(int, char **) {
   UNITY_BEGIN();
   RUN_TEST(test_leitura_valida_devolve_a_distancia);
@@ -61,5 +76,8 @@ int main(int, char **) {
   RUN_TEST(test_demais_status_sao_sem_leitura);
   RUN_TEST(test_erro_de_comunicacao_tem_prioridade);
   RUN_TEST(test_codigos_sao_negativos_e_distintos);
+  RUN_TEST(test_leitura_dentro_da_validade_nao_vence);
+  RUN_TEST(test_leitura_alem_da_validade_vence);
+  RUN_TEST(test_validade_funciona_no_estouro_do_millis);
   return UNITY_END();
 }
