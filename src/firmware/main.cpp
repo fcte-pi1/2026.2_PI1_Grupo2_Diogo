@@ -107,7 +107,11 @@ void loop() {
     // Telemetria no Serial para depuração local
     Serial.printf("[MOTORES]     A: %5.2f RPS | B: %5.2f RPS\n", rpsA, rpsB);
     Serial.printf("[IMU]         Yaw: %6.1f deg | Taxa: %5.2f deg/s\n", getYawAngle(), getYawRate());
+    Serial.printf("[LASERBRUTO]  Esq: %4d mm | Frente: %4d mm | Dir: %4d mm\n",
+                  ler_distancia_bruta_mm(LASER_ESQ), ler_distancia_bruta_mm(LASER_FTE), ler_distancia_bruta_mm(LASER_DIR));
     Serial.printf("[LASER]       Esq: %4d mm | Frente: %4d mm | Dir: %4d mm\n", dEsq, dFte, dDir);
+    Serial.printf("[PAREDE]      Esq: %s | Frente: %s | Dir: %s\n",
+                  textoParede(obter_parede(LASER_ESQ)), textoParede(obter_parede(LASER_FTE)), textoParede(obter_parede(LASER_DIR)));
     Serial.printf("[ENERGIA]     %5.2f V | %7.1f mA | %7.1f mW | %5.1f %%\n", obter_tensao_bateria(), obter_corrente_mA(), obter_potencia_mW(), obter_bateria_pct());
     Serial.printf("[TELEMETRIA]  RTT: %3u ms | Enviados: %4u | Falhas: %2u | Conectado: %s\n",
                   getTelemetryLatency(), getTelemetryPacketsSent(), getTelemetryPacketsLost(),
