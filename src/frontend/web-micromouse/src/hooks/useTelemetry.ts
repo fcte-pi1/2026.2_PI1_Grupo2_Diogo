@@ -29,9 +29,6 @@ export function useTelemetry(): TelemetryData {
   const [telemetry, setTelemetry] =
     useState<TelemetryData>(initialTelemetry);
 
-  // ===========================================================================
-  // MOCK / DADOS SIMULADOS (CÓDIGO ATIVO ORIGINAL DO FRONTEND)
-  // ===========================================================================
   useEffect(() => {
     const interval = window.setInterval(() => {
       setTelemetry((previous) => {
@@ -92,51 +89,6 @@ export function useTelemetry(): TelemetryData {
       window.clearInterval(interval);
     };
   }, []);
-
-  // ===========================================================================
-  // PROPOSTA DE INTEGRAÇÃO REAL - EQUIPE DE ELETRÔNICA (ISSUES 66 e 120)
-  // ===========================================================================
-  // Olá equipe de Frontend!
-  // Para conectar a interface web aos dados reais transmitidos pelo robô (ESP32)
-  // via backend FastAPI, basta comentar o bloco de useEffect acima (mock com Math.random)
-  // e descomentar o bloco abaixo.
-  //
-  // Ele consulta http://localhost:8000/api/telemetria/atual a cada 250ms e entrega
-  // exatamente a mesma interface TelemetryData que os cards esperam.
-  // ===========================================================================
-  /*
-  useEffect(() => {
-    let isMounted = true;
-
-    const fetchTelemetry = async () => {
-      try {
-        const response = await fetch("http://localhost:8000/api/telemetria/atual");
-        if (response.ok && isMounted) {
-          const data = await response.json();
-          setTelemetry(data);
-          return;
-        }
-      } catch {
-        // Backend offline ou falha temporária de conexão
-      }
-
-      if (isMounted) {
-        setTelemetry((previous) => ({
-          ...previous,
-          connected: false,
-        }));
-      }
-    };
-
-    fetchTelemetry();
-    const interval = window.setInterval(fetchTelemetry, 250);
-
-    return () => {
-      isMounted = false;
-      window.clearInterval(interval);
-    };
-  }, []);
-  */
 
   return telemetry;
 }
