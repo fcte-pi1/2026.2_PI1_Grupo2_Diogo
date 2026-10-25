@@ -38,6 +38,10 @@
 #define LASER_ORCAMENTO_US      50000  // 0 = orçamento do próprio modo
 #define LASER_MARGEM_PERIODO_MS 10
 #define LASER_CICLOS_VALIDADE   4
+#define LASER_FILTRO_ALFA       0.5f
+
+#define PAREDE_LIMIAR_COM_MM 120
+#define PAREDE_LIMIAR_SEM_MM 160
 
 // Endereço I2C da IMU MPU-6050
 #define ADDR_IMU 0x68

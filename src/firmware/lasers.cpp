@@ -8,6 +8,10 @@ struct Laser {
   Adafruit_VL53L0X sensor;
   bool ativo = false;
   int ultimaLeitura = LASER_SEM_LEITURA;
+  int ultimaBruta = LASER_SEM_LEITURA;
+  EstadoParede estadoParede = PAREDE_INDEFINIDA;
+  FiltroLaser filtro = FiltroLaser(LASER_FILTRO_ALFA);
+  DetectorParede parede = DetectorParede(PAREDE_LIMIAR_COM_MM, PAREDE_LIMIAR_SEM_MM);
   uint32_t ultimaAtualizacaoMs = 0;
   uint32_t validadeMs = 0;
 };
@@ -68,6 +72,11 @@ void initLasers() {
   }
 }
 
+static void atualizarLeitura(Laser &l) {
+  l.ultimaLeitura = l.filtro.atualizar(l.ultimaBruta);
+  l.estadoParede = l.parede.atualizar(l.ultimaLeitura);
+}
+
 int ler_distancia_mm(SensorLaser id) {
   if (id < LASER_ESQ || id > LASER_DIR) return LASER_SEM_LEITURA;
   Laser &l = lasers[id];
@@ -77,13 +86,25 @@ int ler_distancia_mm(SensorLaser id) {
   if (l.sensor.isRangeComplete()) {
     uint16_t mm = l.sensor.readRangeResult();
     bool erro = l.sensor.Status != VL53L0X_ERROR_NONE;
-    l.ultimaLeitura = classificarLeitura(erro, l.sensor.readRangeStatus(), mm,
-                                         LASER_DIST_MIN_MM, LASER_DIST_MAX_MM);
+    l.ultimaBruta = classificarLeitura(erro, l.sensor.readRangeStatus(), mm,
+                                       LASER_DIST_MIN_MM, LASER_DIST_MAX_MM);
     l.ultimaAtualizacaoMs = agora;
+    atualizarLeitura(l);
   } else if (leituraVencida(agora, l.ultimaAtualizacaoMs, l.validadeMs)) {
-    l.ultimaLeitura = LASER_TIMEOUT;
+    l.ultimaBruta = LASER_TIMEOUT;
+    atualizarLeitura(l);
   }
   return l.ultimaLeitura;
+}
+
+int ler_distancia_bruta_mm(SensorLaser id) {
+  ler_distancia_mm(id);
+  return lasers[id].ultimaBruta;
+}
+
+EstadoParede obter_parede(SensorLaser id) {
+  ler_distancia_mm(id);
+  return lasers[id].estadoParede;
 }
 
 static int paraLegado(int leitura) {
