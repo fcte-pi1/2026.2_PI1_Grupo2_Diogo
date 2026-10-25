@@ -72,7 +72,7 @@ void updateTelemetryData(
 /**
  * @brief Atualiza leituras de monitoramento elétrico da bateria.
  */
-void updateTelemetryBattery(float tensao_v, float consumo_ma);
+void updateTelemetryBattery(float tensao_v, float consumo_ma, float nivel_pct);
 
 /**
  * @brief Serializa os dados atuais em JSON padronizado.

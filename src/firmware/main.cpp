@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <Wire.h>
+#include <WebServer.h> // Adicionado para controlo via rede
 #include "config.h"
 #include "motors.h"
 #include "imu.h"
@@ -11,6 +12,13 @@
 
 unsigned long tempoAnterior = 0;
 const unsigned long INTERVALO_MS = 100;
+
+WebServer server(80); // Servidor HTTP na porta padrão 80
+
+static void girar(bool paraDireita) {
+  girar90Graus(paraDireita);
+  tempoAnterior = millis();
+}
 
 void setup() {
   Serial.begin(115200);
@@ -25,12 +33,40 @@ void setup() {
   initOTA();
   initTelemetry();
 
+  // Configuração dos endpoints de comando via Wi-Fi
+  server.on("/direita", []() {
+    server.send(200, "text/plain", "Girando 90 graus a DIREITA");
+    girar(true);
+  });
+
+  server.on("/esquerda", []() {
+    server.send(200, "text/plain", "Girando 90 graus a ESQUERDA");
+    girar(false);
+  });
+
+  server.on("/parar", []() {
+    stopMotors();
+    server.send(200, "text/plain", "Motores parados");
+  });
+
+  server.begin();
+  Serial.println("[HTTP] Servidor Web ativo em http://192.168.4.1");
+
   Serial.println("\n--- Robô Inicializado com Sucesso ---");
   tempoAnterior = millis();
 }
 
 void loop() {
   handleOTA(); // Escuta requisições de gravação sem fio
+  server.handleClient(); // Processa pedidos recebidos por Wi-Fi
+
+  // Mantém a escuta por cabo USB ativa em paralelo
+  if (Serial.available() > 0) {
+    char comando = Serial.read();
+    if (comando == 'd' || comando == 'D') girar(true);
+    if (comando == 'e' || comando == 'E') girar(false);
+    if (comando == 's' || comando == 'S') stopMotors();
+  }
 
   unsigned long agora = millis();
   unsigned long delta = agora - tempoAnterior;
@@ -48,21 +84,21 @@ void loop() {
     int dEsq = -1, dFte = -1, dDir = -1;
     readLasers(dEsq, dFte, dDir);
 
+    updatePower();
+    if (bateriaCritica()) stopMotors(); // Protege a LiPo contra descarga profunda
+    updateTelemetryBattery(obter_tensao_bateria(), obter_corrente_mA(), obter_bateria_pct());
+
     float gx = 0.0f, gy = 0.0f, gz = 0.0f;
     getGyroRates(gx, gy, gz);
 
-    updatePower();
-    if (bateriaCritica()) stopMotors(); // Protege a LiPo contra descarga profunda
-
     // Alimenta o subsistema de telemetria
-    updateTelemetryBattery(obter_tensao_bateria(), obter_corrente_mA());
     updateTelemetryData(
         rpsA, rpsB,
         getYawAngle(), getYawRate(), gx, gy, gz,
         dEsq, dFte, dDir
     );
 
-    // Telemetria no Serial
+    // Telemetria no Serial para depuração local
     Serial.printf("[MOTORES]     A: %5.2f RPS | B: %5.2f RPS\n", rpsA, rpsB);
     Serial.printf("[IMU]         Yaw: %6.1f deg | Taxa: %5.2f deg/s\n", getYawAngle(), getYawRate());
     Serial.printf("[LASER]       Esq: %4d mm | Frente: %4d mm | Dir: %4d mm\n", dEsq, dFte, dDir);
