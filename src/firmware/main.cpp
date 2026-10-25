@@ -7,6 +7,7 @@
 #include "battery.h"
 #include "imu.h"
 #include "i2c_diagnostics.h"
+#include "lasers.h"
 #include "ota_manager.h"
 #include "web_telemetry.h"
 
@@ -21,6 +22,7 @@ void setup() {
         Serial.println("FALHA FATAL NO PWM. Desabilitando drivers.");
         while (true) { delay(1000); }
     }
+    // V4.4: manter os tres sensores em shutdown durante o scan inicial.
     // VL53L0X ainda não usados na V4: manter os 3 XSHUT em LOW.
     // Isso evita 3 sensores responderem simultaneamente no endereco 0x29.
     // Ao implementar os lasers, remover este isolamento e reendereçar um a um.
@@ -37,6 +39,9 @@ void setup() {
     imprimirDiagnosticoI2C();
     initBattery();
     iniciarIMU();
+    initLasers(); // inicializacao sequencial U2/U3/U4, enderecos 0x30..0x32
+    Serial.println("[LASER] I2C apos ativacao U2/U3/U4:");
+    Serial.println(diagnosticoI2CJson().c_str());
     bool ok = iniciarEncoders();
     if (!ok) {
         Serial.println("FALHA FATAL NO PCNT. Reinicie após conferir os pinos.");
@@ -52,6 +57,7 @@ void setup() {
 void loop() {
     atualizarIMU();
     atualizarEncoders();
+    if (!testeMotorAtivo()) atualizarLasers(); // prioriza controle de motores; diagnose lasers somente com motores parados
     updateBattery();
     loopTelemetry();   // deadlines de PWM e watchdog não bloqueantes
     server.handleClient();

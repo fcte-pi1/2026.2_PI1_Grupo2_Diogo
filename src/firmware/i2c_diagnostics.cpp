@@ -61,5 +61,5 @@ void imprimirDiagnosticoI2C() {
     Serial.println("\n=== I2C SCAN: GPIO21 SDA / GPIO22 SCL; 100 kHz ===");
     Serial.println(diagnosticoI2CJson().c_str());
     Serial.println("Esperado: INA219=0x40; IMU I2C=0x68 ou 0x69; WHO_AM_I=0x68 (6050) ou 0x74 (6515).");
-    Serial.println("Os VL53L0X estao desabilitados em XSHUT nesta V4.1.");
+    Serial.println("V4.4: lasers ainda em XSHUT no scan inicial; initLasers ocorrera em seguida.");
 }

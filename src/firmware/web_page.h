@@ -6,18 +6,21 @@ const char PAGINA_HTML[] PROGMEM = R"HTML(
 <!DOCTYPE html>
 <html lang="pt-BR"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Micromouse V4.3 | Bancada de calibração</title>
+<title>Micromouse V4.5 | Bancada de testes</title>
 <style>
 :root{color-scheme:dark;--bg:#101826;--box:#1b2739;--bd:#32435a;--text:#eff5ff;--muted:#9fb1c8;--green:#4ce2a7;--blue:#60b7ff;--red:#ff697d}
 *{box-sizing:border-box}body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,sans-serif;margin:0;padding:22px;line-height:1.5}
 main{max-width:1090px;margin:auto}h1{font-size:clamp(1.35rem,3vw,2.3rem);margin:.25em 0}h2{font-size:1.16rem;margin:0 0 12px}p{color:var(--muted);margin:8px 0 14px}small{color:var(--muted)}.eyebrow{color:var(--blue);font-size:.8rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.card{background:var(--box);border:1px solid var(--bd);border-radius:14px;padding:18px;margin:16px 0;box-shadow:0 6px 20px #0003}.grid>.card{margin:0}.top{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.tag{border:1px solid var(--bd);border-radius:999px;padding:4px 11px;background:#223248;font-weight:700}.tag.good{color:var(--green)}.tag.bad{color:var(--red)}.metric{font-size:1.6rem;font-weight:800;color:var(--green);font-variant-numeric:tabular-nums}.metrics{display:grid;grid-template-columns:1fr 1fr;gap:10px}.metrics>div{background:#142033;border-radius:9px;padding:10px}.label{color:var(--muted);font-size:.79rem;display:block}.unit{font-size:.75rem;color:var(--muted)}.row{display:flex;gap:12px;align-items:end;flex-wrap:wrap}.field{flex:1;min-width:115px}label{display:block;font-size:.86rem;color:var(--muted);margin-bottom:5px}input,select{width:100%;background:#101b2b;color:white;border:1px solid #435a75;border-radius:8px;padding:10px;min-height:40px}button{border:0;border-radius:8px;min-height:42px;background:var(--blue);color:#071b2d;font-weight:750;padding:9px 14px;cursor:pointer}button.secondary{background:#334c69;color:white}button.green{background:var(--green)}button.danger{background:var(--red);color:#22040b;font-weight:900;font-size:1rem}.actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:16px}.notice{padding:10px 14px;border-left:4px solid var(--blue);background:#142238;border-radius:6px;color:#d1e0f1}.warn{border-left-color:var(--red)}.output{background:#0b1421;color:#c4eddf;border-radius:8px;padding:11px;white-space:pre-wrap;font:13px ui-monospace,monospace;overflow-wrap:anywhere}canvas{width:100%;background:#101b2b;border:1px solid #344862;border-radius:8px}a{color:var(--blue)}.bar{height:7px;border-radius:10px;background:#0c1420;overflow:hidden;margin-top:10px}.bar>div{height:100%;background:var(--green);width:0}.footer{font-size:.8rem;color:var(--muted);margin:22px 0}@media(max-width:730px){body{padding:12px}.grid{grid-template-columns:1fr}.card{padding:14px}.metric{font-size:1.25rem}}
+.abas{display:flex;gap:10px;margin:17px 0;flex-wrap:wrap}.abas button.ativo{background:var(--green);color:#092017}.aba-pagina[hidden]{display:none!important}.sensormini{border-left:4px solid #60b7ff}.legendinha{font-size:.86rem;color:var(--muted)}
 </style></head><body><main>
 <div class="eyebrow">ESP32 • TB6612FNG • Encoders X4</div>
 <h1>Bancada de calibração Micromouse</h1>
 <div class="top"><span id="online" class="tag bad">Sem conexão</span><span id="modo" class="tag">—</span><span id="energia" class="tag">INA219: —</span></div>
 <p>Conecte ao Wi-Fi <strong>Xaropinho-WiFi</strong>. Para o primeiro ensaio, apoie o robô com as rodas livres e tenha acesso à chave da bateria.</p>
 <div class="card"><div class="top"><button class="danger" onclick="parar()">■ FREAR / CANCELAR TESTE</button><button class="secondary" onclick="zerar()">Zerar contadores</button><button class="secondary" onclick="baixarCSV()">Baixar telemetria CSV</button></div><p id="mensagem" class="notice">Sem dados ainda.</p></div>
+<nav class="abas" aria-label="Areas de teste"><button id="btAbaCal" class="ativo" onclick="mostrarAba('calibracao')">Motores e giros</button><button id="btAbaLaser" class="secondary" onclick="mostrarAba('sensores')">Navegação · reto e lasers V4.5</button></nav>
+<div id="abaCalibracao" class="aba-pagina">
 <div class="grid">
 <section class="card"><h2>Motor esquerdo</h2><div class="metrics"><div><span class="label">Contagem acumulada</span><span class="metric" id="contE">—</span></div><div><span class="label">Velocidade (CPS)</span><span class="metric" id="cpsE">—</span></div><div><span class="label">RPM estimado</span><span class="metric" id="rpmE">—</span></div><div><span class="label">PWM aplicado</span><span class="metric" id="pwmE">0</span></div></div></section>
 <section class="card"><h2>Motor direito</h2><div class="metrics"><div><span class="label">Contagem acumulada</span><span class="metric" id="contD">—</span></div><div><span class="label">Velocidade (CPS)</span><span class="metric" id="cpsD">—</span></div><div><span class="label">RPM estimado</span><span class="metric" id="rpmD">—</span></div><div><span class="label">PWM aplicado</span><span class="metric" id="pwmD">0</span></div></div></section>
@@ -70,6 +73,52 @@ main{max-width:1090px;margin:auto}h1{font-size:clamp(1.35rem,3vw,2.3rem);margin:
 <section class="card"><h2>8. Velocidade em tempo real</h2><small>Verde = roda esquerda; azul = roda direita (CPS). Histórico recente sem bibliotecas externas.</small><canvas id="grafico" width="800" height="235"></canvas><div class="top"><span class="tag" id="batV">Tensão: —</span><span class="tag" id="batI">Corrente: —</span></div></section>
 <section class="card"><h2>Orientações de segurança</h2><p>O botão vermelho freia por software. Ele não substitui uma chave física que corte a energia dos motores. No chão, faça apenas ensaios supervisionados em área livre, começando por baixas velocidades. Não deixe o robô sem supervisão.</p><div class="notice warn">Se a página parar de enviar sinais por mais de 1,2 s durante um teste PWM, os motores serão frenados. Um ensaio também tem duração máxima de 10 s.</div></section>
 <div class="footer">Contagens absolutas de encoder são independentes de CPR. A meta de 90° é geométrica; testes ±600 devem ser validados inicialmente com rodas suspensas e não garantem ângulo exato.</div>
+
+</div>
+<div id="abaSensores" class="aba-pagina" hidden>
+<section class="card"><h2>V4.4 — Diagnóstico dos sensores VL53L0X</h2>
+<p><strong>Somente leitura:</strong> nenhum botão desta aba aciona motores. U2/U3/U4 são os identificadores elétricos; confira a posição física aproximando uma placa de cada janela óptica.</p>
+<div class="notice">Largura do chassi <strong>alvo: 110 mm</strong>. Num corredor de 168 mm, folga geométrica nominal ~29 mm de cada lado antes de descontar parafusos, pneus e a posição das janelas ópticas. Leituras inválidas <strong>não significam caminho livre</strong>.</div>
+<div class="actions"><button class="secondary" onclick="reinitLasers()">Reiniciar ESP32 e lasers</button><button class="secondary" onclick="baixarLasersLive()">Exportar histórico exibido (CSV)</button><a class="tag" href="/diagnostico-i2c">Scanner I²C</a></div>
+<p id="laserAlerta" class="notice">Aguardando primeiras leituras.</p></section>
+<section class="card" id="ensaioReto">
+<h2>V4.5 — Movimento reto por encoders</h2>
+<div class="notice warn"><strong>Primeira gravacao: rodas suspensas.</strong> No chao somente em pista livre, sem paredes proximas, com chave fisica de corte acessivel. <strong>Lasers NAO param o robo e NAO corrigem sua direcao nesta versao.</strong> A IMU apenas mede o Yaw. Mantenha o navegador aberto para o watchdog de 1,2 s.</div>
+<p>O alvo e o deslocamento da <strong>media das rodas</strong>. Contagem positiva = frente; negativa = re. A sincronizacao suave diminui a diferenca entre as distancias das rodas durante todo o trajeto. Opcao desligada apenas para comparacao controlada.</p>
+<div class="row">
+ <div class="field"><label>Distancia assinada (mm)</label><input id="retoDist" type="number" min="-250" max="250" step="5" value="50"></div>
+ <div class="field"><label>Limite velocidade (RPM)</label><input id="retoRpm" type="number" min="20" max="60" step="5" value="30"></div>
+ <div class="field"><label>Sincronismo</label><select id="retoSync"><option value="suave">Suave (recomendado)</option><option value="desligado">Sem correcao (diagnostico)</option></select></div>
+ <div class="field"><label>Timeout (ms)</label><input id="retoTempo" type="number" min="1000" max="10000" step="500" value="7000"></div>
+</div>
+<div class="actions"><button class="secondary" onclick="presetReto(50,30)">50 mm · 30 RPM</button><button class="secondary" onclick="presetReto(100,30)">100 mm · 30 RPM</button><button class="secondary" onclick="presetReto(150,40)">150 mm · 40 RPM</button><button class="secondary" onclick="presetReto(-50,25)">-50 mm · 25 RPM</button></div>
+<div class="actions"><button class="green" onclick="iniciarReto()">▶ Iniciar movimento reto</button><button class="danger" onclick="parar()">■ FREAR AGORA</button></div>
+<div class="output" id="saidaReto">Sem ensaio. Use inicialmente as rodas suspensas.</div>
+<small>O resultado final de contagens e calculado 1 s apos a frenagem. Um giro de Yaw pequeno nao comprova ausencia de deriva lateral. Compare sempre com uma regua ou marca no piso.</small>
+<canvas id="graficoReto" width="800" height="250"></canvas>
+<div class="legendinha">Verde = percurso medio; azul tracejado = meta. Apos os testes, exporte o CSV geral pelo botao no topo da pagina.</div>
+</section>
+<div class="grid">
+<section class="card sensormini"><h2>U2 · GPIO 23 · 0x30</h2><label>Posição física (só anotação no navegador)</label><select id="posU2" onchange="guardarPosicoes()"><option value="?">A identificar</option><option value="E">Esquerdo</option><option value="F">Frontal</option><option value="D">Direito</option></select>
+<div class="metrics"><div><span class="label">Bruto (mm)</span><span class="metric" id="laserBruto0">—</span></div><div><span class="label">Filtrado (mm)</span><span class="metric" id="laserFiltrado0">—</span></div></div><div class="output" id="laserInfo0">Aguardando</div></section>
+<section class="card sensormini"><h2>U3 · GPIO 18 · 0x31</h2><label>Posição física (só anotação no navegador)</label><select id="posU3" onchange="guardarPosicoes()"><option value="?">A identificar</option><option value="E">Esquerdo</option><option value="F">Frontal</option><option value="D">Direito</option></select>
+<div class="metrics"><div><span class="label">Bruto (mm)</span><span class="metric" id="laserBruto1">—</span></div><div><span class="label">Filtrado (mm)</span><span class="metric" id="laserFiltrado1">—</span></div></div><div class="output" id="laserInfo1">Aguardando</div></section>
+<section class="card sensormini"><h2>U4 · GPIO 19 · 0x32</h2><label>Posição física (só anotação no navegador)</label><select id="posU4" onchange="guardarPosicoes()"><option value="?">A identificar</option><option value="E">Esquerdo</option><option value="F">Frontal</option><option value="D">Direito</option></select>
+<div class="metrics"><div><span class="label">Bruto (mm)</span><span class="metric" id="laserBruto2">—</span></div><div><span class="label">Filtrado (mm)</span><span class="metric" id="laserFiltrado2">—</span></div></div><div class="output" id="laserInfo2">Aguardando</div></section>
+</div>
+<section class="card"><h2>Gráfico em tempo real — leitura bruta × filtrada</h2>
+<div class="row"><div class="field"><label>Sensor exibido</label><select id="grafLaserSensor"><option value="0">U2</option><option value="1">U3</option><option value="2">U4</option></select></div></div>
+<p class="legendinha">Azul = bruto · Verde = filtrado. Lacunas indicam medidas inválidas. Janela aproximada de 30 segundos, dependendo da rede.</p>
+<canvas id="graficoLaser" width="800" height="260"></canvas></section>
+<section class="card"><h2>Captura estática de 100 medições</h2>
+<p>Coloque uma placa imóvel, meça com régua a distância da <strong>janela óptica</strong> até a placa, escolha o sensor e registre 100 eventos reais diretamente na ESP32. O cálculo ignora leituras inválidas na média, mas informa quantas ocorreram.</p>
+<div class="row"><div class="field"><label>Sensor</label><select id="capSensor"><option value="0">U2</option><option value="1">U3</option><option value="2">U4</option></select></div><div class="field"><label>Distância física de referência (mm)</label><input id="capReferencia" type="number" min="20" max="1000" step="1" value="50"></div></div>
+<div class="actions"><button class="green" onclick="capturarLaser()">Iniciar 100 medições</button><a id="capBaixar" href="/api/lasers/capture.csv" class="tag" download="vl53l0x_captura.csv">Baixar captura CSV</a><button class="secondary" onclick="limparCaptura()">Limpar captura</button></div>
+<div id="capResultado" class="output">Ainda sem captura.</div>
+<p><small>Para distâncias de 20–30 mm, um VL53L0X pode retornar dados instáveis. Registre todas as leituras inválidas; não remova falhas do CSV.</small></p></section>
+<section class="card"><h2>Roteiro da primeira rodada</h2><p>1) Confirme 0x40, 0x68, 0x30, 0x31 e 0x32 no scanner. 2) Aproxime uma placa, um sensor de cada vez, e identifique U2/U3/U4. 3) Meça 25, 30, 40, 50, 100, 150 e 200 mm; faça 100 amostras por distância e sensor. 4) Aproxime/afaste uma placa para observar o atraso da filtragem. 5) Salve o CSV de cada ensaio. Sem movimento nesta fase.</p>
+<div class="notice warn">Não habilitamos ainda a parada frontal nem a centralização pelas paredes. Nenhum controle de movimento usa os resultados dos lasers nesta versão.</div></section>
+</div>
 </main><script>
 const $=id=>document.getElementById(id);
 let ultimo=null,travado=false,amostras=[],historico=[],historicoRPM=[],historicoPosicao=[],historicoGiro=[];
@@ -100,6 +149,13 @@ function iniciarGiro(){
  const tipo=$('tipoGiro').value;
  if(!confirm(tipo==='imu' ? 'GIRO IMU: chassi DEVE estar no chão (não funciona suspenso), eixo Z vertical, yaw positivo à direita já conferido, área livre e chave física acessível. Continuar?' : 'GIRO ENCODERS: primeiro teste com RODAS SUSPENSAS; no chão só depois, em área livre e com chave física acessível. Continuar?'))return;
  return post('/api/giro/start',{tipo:tipo,lado:$('ladoGiro').value,rpm:$('rpmGiro').value,duracao:$('tempoGiro').value,syncGiro:$('syncGiro').value});
+}
+function presetReto(mm,rpm){$('retoDist').value=mm;$('retoRpm').value=rpm}
+function iniciarReto(){
+ const dist=Number($('retoDist').value),rpm=Number($('retoRpm').value),t=Number($('retoTempo').value);
+ if(!Number.isFinite(dist)||Math.abs(dist)<30||Math.abs(dist)>250||!Number.isFinite(rpm)||rpm<20||rpm>60||!Number.isFinite(t)||t<1000||t>10000){msg('Distancia 30..250 mm; RPM 20..60; timeout 1000..10000 ms',true);return}
+ if(!confirm('RETO V4.5: primeiro teste suspenso. No chao, use pista livre e chave fisica de corte. Lasers NAO evitam colisoes. Continuar?'))return;
+ return post('/api/reto/start',{distancia:String(dist),rpm:String(rpm),duracao:String(t),sync:$('retoSync').value});
 }
 function iniciarPosicao(){if(!confirm('Teste de POSIÇÃO: confirmou lados e sinais? Primeiro com rodas suspensas; no chão, apenas em área livre e com parada física acessível.'))return;return post('/api/pos/start',{alvoE:$('alvoPosE').value,alvoD:$('alvoPosD').value,rpm:$('velPos').value,duracao:$('tempoPos').value})}
 function desenharV3(id,lista,keys){
@@ -148,13 +204,26 @@ async function atualizar(){
   historicoGiro.push({yaw:Number(d.imuYaw)||0,alvo:d.modo==='GIRO'?Number(d.giroAlvoYaw)||0:0});
   if(historicoGiro.length>limiteHistorico)historicoGiro.shift();
   desenharV3('graficoGiro',historicoGiro,[{key:'yaw',color:'#4ce2a7'},{key:'alvo',color:'#60b7ff',dash:true}]);
+  const inicioReto=d.retoAlvoMm!==null&&Number(d.retoAlvoMm)!==0;
+  if(inicioReto){
+   $('saidaReto').textContent='Estado: '+d.modo+' | Motivo: '+d.motivo+'\nAlvo: '+fmt(d.retoAlvoMm,1)+' mm | Media: '+fmt(d.retoProgressoMm,2)+' mm | Erro durante teste: '+fmt(d.retoErroMm,2)+' mm'+
+   '\nRoda E: '+fmt(d.retoDistEMm,2)+' mm | Roda D: '+fmt(d.retoDistDMm,2)+' mm'+
+   '\nSincronismo: '+(d.retoSyncAtivo?'SUAVE':'SEM CORRECAO')+' | Descompasso: '+fmt(d.retoSyncErroMm,2)+' mm | Pico: '+fmt(d.retoSyncMaxMm,2)+' mm | Correcao: '+fmt(d.retoSyncCorrecaoRpm,2)+' RPM'+
+   '\nIMU (somente observa): '+fmt(d.retoYawImu,2)+' graus | Encoder Yaw: '+fmt(d.retoYawEncoder,2)+' graus'+
+   '\nOdometria: X='+fmt(d.retoOdomXmm,2)+' mm; Y='+fmt(d.retoOdomYmm,2)+' mm (nao mede escorregamento)'+
+   '\nPOS-FREIO (1 s): '+(d.retoFinalPronto?'PRONTO; E='+fmt(d.retoFinalE,2)+' D='+fmt(d.retoFinalD,2)+' media='+fmt(d.retoFinalCentro,2)+' erro='+fmt(d.retoErroFinal,2)+' mm':'aguardando 1 s depois da parada');
+  }
+  historicoReto.push({alvo:inicioReto?Number(d.retoAlvoMm)||0:0,
+                    progresso:inicioReto?Number(d.retoProgressoMm)||0:0});
+  if(historicoReto.length>limiteHistorico)historicoReto.shift();
+  desenharV3('graficoReto',historicoReto,[{key:'progresso',color:'#4ce2a7'},{key:'alvo',color:'#60b7ff',dash:true}]);
   $('batV').textContent='Barramento: '+fmt(d.tensao,2)+' V';$('batI').textContent='INA219: '+fmt(d.corrente,1)+' mA';
   $('saidaManual').textContent=(d.modo==='MANUAL'?'MEDINDO AGORA\n':'ÚLTIMA MEDIÇÃO\n')+'Δ contagens esq: '+(d.modo==='MANUAL'?d.manualDeltaE:d.manualUltDeltaE)+'\nΔ contagens dir: '+(d.modo==='MANUAL'?d.manualDeltaD:d.manualUltDeltaD)+'\nVoltas declaradas: '+d.ultimaQuantidadeVoltas+'\nCPR esq medido: '+fmt(d.ultimaMedidaE,4)+'\nCPR dir medido: '+fmt(d.ultimaMedidaD,4)+'\n\nMédia ESQ ('+d.nE+' medições): '+fmt(d.mediaE,4)+' ± '+fmt(d.desvioE,4)+'\nMédia DIR ('+d.nD+' medições): '+fmt(d.mediaD,4)+' ± '+fmt(d.desvioD,4);
   $('referencia').textContent='CPR salvo: E='+fmt(d.cprE,4)+'; D='+fmt(d.cprD,4)+'\nMeta TEÓRICA por roda no giro de 90°: E='+fmt(d.meta90E,2)+'; D='+fmt(d.meta90D,2)+' contagens';
   $('saidaPosicao').textContent='Progresso E: '+d.progressoE+' / '+d.alvoE+' contagens\nProgresso D: '+d.progressoD+' / '+d.alvoD+' contagens\nErro final/atual E: '+(Number(d.alvoE)-Number(d.progressoE))+' contagens\nErro final/atual D: '+(Number(d.alvoD)-Number(d.progressoD))+' contagens\nRPM solicitada E: '+fmt(d.referenciaRpmE)+'; medida E: '+fmt(d.rpmE)+'\nRPM solicitada D: '+fmt(d.referenciaRpmD)+'; medida D: '+fmt(d.rpmD)+'\nRampa PI E: '+fmt(d.rampaRpmE)+'; D: '+fmt(d.rampaRpmD)+'\nAjuda partida E: '+d.ajudaPartidaE+'; D: '+d.ajudaPartidaD+'\nSem pulsos E: '+d.semPulsosMsE+' ms; D: '+d.semPulsosMsD+' ms\nRoda E concluiu: '+d.chegouE+' | Roda D concluiu: '+d.chegouD;
   $('saidaFreio').textContent=d.freioValido ? 'Contagem no comando: E='+d.freioInicioE+' D='+d.freioInicioD+'\n300 ms: '+(d.freio300Pronto?'E='+d.freio300E+' D='+d.freio300D+' | ΔE='+d.freioDelta300E+' ΔD='+d.freioDelta300D:'ainda não disponível')+'\n1000 ms: '+(d.freio1000Pronto?'E='+d.freio1000E+' D='+d.freio1000D+' | ΔE='+d.freioDelta1000E+' ΔD='+d.freioDelta1000D:'aguardando') : 'Nenhum freio registrado ainda';
   $('saidaTeste').textContent='Estado: '+d.modo+'\nMotivo da última parada: '+d.motivo+'\nTempo restante: '+d.restanteMs+' ms\nΔ último ensaio E: '+d.testeDeltaE+'\nΔ último ensaio D: '+d.testeDeltaD;
-  $('barra').style.width=['PWM','RPM','POSICAO','GIRO'].includes(d.modo)&&d.duracaoMs>0?(100*d.decorridoMs/d.duracaoMs).toFixed(1)+'%':'0%';
+  $('barra').style.width=['PWM','RPM','POSICAO','GIRO','RETO'].includes(d.modo)&&d.duracaoMs>0?(100*d.decorridoMs/d.duracaoMs).toFixed(1)+'%':'0%';
   if(!$('cprE').dataset.iniciado){if(d.cprE>0)$('cprE').value=d.cprE;if(d.cprD>0)$('cprD').value=d.cprD;$('cprE').dataset.iniciado='1'}
   historico.push({e:Number(d.cpsE)||0,d:Number(d.cpsD)||0});if(historico.length>limiteHistorico)historico.shift();desenhar();
   historicoRPM.push({e:Number(d.rpmE)||0,d:Number(d.rpmD)||0,te:['RPM','POSICAO'].includes(d.modo)?Number(d.referenciaRpmE)||0:0,td:['RPM','POSICAO'].includes(d.modo)?Number(d.referenciaRpmD)||0:0});
@@ -168,13 +237,104 @@ async function atualizar(){
 }
 function baixarCSV(){
  if(!amostras.length){msg('Ainda sem dados para exportar',true);return}
- const chaves=['hora','ms','modo','contE','contD','cpsE','cpsD','rpmE','rpmD','pwmE','pwmD','alvoE','alvoD','progressoE','progressoD','referenciaRpmE','referenciaRpmD','rampaRpmE','rampaRpmD','ajudaPartidaE','ajudaPartidaD','semPulsosMsE','semPulsosMsD','realControleRpmE','realControleRpmD','freioValido','freio300Pronto','freio1000Pronto','freioDelta300E','freioDelta300D','freioDelta1000E','freioDelta1000D','tensao','corrente','motivo','cprE','cprD','giroTipo','giroAlvoYaw','giroYawRelativo','giroErroYaw','imuPresente','imuCalibrada','imuCalibrando','imuOk','imuEndereco','imuWhoAmI','imuFalhaInit','imuYaw','imuTaxa','imuBias','imuRuido','imuFalhasI2C','syncErroMm','syncErroMaxMm','syncSuave','odomXmm','odomYmm','odomYawGraus','giroYawDepoisFreio','giroErroDepoisFreio','syncDistE','syncDistD','syncCorrecaoRpm','syncPausaE','syncPausaD'];
+ const chaves=['hora','ms','modo','contE','contD','cpsE','cpsD','rpmE','rpmD','pwmE','pwmD','alvoE','alvoD','progressoE','progressoD','referenciaRpmE','referenciaRpmD','rampaRpmE','rampaRpmD','ajudaPartidaE','ajudaPartidaD','semPulsosMsE','semPulsosMsD','realControleRpmE','realControleRpmD','freioValido','freio300Pronto','freio1000Pronto','freioDelta300E','freioDelta300D','freioDelta1000E','freioDelta1000D','tensao','corrente','motivo','cprE','cprD','giroTipo','giroAlvoYaw','giroYawRelativo','giroErroYaw','imuPresente','imuCalibrada','imuCalibrando','imuOk','imuEndereco','imuWhoAmI','imuFalhaInit','imuYaw','imuTaxa','imuBias','imuRuido','imuFalhasI2C','syncErroMm','syncErroMaxMm','syncSuave','odomXmm','odomYmm','odomYawGraus','giroYawDepoisFreio','giroErroDepoisFreio','syncDistE','syncDistD','syncCorrecaoRpm','syncPausaE','syncPausaD','retoAlvoMm','retoProgressoMm','retoErroMm','retoDistEMm','retoDistDMm','retoSyncErroMm','retoSyncMaxMm','retoSyncCorrecaoRpm','retoSyncAtivo','retoYawImu','retoYawEncoder','retoOdomXmm','retoOdomYmm','retoFinalPronto','retoFinalE','retoFinalD','retoFinalCentro','retoErroFinal'];
  const linhas=[chaves.join(';'),...amostras.map(a=>chaves.map(k=>String(a[k]??'').replaceAll(';',',')).join(';'))];
  const blob=new Blob(['\ufeff'+linhas.join('\r\n')],{type:'text/csv;charset=utf-8'});
  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='micromouse_telemetria_'+Date.now()+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
+
+// ===== V4.4 - Aba de diagnostico dos lasers =====
+let historicoReto=[];
+let abaAtiva='calibracao', consultaLaserEmCurso=false,ultimoLaser=null;
+let historicoLaser=[[],[],[]],historicoLaserExport=[];
+function mostrarAba(aba){
+  abaAtiva=aba;
+  $('abaCalibracao').hidden=aba!=='calibracao';
+  $('abaSensores').hidden=aba!=='sensores';
+  $('btAbaCal').className=aba==='calibracao'?'ativo':'secondary';
+  $('btAbaLaser').className=aba==='sensores'?'ativo':'secondary';
+  if(aba==='sensores')atualizarLasersTela();
+}
+function guardarPosicoes(){
+  try{localStorage.setItem('micromousePosLasersV44',JSON.stringify([$('posU2').value,$('posU3').value,$('posU4').value]));}catch(e){}
+}
+function recuperarPosicoes(){
+  try{const v=JSON.parse(localStorage.getItem('micromousePosLasersV44')||'null');if(Array.isArray(v)&&v.length===3){for(let i=0;i<3;i++)$('posU'+(i+2)).value=v[i]}}catch(e){}
+}
+function fmtLaser(v){return typeof v==='number'&&Number.isFinite(v)?String(v):'—'}
+function atualizarCartoesLaser(t){
+  const d=t.sensores;
+  for(let i=0;i<3;i++){
+    const s=d[i],inval=s.status!=='VALIDO'||!s.valido;
+    $('laserBruto'+i).textContent=inval?'—':fmtLaser(s.brutoMm);
+    $('laserFiltrado'+i).textContent=inval?'—':fmtLaser(s.filtradoMm);
+    $('laserInfo'+i).textContent='Sensor: '+(s.inicializado?'ONLINE':'NÃO INICIALIZADO')+' | '+s.status+' | status VL='+s.rangeStatus+
+      '\nParede: '+s.parede+' | idade da última leitura válida: '+(s.idadeValidaMs===null?'—':s.idadeValidaMs+' ms')+
+      '\nTotal: '+s.total+' | válidas: '+s.validas+' | inválidas: '+s.invalidas+
+      '\nPeríodo configurado: '+s.periodoMs+' ms | último intervalo: '+s.intervaloRealMs+' ms';
+    const valor=(s.valido&&s.status==='VALIDO')?{raw:s.brutoMm,filt:s.filtradoMm}:{raw:null,filt:null};
+    historicoLaser[i].push(valor);if(historicoLaser[i].length>125)historicoLaser[i].shift();
+  }
+  const cp=t.captura;
+  $('capResultado').textContent=cp.ativa?'EM ANDAMENTO — '+cp.amostras+'/'+cp.objetivo+' eventos; sensor U'+(cp.sensor+2):
+    (cp.pronta?'CAPTURA '+cp.motivo+' — U'+(cp.sensor+2):'SEM CAPTURA')+
+    '\nReferência: '+cp.referenciaMm+' mm | Total: '+cp.amostras+'/'+cp.objetivo+
+    ' | Válidas: '+cp.validas+' | Inválidas: '+cp.invalidas+
+    '\nMédia bruta: '+fmt(cp.mediaBruta,2)+' mm | Desvio padrão bruto: '+fmt(cp.desvioBruta,2)+' mm'+
+    '\nErro médio (bruto - referência): '+(cp.validas?fmt(cp.mediaBruta-cp.referenciaMm,2):'—')+' mm'+
+    '\nMédia filtrada: '+fmt(cp.mediaFiltrada,2)+' mm | Duração: '+cp.duracaoMs+' ms';
+  const ativos=d.filter(s=>s.inicializado).length;
+  $('laserAlerta').textContent='Sensores inicializados: '+ativos+'/3. Endereços esperados: U2=0x30, U3=0x31, U4=0x32. '+
+    (ativos<3?'Confira alimentação, XSHUT e I²C; não avance para movimento.':'Leituras prontas para diagnóstico; identifique fisicamente cada posição.');
+}
+function desenharLaser(){
+ const cv=$('graficoLaser');if(!cv)return;
+ const ctx=cv.getContext('2d'),w=cv.width,h=cv.height;
+ ctx.fillStyle='#101b2b';ctx.fillRect(0,0,w,h);
+ const hist=historicoLaser[Number($('grafLaserSensor').value)||0];
+ const valid=hist.flatMap(p=>[p.raw,p.filt]).filter(v=>v!==null&&Number.isFinite(v));
+ const ymax=valid.length?Math.max(50,Math.ceil(Math.max(...valid)*1.1/10)*10):200;
+ ctx.strokeStyle='#31435b';ctx.lineWidth=1;ctx.font='12px system-ui';ctx.fillStyle='#a4bdd4';
+ for(let j=0;j<=4;j++){let y=12+j*(h-32)/4;ctx.beginPath();ctx.moveTo(50,y);ctx.lineTo(w-10,y);ctx.stroke();ctx.fillText(String(Math.round(ymax*(4-j)/4)),5,y+4)}
+ for(const [key,color] of [['raw','#60b7ff'],['filt','#4ce2a7']]){
+  ctx.strokeStyle=color;ctx.lineWidth=2;ctx.beginPath();let aberto=false;
+  hist.forEach((p,i)=>{const val=p[key],x=51+i*(w-62)/124;if(val===null){aberto=false;return};const y=h-20-val/ymax*(h-32);if(!aberto){ctx.moveTo(x,y);aberto=true}else ctx.lineTo(x,y)});
+  ctx.stroke();
+ }
+}
+async function atualizarLasersTela(){
+ if(abaAtiva!=='sensores'||consultaLaserEmCurso)return;
+ consultaLaserEmCurso=true;
+ try{
+   const r=await fetch('/api/lasers/status',{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);
+   const j=await r.json();ultimoLaser=j;atualizarCartoesLaser(j);desenharLaser();
+   const a={tempo:new Date().toISOString(),ms:j.ms};
+   for(let i=0;i<3;i++){const d=j.sensores[i];a['u'+(i+2)+'_bruto']=d.brutoMm;a['u'+(i+2)+'_filtrado']=d.filtradoMm;a['u'+(i+2)+'_status']=d.status;a['u'+(i+2)+'_idade_ms']=d.idadeValidaMs}
+   historicoLaserExport.push(a);if(historicoLaserExport.length>3000)historicoLaserExport.shift();
+ }catch(e){$('laserAlerta').textContent='Falha ao ler sensores: '+e.message}
+ finally{consultaLaserEmCurso=false}
+}
+async function capturarLaser(){
+ if(!confirm('Motores PARADOS, placa imóvel e distância da janela óptica medida com régua?'))return;
+ return post('/api/lasers/capture/start',{sensor:$('capSensor').value,referencia:$('capReferencia').value,quantidade:'100'});
+}
+async function reinitLasers(){
+ if(!confirm('Reiniciar a ESP32 e os lasers (XSHUT)? Apenas com motores parados.'))return;
+ return post('/api/lasers/reinit',{});
+}
+async function limparCaptura(){return post('/api/lasers/capture/clear',{})}
+function baixarLasersLive(){
+ if(!historicoLaserExport.length){msg('Nenhuma amostra exibida ainda',true);return}
+ const ch=['tempo','ms','u2_bruto','u2_filtrado','u2_status','u2_idade_ms','u3_bruto','u3_filtrado','u3_status','u3_idade_ms','u4_bruto','u4_filtrado','u4_status','u4_idade_ms'];
+ const csv=[ch.join(';'),...historicoLaserExport.map(r=>ch.map(k=>String(r[k]??'')).join(';'))].join('\r\n');
+ const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
+ const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='micromouse_lasers_visual_'+Date.now()+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+recuperarPosicoes();
+setInterval(atualizarLasersTela,300);
+
 setInterval(atualizar,200);
-setInterval(async()=>{if(ultimo&&['PWM','RPM','POSICAO','GIRO'].includes(ultimo.modo)){try{await fetch('/api/heartbeat',{method:'POST',cache:'no-store'})}catch(e){}}},350);
+setInterval(async()=>{if(ultimo&&['PWM','RPM','POSICAO','GIRO','RETO'].includes(ultimo.modo)){try{await fetch('/api/heartbeat',{method:'POST',cache:'no-store'})}catch(e){}}},350);
 window.addEventListener('keydown',e=>{if(e.key==='Escape')parar()});
 atualizar();
 </script></body></html>

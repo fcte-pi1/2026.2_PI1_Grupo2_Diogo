@@ -28,6 +28,9 @@ float erroSyncFiltrado = 0;
 float correcaoSyncAtual = 0;
 float viagemAnteriorE = 0, viagemAnteriorD = 0;
 float odomYawRad = 0;
+float retoDistAnteriorE = 0, retoDistAnteriorD = 0;
+float retoYawRad = 0;
+int sentidoReto = +1;
 
 
 float limitar(float x, float minimo, float maximo) {
@@ -52,6 +55,7 @@ void inicializarBase(float cprE, float cprD) {
     syncForaDesde = 0;
     erroSyncFiltrado = correcaoSyncAtual = 0;
     viagemAnteriorE = viagemAnteriorD = odomYawRad = 0;
+    retoDistAnteriorE = retoDistAnteriorD = retoYawRad = 0;
     estadoE.ultimaContagem = d.esq;
     estadoD.ultimaContagem = d.dir;
 }
@@ -172,6 +176,28 @@ bool iniciarControleGiro(bool direita, bool usaImu, float limiteRpm,
     return true;
 }
 
+bool iniciarControleReto(float distanciaMm, float limiteRpm, float cprE, float cprD,
+                         bool sincronismoSuave) {
+    if (info.tipo != TipoControle::INATIVO ||
+        !isfinite(distanciaMm) || !isfinite(limiteRpm) ||
+        !isfinite(cprE) || !isfinite(cprD) || cprE <= 0 || cprD <= 0 ||
+        fabsf(distanciaMm) < RETO_DISTANCIA_MIN_MM ||
+        fabsf(distanciaMm) > RETO_DISTANCIA_MAX_MM ||
+        limiteRpm < RETO_RPM_MIN || limiteRpm > RETO_RPM_MAX) return false;
+    inicializarBase(cprE, cprD);
+    sentidoReto = distanciaMm > 0 ? +1 : -1;
+    info.tipo = TipoControle::RETO;
+    info.retoAlvoMm = distanciaMm;
+    info.retoSyncAtivo = sincronismoSuave;
+    info.limiteRpm = limiteRpm;
+    const float circ = 3.14159265358979323846f * DIAMETRO_RODA_MM;
+    info.alvoE = (int32_t)lroundf(distanciaMm * cprE / circ);
+    info.alvoD = (int32_t)lroundf(distanciaMm * cprD / circ);
+    DadosIMU imu = lerIMU();
+    info.retoYawInicio = imu.confiavel ? imu.yawDireitaGraus : NAN;
+    return true;
+}
+
 const char* atualizarControleMovimento() {
     if (info.tipo == TipoControle::INATIVO) return nullptr;
     uint32_t agora = millis();
@@ -193,6 +219,75 @@ const char* atualizarControleMovimento() {
     if (d.dir != estadoD.ultimaContagem) {
         estadoD.ultimoPulsoMs = agora;
         estadoD.ultimaContagem = d.dir;
+    }
+
+    // V4.5: reto por MEDIA do percurso, sync durante toda a marcha.
+    // Nunca transforma erro de parede em comando: LASERS NAO CONTROLAM AQUI.
+    const bool reto = info.tipo == TipoControle::RETO;
+    if (reto) {
+        const float circ = 3.14159265358979323846f * DIAMETRO_RODA_MM;
+        const float deslocE = (float)info.progressoE * circ / cprE_;
+        const float deslocD = (float)info.progressoD * circ / cprD_;
+        const float progressoAssinado = 0.5f * (deslocE + deslocD);
+        const float cursoE = sentidoReto * deslocE;
+        const float cursoD = sentidoReto * deslocD;
+        const float sync = cursoE - cursoD;
+        const float restante = fabsf(info.retoAlvoMm) - sentidoReto * progressoAssinado;
+        info.retoDistEMm = deslocE;
+        info.retoDistDMm = deslocD;
+        info.retoProgressoMm = progressoAssinado;
+        info.retoErroMm = info.retoAlvoMm - progressoAssinado;
+        info.retoSyncErroMm = sync;
+        info.retoSyncMaxMm = fmaxf(info.retoSyncMaxMm, fabsf(sync));
+        DadosIMU rimu = lerIMU();
+        info.retoYawRelativo = rimu.confiavel && isfinite(info.retoYawInicio)
+            ? rimu.yawDireitaGraus - info.retoYawInicio : NAN;
+        // Odometria diferencial do ponto medio entre as rodas.
+        // NAO observa deslizamento real dos pneus.
+        const float deltaE = deslocE - retoDistAnteriorE;
+        const float deltaD = deslocD - retoDistAnteriorD;
+        const float deltaYawDireita = (deltaE - deltaD) / ENTRE_RODAS_MM;
+        const float deltaCentro = 0.5f * (deltaE + deltaD);
+        const float yawMeio = retoYawRad + deltaYawDireita * 0.5f;
+        info.retoOdomXmm += deltaCentro * sinf(yawMeio);
+        info.retoOdomYmm += deltaCentro * cosf(yawMeio);
+        retoYawRad += deltaYawDireita;
+        info.retoYawEncoder = retoYawRad * 57.2957795f;
+        retoDistAnteriorE = deslocE;
+        retoDistAnteriorD = deslocD;
+        if (cursoE < -3 || cursoD < -3) return "reto_sentido_encoder_invertido";
+        if (fmaxf(cursoE, cursoD) > fabsf(info.retoAlvoMm) + RETO_MARGEM_CURSO_MM)
+            return "reto_limite_curso";
+        if (fabsf(sync) > RETO_SYNC_FALHA_MM) {
+            if (!syncForaDesde) syncForaDesde = agora;
+            if (agora - syncForaDesde > RETO_SYNC_FALHA_MS)
+                return "reto_dessincronia_limite";
+        } else syncForaDesde = 0;
+        if (restante <= RETO_META_TOL_MM) {
+            if (fabsf(sync) > RETO_SYNC_LIMITE_CHEGADA_MM)
+                return "reto_chegada_com_dessincronia";
+            return "reto_meta_atingida";
+        }
+        // Mesma desaceleracao da V3.1, aplicada a distancia MEDIA restante.
+        const float mediaCPR = 0.5f * (cprE_ + cprD_);
+        const int64_t faltam = (int64_t)lroundf(restante * mediaCPR / circ);
+        float baseRpm = fabsf(referenciaPosicao(faltam, mediaCPR, info.limiteRpm));
+        baseRpm = limitar(baseRpm, 18.0f, info.limiteRpm);
+        float correcao = 0;
+        if (info.retoSyncAtivo) {
+            erroSyncFiltrado += 0.25f * (sync - erroSyncFiltrado);
+            const float maxCorr = fminf(RETO_SYNC_CORRECAO_MAX_RPM,
+                                         baseRpm * RETO_SYNC_FRAC_MAX);
+            const float alvoCorr = limitar(RETO_SYNC_K_RPM_POR_MM * erroSyncFiltrado,
+                                            -maxCorr, maxCorr);
+            correcaoSyncAtual = aproximar(correcaoSyncAtual, alvoCorr,
+                                         RETO_SYNC_TAXA_RPM_S * dt);
+            correcao = correcaoSyncAtual;
+        }
+        info.retoSyncCorrecaoRpm = correcao;
+        info.desejadoE = sentidoReto * (baseRpm - correcao);
+        info.desejadoD = sentidoReto * (baseRpm + correcao);
+        // Nunca pausa intencionalmente uma roda enquanto a outra gira.
     }
 
     // V4: giro simetrico com duas rodas obrigatoriamente sincronizadas.
@@ -331,6 +426,10 @@ const char* atualizarControleMovimento() {
         }
     }
     int64_t restanteE = 0, restanteD = 0;
+    if (reto) {
+        restanteE = (int64_t)info.alvoE - info.progressoE;
+        restanteD = (int64_t)info.alvoD - info.progressoD;
+    }
     if (info.tipo == TipoControle::POSICAO) {
         restanteE = (int64_t)info.alvoE - info.progressoE;
         restanteD = (int64_t)info.alvoD - info.progressoD;
@@ -366,9 +465,9 @@ const char* atualizarControleMovimento() {
     info.rampaE = velocidadeAlvoE;
     info.rampaD = velocidadeAlvoD;
     info.pwmE = acionarRoda(velocidadeAlvoE, info.realE, dt, estadoE, true,
-                           info.tipo == TipoControle::POSICAO || girando, restanteE, agora);
+                           info.tipo == TipoControle::POSICAO || girando || reto, restanteE, agora);
     info.pwmD = acionarRoda(velocidadeAlvoD, info.realD, dt, estadoD, false,
-                           info.tipo == TipoControle::POSICAO || girando, restanteD, agora);
+                           info.tipo == TipoControle::POSICAO || girando || reto, restanteD, agora);
     if (girando && info.pausaSyncE) info.pwmE = 0;
     if (girando && info.pausaSyncD) info.pwmD = 0;
     info.ajudaPartidaE = estadoE.ajudaAtiva;

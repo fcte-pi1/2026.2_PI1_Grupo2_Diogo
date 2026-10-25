@@ -105,3 +105,40 @@ constexpr float GIRO_SUAVE_RPM_PERTO_META = 25.0f;
 constexpr float GIRO_SUAVE_FALHA_MM = 6.0f;
 constexpr uint32_t GIRO_SUAVE_FALHA_MS = 250;
 constexpr float GIRO_SUAVE_META_TOLERANCIA_MM = 0.7f;
+
+
+// ===== V4.5 - MOVIMENTO RETO (ENCODERS, SEM CORRECAO LASER) =====
+// Limites iniciais de bancada: distancia curta e RPM baixos.
+constexpr float RETO_DISTANCIA_MIN_MM = 30.0f;
+constexpr float RETO_DISTANCIA_MAX_MM = 250.0f;
+constexpr float RETO_RPM_MIN = 20.0f;
+constexpr float RETO_RPM_MAX = 60.0f;
+constexpr float RETO_META_TOL_MM = 0.7f;
+constexpr float RETO_SYNC_K_RPM_POR_MM = 3.0f;
+constexpr float RETO_SYNC_CORRECAO_MAX_RPM = 8.0f;
+constexpr float RETO_SYNC_FRAC_MAX = 0.30f;
+constexpr float RETO_SYNC_TAXA_RPM_S = 70.0f;
+constexpr float RETO_SYNC_FALHA_MM = 7.0f;
+constexpr uint32_t RETO_SYNC_FALHA_MS = 300;
+constexpr float RETO_SYNC_LIMITE_CHEGADA_MM = 2.5f;
+constexpr float RETO_MARGEM_CURSO_MM = 12.0f;
+
+// ===== V4.4 - BANCADA VL53L0X, SEM NAVEGACAO AUTOMATICA =====
+// U2/U3/U4 sao identificacoes ELETRICAS, nao posicoes fisicas validadas.
+constexpr uint8_t LASER_XSHUT_U2 = 23;
+constexpr uint8_t LASER_XSHUT_U3 = 18;
+constexpr uint8_t LASER_XSHUT_U4 = 19;
+constexpr uint8_t LASER_ADDR_U2 = 0x30;
+constexpr uint8_t LASER_ADDR_U3 = 0x31;
+constexpr uint8_t LASER_ADDR_U4 = 0x32;
+constexpr uint16_t LASER_MIN_DIAGNOSTICO_MM = 20;   // abaixo disso: INVALIDO, nao obstaculo livre
+constexpr uint16_t LASER_MAX_DIAGNOSTICO_MM = 2000;
+constexpr uint32_t LASER_ORCAMENTO_MEDICAO_US = 50000;
+constexpr uint16_t LASER_FOLGA_PERIODO_MS = 10;
+constexpr uint8_t LASER_CICLOS_VALIDADE = 4;
+constexpr float LASER_EMA_ALFA = 0.50f;
+constexpr int LASER_PAREDE_PRESENTE_MM = 120;
+constexpr int LASER_PAREDE_AUSENTE_MM = 160;
+constexpr uint32_t LASER_CAPTURE_TIMEOUT_MS = 20000;
+constexpr uint16_t LASER_CAPTURE_MAX_AMOSTRAS = 120;
+constexpr float LARGURA_CHASSI_ALVO_MM = 110.0f; // hipotese futura, nao largura medida atual

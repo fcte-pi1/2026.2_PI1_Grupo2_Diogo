@@ -8,6 +8,7 @@
 #include "brake_monitor.h"
 #include "imu.h"
 #include "i2c_diagnostics.h"
+#include "lasers.h"
 #include <Arduino.h>
 #include <WebServer.h>
 #include <Preferences.h>
@@ -18,10 +19,10 @@ extern WebServer server;
 static Preferences prefs;
 static bool prefsOk = false;
 
-enum class Modo { PARADO, MANUAL, PWM, RPM, POSICAO, GIRO };
+enum class Modo { PARADO, MANUAL, PWM, RPM, POSICAO, GIRO, RETO };
 static Modo modo = Modo::PARADO;
-static bool modoMotorizado() { return modo == Modo::PWM || modo == Modo::RPM || modo == Modo::POSICAO || modo == Modo::GIRO; }
-static const char* nomeModo() { switch (modo) { case Modo::MANUAL: return "MANUAL"; case Modo::PWM: return "PWM"; case Modo::RPM: return "RPM"; case Modo::POSICAO: return "POSICAO"; case Modo::GIRO: return "GIRO"; default: return "PARADO"; } }
+static bool modoMotorizado() { return modo == Modo::PWM || modo == Modo::RPM || modo == Modo::POSICAO || modo == Modo::GIRO || modo == Modo::RETO; }
+static const char* nomeModo() { switch (modo) { case Modo::MANUAL: return "MANUAL"; case Modo::PWM: return "PWM"; case Modo::RPM: return "RPM"; case Modo::POSICAO: return "POSICAO"; case Modo::GIRO: return "GIRO"; case Modo::RETO: return "RETO"; default: return "PARADO"; } }
 static String ultimoMotivo = "pronto";
 
 static float cprE = 0, cprD = 0; // não assumir 210 ou 1400!
@@ -52,6 +53,7 @@ static Estatisticas estatD;
 static uint32_t testeInicio = 0;
 static uint32_t duracaoTeste = 0;
 static uint32_t ultimoHeartbeat = 0;
+static uint32_t bateriaBaixaDesde = 0;
 static int64_t testeInicioE = 0, testeInicioD = 0;
 static int64_t ultimoTesteDeltaE = 0, ultimoTesteDeltaD = 0;
 static int pwmE = 0, pwmD = 0;
@@ -134,11 +136,11 @@ static void handleStatus() {
     uint32_t restante = modoMotorizado() && decorrido < duracaoTeste ? duracaoTeste - decorrido : 0;
     ControleInfo ctrl = lerControleMovimento();
     DadosFreio f = lerMedicaoFreio();
-    const bool emControle = modo == Modo::RPM || modo == Modo::POSICAO || modo == Modo::GIRO;
+    const bool emControle = modo == Modo::RPM || modo == Modo::POSICAO || modo == Modo::GIRO || modo == Modo::RETO;
     DadosIMU imu = lerIMU();
 
     String json;
-    json.reserve(3400);
+    json.reserve(5200);
     json += "{\"ms\":" + String(agora);
     json += ",\"modo\":\"" + String(nomeModo()) + "\"";
     json += ",\"motivo\":\"" + ultimoMotivo + "\"";
@@ -236,6 +238,37 @@ static void handleStatus() {
     json += ",\"syncCorrecaoRpm\":" + numeroOuNull(ctrl.syncCorrecaoRpm, 2);
     json += ",\"syncPausaE\":" + String(ctrl.pausaSyncE ? "true" : "false");
     json += ",\"syncPausaD\":" + String(ctrl.pausaSyncD ? "true" : "false");
+    // V4.5: odometria e erro do movimento reto. Se ja freou por 1 s,
+    // usar contagem congelada do monitor de freio, nao do motor movido a mao.
+    if (ctrl.retoAlvoMm != 0) {
+        const bool congelado = modo == Modo::PARADO && f.valido && f.tem1000;
+        const int64_t contEFinal = congelado ? f.em1000E : d.esq;
+        const int64_t contDFinal = congelado ? f.em1000D : d.dir;
+        const float circ = 3.14159265358979323846f * DIAMETRO_RODA_MM;
+        const float dE = (contEFinal - ctrl.inicioE) * circ / cprE;
+        const float dD = (contDFinal - ctrl.inicioD) * circ / cprD;
+        const float centro = 0.5f * (dE + dD);
+        json += ",\"retoFinalPronto\":" + String(congelado ? "true" : "false");
+        json += ",\"retoFinalE\":" + numeroOuNull(dE, 3);
+        json += ",\"retoFinalD\":" + numeroOuNull(dD, 3);
+        json += ",\"retoFinalCentro\":" + numeroOuNull(centro, 3);
+        json += ",\"retoErroFinal\":" + numeroOuNull(ctrl.retoAlvoMm - centro, 3);
+    } else {
+        json += ",\"retoFinalPronto\":false,\"retoFinalE\":null,\"retoFinalD\":null,\"retoFinalCentro\":null,\"retoErroFinal\":null";
+    }
+    json += ",\"retoAlvoMm\":" + numeroOuNull(ctrl.retoAlvoMm, 2);
+    json += ",\"retoProgressoMm\":" + numeroOuNull(ctrl.retoProgressoMm, 3);
+    json += ",\"retoErroMm\":" + numeroOuNull(ctrl.retoErroMm, 3);
+    json += ",\"retoDistEMm\":" + numeroOuNull(ctrl.retoDistEMm, 3);
+    json += ",\"retoDistDMm\":" + numeroOuNull(ctrl.retoDistDMm, 3);
+    json += ",\"retoSyncErroMm\":" + numeroOuNull(ctrl.retoSyncErroMm, 3);
+    json += ",\"retoSyncMaxMm\":" + numeroOuNull(ctrl.retoSyncMaxMm, 3);
+    json += ",\"retoSyncCorrecaoRpm\":" + numeroOuNull(ctrl.retoSyncCorrecaoRpm, 2);
+    json += ",\"retoSyncAtivo\":" + String(ctrl.retoSyncAtivo ? "true" : "false");
+    json += ",\"retoYawImu\":" + numeroOuNull(ctrl.retoYawRelativo, 2);
+    json += ",\"retoYawEncoder\":" + numeroOuNull(ctrl.retoYawEncoder, 2);
+    json += ",\"retoOdomXmm\":" + numeroOuNull(ctrl.retoOdomXmm, 2);
+    json += ",\"retoOdomYmm\":" + numeroOuNull(ctrl.retoOdomYmm, 2);
     json += ",\"meta90E\":" + (cprE > 0 ? numeroOuNull(ENTRE_RODAS_MM * cprE / (4 * DIAMETRO_RODA_MM)) : String("null"));
     json += ",\"meta90D\":" + (cprD > 0 ? numeroOuNull(ENTRE_RODAS_MM * cprD / (4 * DIAMETRO_RODA_MM)) : String("null"));
     json += "}";
@@ -244,6 +277,7 @@ static void handleStatus() {
 }
 
 static void handleManualStart() {
+    if (capturaLaserAtiva()) return respostaErro(409, "Aguarde a captura laser terminar antes de mover motores");
     if (modo != Modo::PARADO || aguardandoMedicaoFreio()) return respostaErro(409, "Finalize teste e aguarde 1 s apos o freio");
     String lado = server.arg("lado");
     if (!lateralValida(lado)) return respostaErro(400, "Lado invalido");
@@ -315,6 +349,7 @@ static void handleSalvarCpr() {
 }
 
 static void handlePWMStart() {
+    if (capturaLaserAtiva()) return respostaErro(409, "Aguarde a captura laser terminar antes de mover motores");
     if (!motorHardwareReady()) return respostaErro(503, "Driver PWM nao inicializado");
     if (modo != Modo::PARADO || aguardandoMedicaoFreio()) return respostaErro(409, "Finalize teste e aguarde 1 s apos o freio");
     String lado = server.arg("lado");
@@ -375,11 +410,13 @@ static void iniciarRelogioMotorizado(int duracao, Modo novoModo) {
     testeInicio = millis();
     ultimoHeartbeat = testeInicio;
     duracaoTeste = static_cast<uint32_t>(duracao);
+    bateriaBaixaDesde = 0;
     pwmE = pwmD = 0;
     modo = novoModo;
 }
 
 static void handlePosicaoStart() {
+    if (capturaLaserAtiva()) return respostaErro(409, "Aguarde a captura laser terminar antes de mover motores");
     if (!podeIniciarControle())
         return respostaErro(409, "Exige CPR salvo, motores prontos, PARADO e freio concluido");
     int e, d, duracao;
@@ -398,6 +435,7 @@ static void handlePosicaoStart() {
 }
 
 static void handleRpmStart() {
+    if (capturaLaserAtiva()) return respostaErro(409, "Aguarde a captura laser terminar antes de mover motores");
     if (!podeIniciarControle())
         return respostaErro(409, "Exige CPR salvo, motores prontos, PARADO e freio concluido");
     int duracao;
@@ -431,7 +469,30 @@ static void handleImuZerar() {
     if (!zerarYawIMU()) return respostaErro(409, "IMU indisponivel, nao calibrada ou ainda girando");
     respostaOk("Yaw relativo zerado; aguarde 10 s parado para medir deriva");
 }
+static void handleRetoStart() {
+    if (capturaLaserAtiva())
+        return respostaErro(409, "Aguarde a captura laser terminar antes de mover motores");
+    if (!podeIniciarControle())
+        return respostaErro(409, "Exige CPR salvo, motores prontos, PARADO e freio finalizado");
+    float distancia = 0, rpm = 0;
+    int duracao = 0;
+    const String sinc = server.arg("sync");
+    if ((sinc != "suave" && sinc != "desligado") ||
+        !floatValido("distancia", distancia) ||
+        fabsf(distancia) < RETO_DISTANCIA_MIN_MM ||
+        fabsf(distancia) > RETO_DISTANCIA_MAX_MM ||
+        !floatValido("rpm", rpm) || rpm < RETO_RPM_MIN || rpm > RETO_RPM_MAX ||
+        !inteiroEmFaixa("duracao", 1000, TESTE_DURACAO_MAX_MS, duracao))
+        return respostaErro(400, "Distancia assinada de 30..250 mm, RPM 20..60, timeout 1000..10000");
+    if (!iniciarControleReto(distancia, rpm, cprE, cprD, sinc == "suave"))
+        return respostaErro(409, "Controlador de movimento reto nao iniciou");
+    iniciarRelogioMotorizado(duracao, Modo::RETO);
+    ultimoMotivo = "reto_iniciado";
+    respostaOk("Movimento reto por encoders iniciado; lasers apenas diagnostico");
+}
+
 static void handleGiroStart() {
+    if (capturaLaserAtiva()) return respostaErro(409, "Aguarde a captura laser terminar antes de mover motores");
     if (!podeIniciarControle())
         return respostaErro(409, "Exige CPR salvo, PARADO e freio concluido");
     float rpm = 0;
@@ -488,6 +549,46 @@ static void handleReiniciarImu() {
     respostaOk("MPU detectado; mantenha o robo parado durante a calibracao");
 }
 
+bool testeMotorAtivo() { return modoMotorizado(); }
+
+// V4.4 - Laser bench endpoints: no motor commands are called here.
+static bool bancadaParada() {
+    return modo == Modo::PARADO && !aguardandoMedicaoFreio();
+}
+static void handleLasersStatus() {
+    server.sendHeader("Cache-Control", "no-store");
+    server.send(200, "application/json", jsonLasers());
+}
+static void handleLasersCapturaStart() {
+    if (!bancadaParada()) return respostaErro(409, "Interrompa o teste dos motores e aguarde o freio");
+    int indice=server.arg("sensor").toInt();
+    int referencia=server.arg("referencia").toInt();
+    int quantidade=server.arg("quantidade").toInt();
+    if (!iniciarCapturaLaser((uint8_t)indice,referencia,(uint16_t)quantidade))
+        return respostaErro(400, "Sensor indisponivel, captura ativa ou parametros fora da faixa");
+    respostaOk("Captura iniciada: manter placa parada ate 100 eventos ou timeout");
+}
+static void handleLasersReinit() {
+    if (!bancadaParada() || capturaLaserAtiva())
+        return respostaErro(409, "Reinicie os lasers apenas com robo parado e sem captura ativa");
+    respostaOk("ESP32 reiniciando; reconecte ao painel em alguns segundos");
+    delay(250);
+    ESP.restart();
+}
+static void handleLasersClear() {
+    if (!bancadaParada() || capturaLaserAtiva())
+        return respostaErro(409, "Nao limpe enquanto ha ensaio em andamento");
+    limparCapturaLaser();
+    respostaOk("Dados da captura anterior limpos");
+}
+static void handleLasersCsv() {
+    auto c=resumoCapturaLaser();
+    if(c.amostras==0) return respostaErro(404, "Nao ha amostras capturadas");
+    server.sendHeader("Content-Disposition", "attachment; filename=vl53l0x_captura.csv");
+    server.sendHeader("Cache-Control", "no-store");
+    server.send(200, "text/csv; charset=utf-8", csvCapturaLaser());
+}
+
 void setupTelemetry() {
     prefsOk = prefs.begin("mousecal", false);
     if (prefsOk) {
@@ -501,6 +602,11 @@ void setupTelemetry() {
     server.on("/api/i2c/scan", HTTP_GET, handleScanI2C);
     server.on("/api/imu/reiniciar", HTTP_POST, handleReiniciarImu);
     server.on("/api/status", HTTP_GET, handleStatus);
+    server.on("/api/lasers/status", HTTP_GET, handleLasersStatus);
+    server.on("/api/lasers/capture/start", HTTP_POST, handleLasersCapturaStart);
+    server.on("/api/lasers/capture/clear", HTTP_POST, handleLasersClear);
+    server.on("/api/lasers/capture.csv", HTTP_GET, handleLasersCsv);
+    server.on("/api/lasers/reinit", HTTP_POST, handleLasersReinit);
     server.on("/api/manual/start", HTTP_POST, handleManualStart);
     server.on("/api/manual/finish", HTTP_POST, handleManualFinish);
     server.on("/api/encoders/reset", HTTP_POST, handleReset);
@@ -512,6 +618,7 @@ void setupTelemetry() {
     server.on("/api/imu/calibrar", HTTP_POST, handleImuCalibrar);
     server.on("/api/imu/zero", HTTP_POST, handleImuZerar);
     server.on("/api/giro/start", HTTP_POST, handleGiroStart);
+    server.on("/api/reto/start", HTTP_POST, handleRetoStart);
     server.on("/api/pwm/stop", HTTP_POST, []() {
         pararTesteDeEmergencia("parado_pela_pagina");
         respostaOk("Motores frenados");
@@ -525,11 +632,18 @@ void loopTelemetry() {
     if (!modoMotorizado()) return;
     uint32_t agora = millis();
     // Segurança vem antes do cálculo de controle.
+    if (modo == Modo::RETO && (!batteryAvailable() ||
+         !isfinite(getVoltage()) || getVoltage() >= 6.6f)) bateriaBaixaDesde = 0;
     if (agora - ultimoHeartbeat > WATCHDOG_WEB_MS) {
         encerrarTeste("watchdog_conexao_perdida");
     } else if (agora - testeInicio >= duracaoTeste) {
         encerrarTeste("limite_de_tempo");
-    } else if (modo == Modo::RPM || modo == Modo::POSICAO || modo == Modo::GIRO) {
+    } else if (modo == Modo::RETO && batteryAvailable() &&
+               isfinite(getVoltage()) && getVoltage() < 6.6f &&
+               ((bateriaBaixaDesde == 0) ? (bateriaBaixaDesde = agora, false)
+                                          : agora - bateriaBaixaDesde > 850)) {
+        encerrarTeste("reto_bateria_abaixo_6v6");
+    } else if (modo == Modo::RPM || modo == Modo::POSICAO || modo == Modo::GIRO || modo == Modo::RETO) {
         const char* motivo = atualizarControleMovimento();
         if (motivo != nullptr) encerrarTeste(motivo);
     }
