@@ -147,3 +147,83 @@ Sete testes no computador (`test/test_imu_logic`): média e desvio de um conjunt
 
 - **Implementado e testado no computador.**
 - **Falta a bancada:** o critério de aceite da #119 é o ângulo ficar estável e próximo de zero por 60 s com o robô parado. A meta proposta é deriva menor que 1° em 60 s. Também falta conferir o bias e o desvio impressos na serial e ajustar a zona morta e o limite de movimento, se preciso.
+
+
+## Telemetria e Comunicação Wi-Fi
+
+Issue #66, PR de Telemetria.
+
+### O que faz
+
+O módulo de telemetria é responsável por transmitir periodicamente os dados de diagnóstico, cinemática, atitude inercial e energia do Micromouse para a estação base / backend via Wi-Fi:
+
+- **Task FreeRTOS Dedicada no Core 0:** A transmissão HTTP assíncrona roda no núcleo de rede (Core 0), deixando o Core 1 100% dedicado ao controle dos motores, leitura dos lasers e integração da IMU, evitando qualquer bloqueio de malha de controle.
+- **Formato Compatível com o Backend FastAPI:** Envia payload JSON contendo os campos esperados pelo schema `EspTelemetryInput` (`bateria`, `velocidade`, `rpm_motor` e `connected`), além de objetos estruturados com dados ricos (`energia` do INA219, `imu` MPU-6050, `motores` N20 e `sensores_distancia_mm`).
+- **Monitoramento de Latência RTT:** Mede o tempo de ida e volta (Round-Trip Time) da requisição HTTP até o servidor em milissegundos, atendendo aos requisitos RNF-SW01 e RF-EL06.
+- **Tratamento Resiliente do Ciclo de Sessões:**
+  - `HTTP 200/201`: Dados gravados e associados à execução ativa no PostgreSQL.
+  - `HTTP 409 Conflict`: Backend online e medindo latência RTT, aguardando início de corrida na interface web (`POST /api/sessions`). O robô mantém enlace ativo sem reportar erro de rede.
+  - `HTTP 422`: Alerta de erro de validação nos dados.
+  - `Timeout / Falha de Socket`: Registra perda de pacotes e reconexão automática.
+
+### Arquivos
+
+| Arquivo | Conteúdo |
+|---|---|
+| `telemetry.h` / `telemetry.cpp` | Task no Core 0, sincronização com spinlock (`telemetryMux`), medição de latência RTT e serialização JSON |
+| `config.h` | Parâmetros de rede: `TELEMETRY_SERVER_HOST`, `TELEMETRY_SERVER_PORT`, `TELEMETRY_ENDPOINT`, `TELEMETRY_INTERVAL_MS`, `TELEMETRY_TIMEOUT_MS` |
+| `main.cpp` | Chamadas periódicas de `updateTelemetryData()` e `updateTelemetryBattery()`, e exibição de RTT/status HTTP na serial |
+
+### Formato do Payload JSON enviado ao Backend
+
+```json
+{
+  "bateria": 87.0,
+  "velocidade": 12.5,
+  "rpm_motor": 120,
+  "connected": true,
+  "execucao_id": 1,
+  "tempo_relativo_ms": 1500,
+  "timestamp_envio_ms": 1500,
+  "energia": {
+    "tensao_v": 7.82,
+    "consumo_ma": 420.5
+  },
+  "motores": {
+    "rpm_esq": 120,
+    "rpm_dir": 120,
+    "velocidade_cm_s": 12.5
+  },
+  "imu": {
+    "yaw_deg": 0.0,
+    "taxa_deg_s": 0.0,
+    "giro_x": 0.0,
+    "giro_y": 0.0,
+    "giro_z": 0.0
+  },
+  "sensores_distancia_mm": {
+    "esq": 150,
+    "frente": 220,
+    "dir": 148
+  },
+  "posicao_estimada": {
+    "x": 0,
+    "y": 0,
+    "direcao": "N"
+  },
+  "status_missao": "em_execucao",
+  "diagnostico": {
+    "latencia_ms": 14,
+    "pacotes_enviados": 150,
+    "pacotes_falhos": 0,
+    "ultimo_http_status": 200,
+    "status_servidor": "ativo",
+    "conectado": true
+  }
+}
+```
+
+### Estado
+
+- **Implementado e compatibilizado com o backend FastAPI.**
+- **Pronto para testes integrados com a estação base.**

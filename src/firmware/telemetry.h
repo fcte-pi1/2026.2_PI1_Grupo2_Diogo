@@ -3,9 +3,17 @@
 #include <Arduino.h>
 
 /**
- * @brief Estrutura unificada de dados de telemetria do Micromouse.
- * Compatível com o schema relacional da tabela amostra_telemetria e
- * com os componentes de visualização da aplicação Web (React / FastAPI).
+ * @file telemetry.h
+ * @brief Subsistema unificado de telemetria do Micromouse via Wi-Fi / HTTP.
+ *
+ * Arquitetura de integração com a estação base:
+ * 1. O firmware executa uma task FreeRTOS dedicada no Core 0 (espaço de rede),
+ *    enquanto o loop de controle de motores e sensores roda no Core 1.
+ * 2. O payload é compatível diretamente com o backend FastAPI (rota POST /api/telemetry),
+ *    alimentando o schema EspTelemetryInput (campos planos: bateria, velocidade, rpm_motor, connected)
+ *    e disponibilizando estruturas detalhadas para diagnóstico, persistência relacional e visualização.
+ * 3. Monitoramento contínuo de latência RTT (Round-Trip Time) e qualidade de enlace
+ *    (atendendo a RNF-SW01 e RF-EL06).
  */
 struct TelemetryData {
   uint32_t execucao_id;
@@ -44,10 +52,12 @@ struct TelemetryData {
   // Status da Missão
   const char* status_missao; // "em_execucao", "concluido", "interrompido"
 
-  // Monitoramento de Latência e Qualidade de Enlace (RNF-SW01, RF-EL06)
+  // Monitoramento de Latência, HTTP e Qualidade de Enlace (RNF-SW01, RF-EL06)
   uint32_t latencia_rtt_ms;
   uint32_t pacotes_enviados;
   uint32_t pacotes_falhos;
+  int ultimo_http_status;      // Código HTTP recebido (ex.: 200 gravado, 409 aguardando sessão, etc.)
+  const char* status_servidor; // "ativo", "aguardando_sessao", "erro_http", "desconectado"
   bool conectado;
 };
 
@@ -70,12 +80,12 @@ void updateTelemetryData(
 );
 
 /**
- * @brief Atualiza leituras de monitoramento elétrico da bateria.
+ * @brief Atualiza leituras de monitoramento elétrico da bateria (INA219).
  */
 void updateTelemetryBattery(float tensao_v, float consumo_ma, float nivel_pct);
 
 /**
- * @brief Serializa os dados atuais em JSON padronizado.
+ * @brief Serializa os dados atuais em JSON padronizado compatível com o backend.
  * @param buffer Ponteiro para o buffer de caracteres de saída.
  * @param bufferSize Tamanho máximo do buffer.
  * @return Número de bytes escritos no buffer.
@@ -88,4 +98,6 @@ size_t serializeTelemetryJSON(char* buffer, size_t bufferSize);
 uint32_t getTelemetryLatency();
 uint32_t getTelemetryPacketsSent();
 uint32_t getTelemetryPacketsLost();
+int getTelemetryLastHttpStatus();
+const char* getTelemetryServerStatus();
 bool isTelemetryConnected();

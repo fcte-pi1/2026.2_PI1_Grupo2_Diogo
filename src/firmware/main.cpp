@@ -98,13 +98,14 @@ void loop() {
         dEsq, dFte, dDir
     );
 
-    // Telemetria no Serial para depuração local
+    // Telemetria no Serial para depuração local em bancada
     Serial.printf("[MOTORES]     A: %5.2f RPS | B: %5.2f RPS\n", rpsA, rpsB);
     Serial.printf("[IMU]         Yaw: %6.1f deg | Taxa: %5.2f deg/s\n", getYawAngle(), getYawRate());
     Serial.printf("[LASER]       Esq: %4d mm | Frente: %4d mm | Dir: %4d mm\n", dEsq, dFte, dDir);
     Serial.printf("[ENERGIA]     %5.2f V | %7.1f mA | %7.1f mW | %5.1f %%\n", obter_tensao_bateria(), obter_corrente_mA(), obter_potencia_mW(), obter_bateria_pct());
-    Serial.printf("[TELEMETRIA]  RTT: %3u ms | Enviados: %4u | Falhas: %2u | Conectado: %s\n",
-                  getTelemetryLatency(), getTelemetryPacketsSent(), getTelemetryPacketsLost(),
+    Serial.printf("[TELEMETRIA]  RTT: %3u ms | HTTP: %d (%s) | Enviados: %4u | Falhas: %2u | Conectado: %s\n",
+                  getTelemetryLatency(), getTelemetryLastHttpStatus(), getTelemetryServerStatus(),
+                  getTelemetryPacketsSent(), getTelemetryPacketsLost(),
                   isTelemetryConnected() ? "SIM" : "NAO");
     Serial.println("--------------------------------------------------");
   }
