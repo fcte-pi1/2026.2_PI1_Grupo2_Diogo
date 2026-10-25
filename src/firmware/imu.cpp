@@ -1,6 +1,7 @@
 #include "imu.h"
 #include "config.h"
 #include "imu_chip_id.h"
+#include "imu_logic.h"
 #include <Wire.h>
 #include <math.h>
 
@@ -9,7 +10,7 @@ DadosIMU d;
 uint8_t endereco = 0;
 uint32_t ultimoUs = 0;
 uint32_t falhasSeguidas = 0;
-double soma = 0, somaQuadrados = 0;
+EstatisticaGiro estatisticaGiro;
 
 bool escrever(uint8_t reg, uint8_t valor) {
     Wire.beginTransmission(endereco);
@@ -98,7 +99,7 @@ bool iniciarCalibracaoIMU() {
     d.calibrada = false; d.confiavel = false;
     d.calibrando = true; d.amostrasBias = 0;
     d.yawDireitaGraus = 0; d.taxaDireitaDps = 0;
-    soma = somaQuadrados = 0;
+    estatisticaGiro = EstatisticaGiro{};
     falhasSeguidas = 0;
     ultimoUs = micros();
     return true;
@@ -125,15 +126,13 @@ void atualizarIMU() {
     const float taxaRaw = (float)gz / 131.0f;
     d.ultimaLeituraMs = millis();
     if (d.calibrando) {
-        soma += taxaRaw;
-        somaQuadrados += (double)taxaRaw * taxaRaw;
+        estatisticaGiro.adicionar(taxaRaw);
         ++d.amostrasBias;
         if (d.amostrasBias >= IMU_AMOSTRAS_BIAS) {
-            const double n = (double)d.amostrasBias;
-            const double media = soma / n;
-            const double variancia = fmax(0.0, somaQuadrados / n - media * media);
-            d.biasDps = (float)media;
-            d.ruidoDps = (float)sqrt(variancia);
+            // Welford: calcula media e variancia incrementalmente sem
+            // cancelamento numerico de soma(x^2) - soma(x)^2.
+            d.biasDps = estatisticaGiro.media();
+            d.ruidoDps = estatisticaGiro.desvio();
             d.calibrando = false;
             d.calibrada = d.ruidoDps <= IMU_RUIDO_MAX_DPS;
             d.confiavel = d.calibrada;

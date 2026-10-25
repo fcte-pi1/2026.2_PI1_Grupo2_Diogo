@@ -138,7 +138,7 @@ static void handleStatus() {
     DadosIMU imu = lerIMU();
 
     String json;
-    json.reserve(2700);
+    json.reserve(3400);
     json += "{\"ms\":" + String(agora);
     json += ",\"modo\":\"" + String(nomeModo()) + "\"";
     json += ",\"motivo\":\"" + ultimoMotivo + "\"";
@@ -223,6 +223,10 @@ static void handleStatus() {
     json += ",\"giroAlvoYaw\":" + numeroOuNull(ctrl.alvoYawGraus);
     json += ",\"giroYawRelativo\":" + numeroOuNull(ctrl.yawMedido);
     json += ",\"giroErroYaw\":" + numeroOuNull(ctrl.erroYaw);
+    json += ",\"syncSuave\":" + String(ctrl.sincronismoSuave ? "true" : "false");
+    json += ",\"odomXmm\":" + numeroOuNull(ctrl.odomXmm, 3);
+    json += ",\"odomYmm\":" + numeroOuNull(ctrl.odomYmm, 3);
+    json += ",\"odomYawGraus\":" + numeroOuNull(ctrl.odomYawGraus, 2);
     json += ",\"syncErroMm\":" + numeroOuNull(ctrl.syncErroMm, 3);
     json += ",\"syncDistE\":" + numeroOuNull(ctrl.distanciaE, 2);
     json += ",\"syncDistD\":" + numeroOuNull(ctrl.distanciaD, 2);
@@ -434,7 +438,9 @@ static void handleGiroStart() {
     int duracao = 0;
     const String modoGiro = server.arg("tipo");
     const String lado = server.arg("lado");
-    if ((modoGiro != "encoder" && modoGiro != "imu") ||
+    const String syncGiro = server.arg("syncGiro");
+    if ((syncGiro != "suave" && syncGiro != "legado") ||
+        (modoGiro != "encoder" && modoGiro != "imu") ||
         (lado != "direita" && lado != "esquerda") ||
         !floatValido("rpm", rpm) || rpm < 20 || rpm > GIRO_RPM_MAX ||
         !inteiroEmFaixa("duracao", 1000, TESTE_DURACAO_MAX_MS, duracao))
@@ -444,7 +450,7 @@ static void handleGiroStart() {
     // Giro encoder usa IMU somente para telemetria; nao precisa MPU presente.
     // Zerar yaw (se disponivel) para facilitar comparacao justa entre ensaios.
     if (modoGiro == "encoder" && lerIMU().confiavel) zerarYawIMU();
-    if (!iniciarControleGiro(lado == "direita", modoGiro == "imu", rpm, cprE, cprD))
+    if (!iniciarControleGiro(lado == "direita", modoGiro == "imu", rpm, cprE, cprD, syncGiro == "suave"))
         return respostaErro(409, "Controlador nao iniciou: cheque IMU, orientacao e CPR");
     iniciarRelogioMotorizado(duracao, Modo::GIRO);
     ultimoMotivo = modoGiro == "imu" ? "giro_imu_iniciado" : "giro_encoder_iniciado";
@@ -457,7 +463,7 @@ static const char DIAG_I2C_HTML[] PROGMEM = R"DIAG(<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Micromouse - Diagnostico I2C</title>
 <style>body{background:#101826;color:#e8f3ff;font:16px system-ui;margin:24px auto;padding:0 12px;max-width:700px}main{background:#1b2739;padding:20px;border-radius:12px}button{padding:12px;background:#52dca3;border:0;border-radius:8px;font-weight:bold;margin:8px 4px}pre{background:#0b1421;color:#c8f3df;padding:15px;border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere}a{color:#60b7ff}</style>
-</head><body><main><h1>Diagnostico I2C - V4.2</h1><p>ESP32: SDA GPIO21; SCL GPIO22; 100 kHz. Realize com motores parados.</p>
+</head><body><main><h1>Diagnostico I2C - V4.3</h1><p>ESP32: SDA GPIO21; SCL GPIO22; 100 kHz. Realize com motores parados.</p>
 <button onclick="scan()">Procurar dispositivos</button><button onclick="reiniciar()">Tentar detectar MPU novamente</button>
 <pre id="saida">Clique para varrer...</pre>
 <p>Esperado: <b>0x40</b> INA219 e <b>0x68 ou 0x69</b> MPU-6050. Em WHO_AM_I, <b>0x68 = MPU-6050</b> ou <b>0x74 = MPU-6515</b>. Sensores laser isolados por XSHUT nesta bancada.</p>

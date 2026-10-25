@@ -26,6 +26,10 @@ struct ControleInfo {
     float yawMedido = 0;
     float erroYaw = 0;
     bool usandoIMU = false;
+    bool sincronismoSuave = false; // V4.3: configuravel para A/B com V4.2
+    // Estimativas somente por encoder; NAO medem escorregamento lateral.
+    float odomXmm = 0, odomYmm = 0;
+    float odomYawGraus = 0;
 };
 
 // Iniciar apenas em repouso. Dados CPR devem estar validados e >0.
@@ -39,4 +43,4 @@ ControleInfo lerControleMovimento();
 
 // Giro positivo = direita, negativo = esquerda; angulo fixo +/-90 deg.
 bool iniciarControleGiro(bool direita, bool usaImu, float limiteRpm,
-                         float cprE, float cprD);
+                         float cprE, float cprD, bool sincronismoSuave);

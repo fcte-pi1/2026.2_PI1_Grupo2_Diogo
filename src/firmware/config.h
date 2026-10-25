@@ -92,3 +92,16 @@ constexpr float GIRO_SYNC_RETOMADA_MM = 1.6f;
 constexpr float GIRO_SYNC_FALHA_MM = 13.0f;
 constexpr uint32_t GIRO_SYNC_FALHA_MS = 600;
 constexpr float GIRO_LIMITE_DESLOCAMENTO_REL = 1.28f; // IMU nao pode girar indefinidamente
+
+// ===== V4.3 - GIRO COM SINCRONIZACAO SUAVE =====
+// Correcao proporcional limitada; nao freia individualmente uma roda.
+// Valores conservadores para testes com o centro do eixo marcado no chao.
+constexpr float GIRO_SUAVE_K_RPM_POR_MM = 3.0f;
+constexpr float GIRO_SUAVE_CORRECAO_FRAC_MAX = 0.30f;
+constexpr float GIRO_SUAVE_CORRECAO_RPM_MAX = 8.0f;
+constexpr float GIRO_SUAVE_TAXA_CORRECAO_RPM_S = 75.0f;
+constexpr float GIRO_SUAVE_DESACEL_INICIO_MM = 18.0f;
+constexpr float GIRO_SUAVE_RPM_PERTO_META = 25.0f;
+constexpr float GIRO_SUAVE_FALHA_MM = 6.0f;
+constexpr uint32_t GIRO_SUAVE_FALHA_MS = 250;
+constexpr float GIRO_SUAVE_META_TOLERANCIA_MM = 0.7f;

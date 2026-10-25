@@ -24,6 +24,10 @@ EstadoPI estadoE, estadoD;
 int sentidoGiro = 1;  // +1 direita; E frente D tras
 uint32_t syncForaDesde = 0;
 float alvoFisicoMm = 0;
+float erroSyncFiltrado = 0;
+float correcaoSyncAtual = 0;
+float viagemAnteriorE = 0, viagemAnteriorD = 0;
+float odomYawRad = 0;
 
 
 float limitar(float x, float minimo, float maximo) {
@@ -46,6 +50,8 @@ void inicializarBase(float cprE, float cprD) {
     estadoD = EstadoPI{};
     estadoE.ultimoPulsoMs = estadoD.ultimoPulsoMs = anteriorMs;
     syncForaDesde = 0;
+    erroSyncFiltrado = correcaoSyncAtual = 0;
+    viagemAnteriorE = viagemAnteriorD = odomYawRad = 0;
     estadoE.ultimaContagem = d.esq;
     estadoD.ultimaContagem = d.dir;
 }
@@ -145,7 +151,7 @@ bool iniciarControlePosicao(int32_t alvoE, int32_t alvoD,
 
 
 bool iniciarControleGiro(bool direita, bool usaImu, float limiteRpm,
-                         float cprE, float cprD) {
+                         float cprE, float cprD, bool sincronismoSuave) {
     if (info.tipo != TipoControle::INATIVO || cprE <= 0 || cprD <= 0 ||
         limiteRpm < 20 || limiteRpm > GIRO_RPM_MAX) return false;
     if (usaImu && !zerarYawIMU()) return false;
@@ -155,6 +161,7 @@ bool iniciarControleGiro(bool direita, bool usaImu, float limiteRpm,
     alvoFisicoMm = distancia;
     info.tipo = usaImu ? TipoControle::GIRO_IMU : TipoControle::GIRO_ENCODER;
     info.usandoIMU = usaImu;
+    info.sincronismoSuave = sincronismoSuave;
     info.alvoYawGraus = direita ? 90.0f : -90.0f;
     // No encoder puro, o IMU NAO interfere: le apenas para o CSV.
     DadosIMU g = lerIMU();
@@ -181,8 +188,7 @@ const char* atualizarControleMovimento() {
 
     if (d.esq != estadoE.ultimaContagem) {
         estadoE.ultimoPulsoMs = agora;
-        syncForaDesde = 0;
-    estadoE.ultimaContagem = d.esq;
+        estadoE.ultimaContagem = d.esq;
     }
     if (d.dir != estadoD.ultimaContagem) {
         estadoD.ultimoPulsoMs = agora;
@@ -204,10 +210,27 @@ const char* atualizarControleMovimento() {
         info.distanciaD = viagemD;
         info.syncErroMm = viagemE - viagemD;
         info.syncErroMaxMm = fmaxf(info.syncErroMaxMm, fabsf(info.syncErroMm));
+        if (info.sincronismoSuave) {
+            // Odometia ideal do ponto medio do EIXO das rodas, no referencial
+            // inicial. Erros de aderencia nao sao observaveis pelos encoders.
+            const float de = viagemE - viagemAnteriorE;
+            const float dd = viagemD - viagemAnteriorD;
+            const float dsCentro = 0.5f * sentidoGiro * (de - dd);
+            const float dYaw = sentidoGiro * (de + dd) / ENTRE_RODAS_MM;
+            const float meioYaw = odomYawRad + dYaw * 0.5f;
+            info.odomXmm += dsCentro * sinf(meioYaw);
+            info.odomYmm += dsCentro * cosf(meioYaw);
+            odomYawRad += dYaw;
+            info.odomYawGraus = odomYawRad * 57.2957795f;
+            viagemAnteriorE = viagemE;
+            viagemAnteriorD = viagemD;
+        }
         if (viagemE < -2.0f || viagemD < -2.0f) return "giro_sentido_encoder_incorreto";
-        if (fabsf(info.syncErroMm) > GIRO_SYNC_FALHA_MM) {
+        const float limiteSync = info.sincronismoSuave ? GIRO_SUAVE_FALHA_MM : GIRO_SYNC_FALHA_MM;
+        const uint32_t tempoSync = info.sincronismoSuave ? GIRO_SUAVE_FALHA_MS : GIRO_SYNC_FALHA_MS;
+        if (fabsf(info.syncErroMm) > limiteSync) {
             if (!syncForaDesde) syncForaDesde = agora;
-            if (agora - syncForaDesde > GIRO_SYNC_FALHA_MS) return "dessincronia_limite";
+            if (agora - syncForaDesde > tempoSync) return "dessincronia_limite";
         } else syncForaDesde = 0;
 
         float rpmBase = 0;
@@ -215,10 +238,28 @@ const char* atualizarControleMovimento() {
             // Meta encoder = distancia ideal; sincronismo atua DURANTE o movimento.
             const float faltandoE = alvoFisicoMm - viagemE;
             const float faltandoD = alvoFisicoMm - viagemD;
-            if (faltandoE <= 0.5f && faltandoD <= 0.5f) return "giro_encoder_concluido";
-            const float rpmEsq = referenciaPosicao((int64_t)lroundf(fmaxf(0, faltandoE) * cprE_ / cir), cprE_, info.limiteRpm);
-            const float rpmDir = referenciaPosicao((int64_t)lroundf(fmaxf(0, faltandoD) * cprD_ / cir), cprD_, info.limiteRpm);
-            rpmBase = fminf(fabsf(rpmEsq), fabsf(rpmDir));
+            if (info.sincronismoSuave) {
+                // Parada conjunta: nunca segurar uma roda para 'esperar' a outra.
+                // No modo encoder o ALVO EH A MEDIA do deslocamento das rodas.
+                const float faltaMedia = alvoFisicoMm - (viagemE + viagemD) * 0.5f;
+                if (faltaMedia <= GIRO_SUAVE_META_TOLERANCIA_MM) {
+                    if (fabsf(info.syncErroMm) > GIRO_SYNC_PAUSA_MM)
+                        return "giro_fim_com_dessincronia";
+                    return "giro_encoder_concluido";
+                }
+                if (fmaxf(viagemE, viagemD) > alvoFisicoMm + 10.0f)
+                    return "giro_encoder_limite_curso";
+                rpmBase = fabsf(referenciaPosicao(
+                    (int64_t)lroundf(faltaMedia * ((cprE_ + cprD_)*0.5f) / cir),
+                    (cprE_ + cprD_)*0.5f, info.limiteRpm));
+                if (faltaMedia < GIRO_SUAVE_DESACEL_INICIO_MM)
+                    rpmBase = fminf(rpmBase, GIRO_SUAVE_RPM_PERTO_META);
+            } else {
+                if (faltandoE <= 0.5f && faltandoD <= 0.5f) return "giro_encoder_concluido";
+                const float rpmEsq = referenciaPosicao((int64_t)lroundf(fmaxf(0, faltandoE) * cprE_ / cir), cprE_, info.limiteRpm);
+                const float rpmDir = referenciaPosicao((int64_t)lroundf(fmaxf(0, faltandoD) * cprD_ / cir), cprD_, info.limiteRpm);
+                rpmBase = fminf(fabsf(rpmEsq), fabsf(rpmDir));
+            }
         } else {
             if (!imu.confiavel) return "imu_indisponivel_ou_atrasada";
             if (viagemE > alvoFisicoMm * GIRO_LIMITE_DESLOCAMENTO_REL ||
@@ -240,22 +281,53 @@ const char* atualizarControleMovimento() {
             rpmBase = limitar(taxaMax / ganhoAngular, 17.0f, info.limiteRpm);
         }
         if (rpmBase <= 0) rpmBase = 17.0f;
-        // Distancias NORMALIZADAS pelas CPRs individuais: mesma distancia
-        // fisica percorrida em sentidos opostos => giro no centro do eixo.
-        const float corr = limitar(GIRO_SYNC_K_RPM_POR_MM * info.syncErroMm,
-                                  -GIRO_SYNC_CORRECAO_RPM_MAX, GIRO_SYNC_CORRECAO_RPM_MAX);
-        info.syncCorrecaoRpm = corr;
-        // Histerese evita alternar rapidamente freio/potencia.
-        if (info.pausaSyncE && info.syncErroMm < GIRO_SYNC_RETOMADA_MM) info.pausaSyncE = false;
-        if (info.pausaSyncD && info.syncErroMm > -GIRO_SYNC_RETOMADA_MM) info.pausaSyncD = false;
-        if (info.syncErroMm > GIRO_SYNC_PAUSA_MM) info.pausaSyncE = true;
-        if (info.syncErroMm < -GIRO_SYNC_PAUSA_MM) info.pausaSyncD = true;
-        info.desejadoE = info.pausaSyncE ? 0 : sentidoGiro * fmaxf(16.0f, rpmBase - corr);
-        info.desejadoD = info.pausaSyncD ? 0 : -sentidoGiro * fmaxf(16.0f, rpmBase + corr);
+        // Deltas medidos em mm permitem corrigir CPRs diferentes por roda.
+        if (info.sincronismoSuave) {
+            // Nao ancorar uma roda com freio: isso muda o centro instantaneo
+            // de giro e pode arrastar o robo para os lados.
+            erroSyncFiltrado += 0.25f * (info.syncErroMm - erroSyncFiltrado);
+            // Diferenca elevada => reduz AMBAS as rodas, dando tempo ao PI.
+            const float atraso = fmaxf(0.0f, fabsf(erroSyncFiltrado) - 1.0f);
+            const float desacelerar = limitar(1.0f - 0.11f * atraso, 0.65f, 1.0f);
+            const float rpmComum = fmaxf(17.0f, rpmBase * desacelerar);
+            const float maxCorr = fminf(GIRO_SUAVE_CORRECAO_RPM_MAX,
+                                       rpmComum * GIRO_SUAVE_CORRECAO_FRAC_MAX);
+            const float corrAlvo = limitar(GIRO_SUAVE_K_RPM_POR_MM * erroSyncFiltrado,
+                                           -maxCorr, maxCorr);
+            correcaoSyncAtual = aproximar(correcaoSyncAtual, corrAlvo,
+                                         GIRO_SUAVE_TAXA_CORRECAO_RPM_S * dt);
+            const float corr = correcaoSyncAtual;
+            info.syncCorrecaoRpm = corr;
+            info.pausaSyncE = info.pausaSyncD = false;
+            // Ambas as rodas giram ao mesmo tempo: nenhuma recebe ref=0
+            // enquanto a outra estiver girando.
+            info.desejadoE = sentidoGiro * (rpmComum - corr);
+            info.desejadoD = -sentidoGiro * (rpmComum + corr);
+        } else {
+            const float corr = limitar(GIRO_SYNC_K_RPM_POR_MM * info.syncErroMm,
+                                      -GIRO_SYNC_CORRECAO_RPM_MAX, GIRO_SYNC_CORRECAO_RPM_MAX);
+            info.syncCorrecaoRpm = corr;
+            // Modo antigo preservado exclusivamente para ensaios A/B.
+            if (info.pausaSyncE && info.syncErroMm < GIRO_SYNC_RETOMADA_MM) info.pausaSyncE = false;
+            if (info.pausaSyncD && info.syncErroMm > -GIRO_SYNC_RETOMADA_MM) info.pausaSyncD = false;
+            if (info.syncErroMm > GIRO_SYNC_PAUSA_MM) info.pausaSyncE = true;
+            if (info.syncErroMm < -GIRO_SYNC_PAUSA_MM) info.pausaSyncD = true;
+            info.desejadoE = info.pausaSyncE ? 0 : sentidoGiro * fmaxf(16.0f, rpmBase - corr);
+            info.desejadoD = info.pausaSyncD ? 0 : -sentidoGiro * fmaxf(16.0f, rpmBase + corr);
+        }
         // Não deixa o encoder ultrapassar o limite de curso no modo IMU.
         if (giroI) {
-            if (viagemE > alvoFisicoMm * GIRO_LIMITE_DESLOCAMENTO_REL - 2.0f) info.desejadoE = 0;
-            if (viagemD > alvoFisicoMm * GIRO_LIMITE_DESLOCAMENTO_REL - 2.0f) info.desejadoD = 0;
+            const float limite = alvoFisicoMm * GIRO_LIMITE_DESLOCAMENTO_REL - 2.0f;
+            if (info.sincronismoSuave && (viagemE > limite || viagemD > limite)) {
+                // No modo suave, protege o chassi FREANDO AS DUAS juntas,
+                // em vez de ancorar um lado e deixar o outro puxar o robo.
+                return "imu_limite_encoder_excedido";
+            }
+            // Mantido para comparacao A/B com o comportamento legado.
+            if (!info.sincronismoSuave) {
+                if (viagemE > limite) info.desejadoE = 0;
+                if (viagemD > limite) info.desejadoD = 0;
+            }
         }
     }
     int64_t restanteE = 0, restanteD = 0;
