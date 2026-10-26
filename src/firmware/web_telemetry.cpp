@@ -26,6 +26,13 @@ static const char* nomeModo() { switch (modo) { case Modo::MANUAL: return "MANUA
 static String ultimoMotivo = "pronto";
 
 static float cprE = 0, cprD = 0; // não assumir 210 ou 1400!
+// Protecao experimental frontal: somente RETO para FRENTE e se solicitada.
+static bool frenteProtegida = false;
+static uint16_t frenteLimiarMm = FRENTE_LIMIAR_PADRAO_MM;
+static float frenteLimiarDinamicoMm = NAN;
+static int frenteUltimaBrutaMm = LASER_SEM_LEITURA;
+static uint32_t frenteUltimaIdadeMs = 0;
+static bool frenteParouPorLaser = false;
 
 // Medição MANUAL: operador conta as voltas físicas e encerra pelo site.
 static String ladoManual = "ambos";
@@ -119,6 +126,7 @@ static void encerrarTeste(const char* motivo) {
     desativarControleMovimento();
     pwmE = pwmD = 0;
     modo = Modo::PARADO;
+    frenteProtegida = false;
     if (estavaMotorizado || ultimoMotivo == "pronto") ultimoMotivo = motivo;
     if (estavaMotorizado) Serial.printf("PARADA: %s\n", motivo);
 }
@@ -269,6 +277,19 @@ static void handleStatus() {
     json += ",\"retoYawEncoder\":" + numeroOuNull(ctrl.retoYawEncoder, 2);
     json += ",\"retoOdomXmm\":" + numeroOuNull(ctrl.retoOdomXmm, 2);
     json += ",\"retoOdomYmm\":" + numeroOuNull(ctrl.retoOdomYmm, 2);
+    // Estado do experimento frontal e valores de U3 durante a marcha.
+    const LeituraLaser laserF=lerLaser(LASER_U3);
+    const bool frenteAtualValida=laserF.inicializado && laserF.brutoMm>=0 &&
+       laserF.ultimaValidaMs!=0 && (uint32_t)(agora-laserF.ultimaValidaMs)<=FRENTE_IDADE_MAX_MS;
+    json += ",\"frenteAtiva\":" + String(frenteProtegida ? "true" : "false");
+    json += ",\"frenteLimiarMm\":" + String(frenteLimiarMm);
+    json += ",\"frenteLimiarDinamicoMm\":" + numeroOuNull(frenteLimiarDinamicoMm,1);
+    json += ",\"frenteBrutoMm\":" + (laserF.brutoMm>=0?String(laserF.brutoMm):"null");
+    json += ",\"frenteFiltradoMm\":" + (laserF.filtradoMm>=0?String(laserF.filtradoMm):"null");
+    json += ",\"frenteLeituraValida\":" + String(frenteAtualValida?"true":"false");
+    json += ",\"frenteStatusVL\":" + String(laserF.statusVL);
+    json += ",\"frenteIdadeMs\":" + (laserF.ultimaValidaMs?String(agora-laserF.ultimaValidaMs):"null");
+    json += ",\"frenteParouPorLaser\":" + String(frenteParouPorLaser?"true":"false");
     json += ",\"meta90E\":" + (cprE > 0 ? numeroOuNull(ENTRE_RODAS_MM * cprE / (4 * DIAMETRO_RODA_MM)) : String("null"));
     json += ",\"meta90D\":" + (cprD > 0 ? numeroOuNull(ENTRE_RODAS_MM * cprD / (4 * DIAMETRO_RODA_MM)) : String("null"));
     json += "}";
@@ -469,6 +490,12 @@ static void handleImuZerar() {
     if (!zerarYawIMU()) return respostaErro(409, "IMU indisponivel, nao calibrada ou ainda girando");
     respostaOk("Yaw relativo zerado; aguarde 10 s parado para medir deriva");
 }
+static uint32_t prazoAutomaticoReto(float distanciaMm, float rpm) {
+    const float vmmS = fmaxf(1.0f, rpm * 3.14159265358979323846f * DIAMETRO_RODA_MM / 60.0f);
+    // 2.0x tempo nominal + margem de aceleracao/ajustes perto da meta.
+    const float estimadoMs = fabsf(distanciaMm) / vmmS * 2000.0f + 10000.0f;
+    return (uint32_t)fminf((float)RETO_TEMPO_MAX_LONGO_MS, fmaxf(10000.0f, estimadoMs));
+}
 static void handleRetoStart() {
     if (capturaLaserAtiva())
         return respostaErro(409, "Aguarde a captura laser terminar antes de mover motores");
@@ -477,18 +504,47 @@ static void handleRetoStart() {
     float distancia = 0, rpm = 0;
     int duracao = 0;
     const String sinc = server.arg("sync");
+    const bool longo = server.arg("longo") == "1";
+    const bool usarFrente = server.arg("frontal") == "1";
+    const float maxDist = longo ? RETO_DISTANCIA_MAX_MM : RETO_LIMITE_ENSAIO_CURTO_MM;
     if ((sinc != "suave" && sinc != "desligado") ||
         !floatValido("distancia", distancia) ||
-        fabsf(distancia) < RETO_DISTANCIA_MIN_MM ||
-        fabsf(distancia) > RETO_DISTANCIA_MAX_MM ||
-        !floatValido("rpm", rpm) || rpm < RETO_RPM_MIN || rpm > RETO_RPM_MAX ||
-        !inteiroEmFaixa("duracao", 1000, TESTE_DURACAO_MAX_MS, duracao))
-        return respostaErro(400, "Distancia assinada de 30..250 mm, RPM 20..60, timeout 1000..10000");
+        fabsf(distancia) < RETO_DISTANCIA_MIN_MM || fabsf(distancia) > maxDist ||
+        !floatValido("rpm", rpm) || rpm < RETO_RPM_MIN || rpm > RETO_RPM_MAX)
+        return respostaErro(400, "Distancia 30..250 mm (bancada) ou 30..10000 mm (painel manual); RPM 20..60");
+    if (longo) duracao = (int)prazoAutomaticoReto(distancia, rpm);
+    else if (!inteiroEmFaixa("duracao", 1000, TESTE_DURACAO_MAX_MS, duracao))
+        return respostaErro(400, "Timeout curto 1000..10000 ms");
+    if (usarFrente && distancia < 0)
+        return respostaErro(400, "Sensor frontal nao protege ao andar de re; desmarque a opcao e use area livre");
+    int limiar = (int)FRENTE_LIMIAR_PADRAO_MM;
+    if (usarFrente) {
+        if (rpm > FRENTE_RPM_MAX_TESTE)
+            return respostaErro(400, "No teste frontal use no maximo 35 RPM");
+        if (!inteiroEmFaixa("limiar", FRENTE_LIMIAR_MIN_MM, FRENTE_LIMIAR_MAX_MM, limiar))
+            return respostaErro(400, "Limiar frontal bruto deve estar entre 200 e 1000 mm");
+        // Para ativar, um EVENTO atual e valido e obrigatorio. A distancia
+        // nao e corrigida, pois o offset do U3 ainda nao foi calibrado.
+        const LeituraLaser dado = lerLaser(LASER_U3);
+        const uint32_t agora=millis();
+        if (!dado.inicializado || dado.brutoMm<0 || dado.ultimaValidaMs==0 ||
+            (uint32_t)(agora-dado.ultimaValidaMs)>FRENTE_IDADE_MAX_MS)
+            return respostaErro(409, "U3 sem leitura valida e recente: teste frontal bloqueado");
+        if (dado.brutoMm <= limiar + 35)
+            return respostaErro(409, "Obstaculo proximo: afaste o robo ate U3 superar limiar + 35 mm");
+    }
     if (!iniciarControleReto(distancia, rpm, cprE, cprD, sinc == "suave"))
         return respostaErro(409, "Controlador de movimento reto nao iniciou");
+    frenteProtegida = usarFrente;
+    frenteLimiarMm = (uint16_t)limiar;
+    frenteLimiarDinamicoMm = usarFrente ? (float)limiar : NAN;
+    frenteUltimaBrutaMm=lerLaser(LASER_U3).brutoMm;
+    frenteUltimaIdadeMs=0;
+    frenteParouPorLaser=false;
     iniciarRelogioMotorizado(duracao, Modo::RETO);
-    ultimoMotivo = "reto_iniciado";
-    respostaOk("Movimento reto por encoders iniciado; lasers apenas diagnostico");
+    ultimoMotivo = usarFrente ? "reto_protecao_frontal_experimental" : (longo?"reto_longo_sem_laser":"reto_iniciado");
+    respostaOk(usarFrente ? "Movimento com U3: leituras invalidas freiam; mantenha area livre e botao fisico acessivel" :
+                 "Movimento por encoders SEM anti-colisao; mantenha area totalmente desobstruida");
 }
 
 static void handleGiroStart() {
@@ -550,6 +606,7 @@ static void handleReiniciarImu() {
 }
 
 bool testeMotorAtivo() { return modoMotorizado(); }
+bool frenteEmMonitoramento(){ return modo == Modo::RETO && frenteProtegida; }
 
 // V4.4 - Laser bench endpoints: no motor commands are called here.
 static bool bancadaParada() {
@@ -634,6 +691,30 @@ void loopTelemetry() {
     // Segurança vem antes do cálculo de controle.
     if (modo == Modo::RETO && (!batteryAvailable() ||
          !isfinite(getVoltage()) || getVoltage() >= 6.6f)) bateriaBaixaDesde = 0;
+    // V4.6: fronteira de seguranca ANTES do controle PI. Nao utilizamos EMA
+    // na protecao: ela acrescentaria atraso. Falha ou valor velho => FRENAR.
+    if (modo == Modo::RETO && frenteProtegida) {
+        LeituraLaser dado=lerLaser(LASER_U3);
+        frenteUltimaBrutaMm=dado.brutoMm;
+        frenteUltimaIdadeMs=dado.ultimaValidaMs ? agora-dado.ultimaValidaMs : UINT32_MAX;
+        if (!dado.inicializado || dado.brutoMm<0 ||
+            frenteUltimaIdadeMs>FRENTE_IDADE_MAX_MS) {
+            frenteParouPorLaser=true;
+            encerrarTeste("frontal_U3_leitura_invalida_ou_antiga");
+            return;
+        }
+        const ControleInfo ctl=lerControleMovimento();
+        const float velRpm=fmaxf(0.0f,0.5f*(ctl.realE+ctl.realD));
+        const float vMmS=velRpm*3.14159265358979323846f*DIAMETRO_RODA_MM/60.0f;
+        const float extra=vMmS*FRENTE_REACAO_S+
+             (vMmS*vMmS)/(2.0f*FRENTE_DESACEL_ESTIMADA_MM_S2);
+        frenteLimiarDinamicoMm=(float)frenteLimiarMm+extra;
+        if (dado.brutoMm<=frenteLimiarDinamicoMm) {
+            frenteParouPorLaser=true;
+            encerrarTeste("frontal_U3_obstaculo_detectado");
+            return;
+        }
+    }
     if (agora - ultimoHeartbeat > WATCHDOG_WEB_MS) {
         encerrarTeste("watchdog_conexao_perdida");
     } else if (agora - testeInicio >= duracaoTeste) {

@@ -27,6 +27,7 @@ struct ResumoCapturaLaser {
 };
 void initLasers();          // init all three via XSHUT, call once after Wire.begin()
 void atualizarLasers();     // called by loop (no HTTP inside)
+void atualizarLaserFrontal(); // V4.6: quando ha ensaio motorizado com protecao frontal
 LeituraLaser lerLaser(uint8_t indice);
 String jsonLasers();
 bool iniciarCapturaLaser(uint8_t indice,int referenciaMm,uint16_t quantidade);

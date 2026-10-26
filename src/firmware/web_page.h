@@ -6,7 +6,7 @@ const char PAGINA_HTML[] PROGMEM = R"HTML(
 <!DOCTYPE html>
 <html lang="pt-BR"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Micromouse V4.5 | Bancada de testes</title>
+<title>Micromouse V4.6 | Bancada de testes</title>
 <style>
 :root{color-scheme:dark;--bg:#101826;--box:#1b2739;--bd:#32435a;--text:#eff5ff;--muted:#9fb1c8;--green:#4ce2a7;--blue:#60b7ff;--red:#ff697d}
 *{box-sizing:border-box}body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,sans-serif;margin:0;padding:22px;line-height:1.5}
@@ -19,7 +19,7 @@ main{max-width:1090px;margin:auto}h1{font-size:clamp(1.35rem,3vw,2.3rem);margin:
 <div class="top"><span id="online" class="tag bad">Sem conexão</span><span id="modo" class="tag">—</span><span id="energia" class="tag">INA219: —</span></div>
 <p>Conecte ao Wi-Fi <strong>Xaropinho-WiFi</strong>. Para o primeiro ensaio, apoie o robô com as rodas livres e tenha acesso à chave da bateria.</p>
 <div class="card"><div class="top"><button class="danger" onclick="parar()">■ FREAR / CANCELAR TESTE</button><button class="secondary" onclick="zerar()">Zerar contadores</button><button class="secondary" onclick="baixarCSV()">Baixar telemetria CSV</button></div><p id="mensagem" class="notice">Sem dados ainda.</p></div>
-<nav class="abas" aria-label="Areas de teste"><button id="btAbaCal" class="ativo" onclick="mostrarAba('calibracao')">Motores e giros</button><button id="btAbaLaser" class="secondary" onclick="mostrarAba('sensores')">Navegação · reto e lasers V4.5</button></nav>
+<nav class="abas" aria-label="Areas de teste"><button id="btAbaCal" class="ativo" onclick="mostrarAba('calibracao')">Motores e giros</button><button id="btAbaLaser" class="secondary" onclick="mostrarAba('sensores')">Sensores · proteção frontal</button><button id="btAbaMover" class="secondary" onclick="mostrarAba('mover')">Controle de movimento</button></nav>
 <div id="abaCalibracao" class="aba-pagina">
 <div class="grid">
 <section class="card"><h2>Motor esquerdo</h2><div class="metrics"><div><span class="label">Contagem acumulada</span><span class="metric" id="contE">—</span></div><div><span class="label">Velocidade (CPS)</span><span class="metric" id="cpsE">—</span></div><div><span class="label">RPM estimado</span><span class="metric" id="rpmE">—</span></div><div><span class="label">PWM aplicado</span><span class="metric" id="pwmE">0</span></div></div></section>
@@ -77,13 +77,13 @@ main{max-width:1090px;margin:auto}h1{font-size:clamp(1.35rem,3vw,2.3rem);margin:
 </div>
 <div id="abaSensores" class="aba-pagina" hidden>
 <section class="card"><h2>V4.4 — Diagnóstico dos sensores VL53L0X</h2>
-<p><strong>Somente leitura:</strong> nenhum botão desta aba aciona motores. U2/U3/U4 são os identificadores elétricos; confira a posição física aproximando uma placa de cada janela óptica.</p>
+<p>U2 = esquerdo, U3 = frontal e U4 = direito (identificação física confirmada). A aba mantém as capturas estáticas e acrescenta um ensaio frontal com movimento supervisionado.</p>
 <div class="notice">Largura do chassi <strong>alvo: 110 mm</strong>. Num corredor de 168 mm, folga geométrica nominal ~29 mm de cada lado antes de descontar parafusos, pneus e a posição das janelas ópticas. Leituras inválidas <strong>não significam caminho livre</strong>.</div>
 <div class="actions"><button class="secondary" onclick="reinitLasers()">Reiniciar ESP32 e lasers</button><button class="secondary" onclick="baixarLasersLive()">Exportar histórico exibido (CSV)</button><a class="tag" href="/diagnostico-i2c">Scanner I²C</a></div>
 <p id="laserAlerta" class="notice">Aguardando primeiras leituras.</p></section>
 <section class="card" id="ensaioReto">
 <h2>V4.5 — Movimento reto por encoders</h2>
-<div class="notice warn"><strong>Primeira gravacao: rodas suspensas.</strong> No chao somente em pista livre, sem paredes proximas, com chave fisica de corte acessivel. <strong>Lasers NAO param o robo e NAO corrigem sua direcao nesta versao.</strong> A IMU apenas mede o Yaw. Mantenha o navegador aberto para o watchdog de 1,2 s.</div>
+<div class="notice warn"><strong>Teste V4.5 original:</strong> rodas suspensas inicialmente. No chao somente em pista livre, sem paredes proximas. <strong>Neste ensaio original o laser NAO para o robo;</strong> use a secao frontal separada para isso. A IMU apenas mede o Yaw. Mantenha o navegador aberto para o watchdog de 1,2 s.</div>
 <p>O alvo e o deslocamento da <strong>media das rodas</strong>. Contagem positiva = frente; negativa = re. A sincronizacao suave diminui a diferenca entre as distancias das rodas durante todo o trajeto. Opcao desligada apenas para comparacao controlada.</p>
 <div class="row">
  <div class="field"><label>Distancia assinada (mm)</label><input id="retoDist" type="number" min="-250" max="250" step="5" value="50"></div>
@@ -116,8 +116,34 @@ main{max-width:1090px;margin:auto}h1{font-size:clamp(1.35rem,3vw,2.3rem);margin:
 <div class="actions"><button class="green" onclick="capturarLaser()">Iniciar 100 medições</button><a id="capBaixar" href="/api/lasers/capture.csv" class="tag" download="vl53l0x_captura.csv">Baixar captura CSV</a><button class="secondary" onclick="limparCaptura()">Limpar captura</button></div>
 <div id="capResultado" class="output">Ainda sem captura.</div>
 <p><small>Para distâncias de 20–30 mm, um VL53L0X pode retornar dados instáveis. Registre todas as leituras inválidas; não remova falhas do CSV.</small></p></section>
+<section class="card" id="frontalV46"><h2>V4.6 — Experimento: parada pelo laser frontal U3</h2>
+<div class="notice warn"><strong>EXPERIMENTAL — NÃO É SISTEMA ANTICOLISÃO VALIDADO.</strong> O U3 superestimou distâncias em testes anteriores. O limiar é a <strong>leitura BRUTA do laser</strong>, não o espaço livre da carroceria. Experimente só no chão, a 20–35 RPM, com placa rígida e chave física para cortar os motores. Nunca aponte para pessoas.</div>
+<p>O robô percorrerá no máximo a distância solicitada, mas interromperá a marcha quando o U3 medir abaixo do limiar bruto + margem dinâmica, ou quando a leitura ficar inválida/desatualizada. A parada frontal só vale para avanço, não para ré nem para giro.</p>
+<div class="row"><div class="field"><label>Distância máxima (mm)</label><input id="frenteDist" type="number" min="30" max="250" value="250"></div><div class="field"><label>RPM</label><input id="frenteRpm" type="number" min="20" max="35" value="25"></div><div class="field"><label>Limiar BRUTO U3 (mm)</label><input id="frenteLimiar" type="number" min="200" max="1000" value="250"></div></div>
+<div class="actions"><button class="green" onclick="iniciarTesteFrontal()">▶ Testar parada frontal</button><button class="danger" onclick="parar()">■ FREAR</button></div>
+<div class="output" id="frenteResultado">Teste ainda não iniciado.</div>
+<p><small>Comece com placa rígida a cerca de 40–45 cm da janela U3, com trajeto livre e ensaio máximo de 250 mm. Marque no chão onde a frente do chassi parou e meça a folga REAL da carroceria. Primeiro teste preferencialmente 30–50 cm de marcha com área livre, mudando o limiar somente após medir o resultado.</small></p></section>
 <section class="card"><h2>Roteiro da primeira rodada</h2><p>1) Confirme 0x40, 0x68, 0x30, 0x31 e 0x32 no scanner. 2) Aproxime uma placa, um sensor de cada vez, e identifique U2/U3/U4. 3) Meça 25, 30, 40, 50, 100, 150 e 200 mm; faça 100 amostras por distância e sensor. 4) Aproxime/afaste uma placa para observar o atraso da filtragem. 5) Salve o CSV de cada ensaio. Sem movimento nesta fase.</p>
-<div class="notice warn">Não habilitamos ainda a parada frontal nem a centralização pelas paredes. Nenhum controle de movimento usa os resultados dos lasers nesta versão.</div></section>
+<div class="notice warn">A centralização lateral ainda NÃO está ativa. U2 e U4 são apenas diagnóstico. Somente o teste frontal explicitamente ativado usa U3 para frear.</div></section>
+</div>
+<div id="abaMover" class="aba-pagina" hidden>
+<section class="card"><h2>V4.6 — Controle manual do Micromouse</h2>
+<div class="notice warn"><strong>ENSÁIOS SUPERVISIONADOS:</strong> a navegação por paredes ainda não foi implementada. Giro = encoder + sincronismo suave V4.3. Reto = encoders V4.5. Se desligar a proteção frontal, <strong>NÃO EXISTE ANTICOLISÃO</strong>. Qualquer comando exige navegador ativo (watchdog 1,2 s), pista livre e acesso à chave física dos motores.</div>
+<div class="metrics"><div><span class="label">Movimento</span><span id="ctrlModo" class="metric">—</span></div><div><span class="label">Última parada</span><span id="ctrlMotivo" style="display:block;font-size:.91rem;overflow-wrap:anywhere">—</span></div><div><span class="label">Reto percorrido</span><span id="ctrlProgresso" class="metric">—</span> mm</div><div><span class="label">U3 frontal bruto</span><span id="ctrlFrente" class="metric">—</span> mm</div></div>
+<div class="output" id="ctrlDetalhes">Aguardando telemetria.</div></section>
+<section class="card"><h2>Giro rápido de 90°</h2>
+<p>Usa o giro de 90° por encoders com sincronismo suave, sem depender do laser. <strong>Verifique a área varrida pelo chassi antes de girar perto de paredes.</strong></p>
+<div class="row"><div class="field"><label>RPM do giro</label><input id="ctrlGiroRpm" type="number" min="20" max="60" value="35"></div></div>
+<div class="actions"><button onclick="moverGirar('esquerda')">↶ 90° ESQUERDA</button><button onclick="moverGirar('direita')">↷ 90° DIREITA</button><button class="danger" onclick="parar()">■ FREAR</button></div></section>
+<section class="card"><h2>Avançar ou dar ré a uma distância escolhida</h2>
+<p>Digite a distância em <strong>milímetros</strong>. Exemplos: 1000 mm = 1 metro; 2000 mm = 2 metros. Limite experimental: <strong>30–10000 mm (10 m)</strong>. O tempo máximo é calculado automaticamente pela ESP32; ao atingir a meta, ela freia.</p>
+<div class="row"><div class="field"><label>Distância (mm)</label><input id="ctrlDist" type="number" min="30" max="10000" step="1" value="100"></div><div class="field"><label>RPM máximo</label><input id="ctrlRpm" type="number" min="20" max="60" step="5" value="30"></div></div>
+<div class="actions"><button class="secondary" onclick="movPreset(100)">100 mm</button><button class="secondary" onclick="movPreset(500)">500 mm</button><button class="secondary" onclick="movPreset(1000)">1 m</button><button class="secondary" onclick="movPreset(2000)">2 m</button></div>
+<div class="row"><div class="field" style="min-width:270px"><label><input id="ctrlProtecao" type="checkbox" checked style="width:auto;min-height:auto"> Proteção frontal U3 experimental (somente AVANÇAR)</label></div><div class="field"><label>Limiar bruto U3 (mm, 200–1000)</label><input id="ctrlLimiar" type="number" min="200" max="1000" value="250"></div></div>
+<div class="notice warn">Com proteção frontal ativada, limite de <strong>35 RPM</strong>, U3 válido obrigatório e frenagem por falha de leitura. Leituras do U3 ainda não estão calibradas; mantenha margem ampla. <strong>Ré não tem sensor traseiro</strong> e exige desativar essa opção deliberadamente.</div>
+<div class="actions"><button class="green" onclick="moverReto(1)">▲ AVANÇAR</button><button onclick="moverReto(-1)">▼ RÉ (SEM SENSOR TRASEIRO)</button><button class="danger" onclick="parar()">■ FREAR AGORA</button></div>
+<small>Comando livre não é teleoperação contínua: cada clique inicia UMA trajetória que para automaticamente na meta. Aguarde 1 segundo após uma parada para permitir a medição final dos encoders. Distâncias >250 mm só estão habilitadas nesta aba.</small>
+</section>
 </div>
 </main><script>
 const $=id=>document.getElementById(id);
@@ -190,6 +216,18 @@ async function atualizar(){
  try{
   const r=await fetch('/api/status',{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);
   const d=await r.json();ultimo=d;ultimoStatusOk=Date.now();$('online').textContent='ESP32 conectada';$('online').className='tag good';
+  $('ctrlModo').textContent=d.modo;
+  $('ctrlMotivo').textContent=d.motivo;
+  $('ctrlProgresso').textContent=fmt(d.retoProgressoMm,1);
+  $('ctrlFrente').textContent=fmt(d.frenteBrutoMm,0);
+  $('ctrlDetalhes').textContent='U3 status: '+(d.frenteLeituraValida?'VALIDO':'INVALIDO/ANTIGO')+
+    ' | idade '+(d.frenteIdadeMs===null?'—':d.frenteIdadeMs+' ms')+
+    '\nFrontal armado: '+(d.frenteAtiva?'SIM':'NAO')+' | limiar base '+d.frenteLimiarMm+
+    ' mm | limiar com margem '+fmt(d.frenteLimiarDinamicoMm,1)+' mm'+
+    '\nAvanco encoder: '+fmt(d.retoProgressoMm,1)+' / '+fmt(d.retoAlvoMm,1)+' mm'+
+    ' | erro '+fmt(d.retoErroMm,1)+' mm | sincronismo '+fmt(d.retoSyncErroMm,2)+' mm'+
+    '\nTimeout restante: '+fmt(d.restanteMs,0)+' ms | Fim laser: '+(d.frenteParouPorLaser?'SIM':'NAO');
+  $('frenteResultado').textContent=$('ctrlDetalhes').textContent+'\nÚltima parada: '+d.motivo;
   $('modo').textContent='Estado: '+d.modo;$('energia').textContent='INA219: '+(d.inaOk?'OK':'indisponível');
   $('contE').textContent=d.contE;$('contD').textContent=d.contD;
   $('cpsE').textContent=fmt(d.cpsE);$('cpsD').textContent=fmt(d.cpsD);
@@ -237,7 +275,7 @@ async function atualizar(){
 }
 function baixarCSV(){
  if(!amostras.length){msg('Ainda sem dados para exportar',true);return}
- const chaves=['hora','ms','modo','contE','contD','cpsE','cpsD','rpmE','rpmD','pwmE','pwmD','alvoE','alvoD','progressoE','progressoD','referenciaRpmE','referenciaRpmD','rampaRpmE','rampaRpmD','ajudaPartidaE','ajudaPartidaD','semPulsosMsE','semPulsosMsD','realControleRpmE','realControleRpmD','freioValido','freio300Pronto','freio1000Pronto','freioDelta300E','freioDelta300D','freioDelta1000E','freioDelta1000D','tensao','corrente','motivo','cprE','cprD','giroTipo','giroAlvoYaw','giroYawRelativo','giroErroYaw','imuPresente','imuCalibrada','imuCalibrando','imuOk','imuEndereco','imuWhoAmI','imuFalhaInit','imuYaw','imuTaxa','imuBias','imuRuido','imuFalhasI2C','syncErroMm','syncErroMaxMm','syncSuave','odomXmm','odomYmm','odomYawGraus','giroYawDepoisFreio','giroErroDepoisFreio','syncDistE','syncDistD','syncCorrecaoRpm','syncPausaE','syncPausaD','retoAlvoMm','retoProgressoMm','retoErroMm','retoDistEMm','retoDistDMm','retoSyncErroMm','retoSyncMaxMm','retoSyncCorrecaoRpm','retoSyncAtivo','retoYawImu','retoYawEncoder','retoOdomXmm','retoOdomYmm','retoFinalPronto','retoFinalE','retoFinalD','retoFinalCentro','retoErroFinal'];
+ const chaves=['hora','ms','modo','contE','contD','cpsE','cpsD','rpmE','rpmD','pwmE','pwmD','alvoE','alvoD','progressoE','progressoD','referenciaRpmE','referenciaRpmD','rampaRpmE','rampaRpmD','ajudaPartidaE','ajudaPartidaD','semPulsosMsE','semPulsosMsD','realControleRpmE','realControleRpmD','freioValido','freio300Pronto','freio1000Pronto','freioDelta300E','freioDelta300D','freioDelta1000E','freioDelta1000D','tensao','corrente','motivo','cprE','cprD','giroTipo','giroAlvoYaw','giroYawRelativo','giroErroYaw','imuPresente','imuCalibrada','imuCalibrando','imuOk','imuEndereco','imuWhoAmI','imuFalhaInit','imuYaw','imuTaxa','imuBias','imuRuido','imuFalhasI2C','syncErroMm','syncErroMaxMm','syncSuave','odomXmm','odomYmm','odomYawGraus','giroYawDepoisFreio','giroErroDepoisFreio','syncDistE','syncDistD','syncCorrecaoRpm','syncPausaE','syncPausaD','retoAlvoMm','retoProgressoMm','retoErroMm','retoDistEMm','retoDistDMm','retoSyncErroMm','retoSyncMaxMm','retoSyncCorrecaoRpm','retoSyncAtivo','retoYawImu','retoYawEncoder','retoOdomXmm','retoOdomYmm','retoFinalPronto','retoFinalE','retoFinalD','retoFinalCentro','retoErroFinal','frenteAtiva','frenteLimiarMm','frenteLimiarDinamicoMm','frenteBrutoMm','frenteFiltradoMm','frenteLeituraValida','frenteStatusVL','frenteIdadeMs','frenteParouPorLaser'];
  const linhas=[chaves.join(';'),...amostras.map(a=>chaves.map(k=>String(a[k]??'').replaceAll(';',',')).join(';'))];
  const blob=new Blob(['\ufeff'+linhas.join('\r\n')],{type:'text/csv;charset=utf-8'});
  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='micromouse_telemetria_'+Date.now()+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -251,8 +289,10 @@ function mostrarAba(aba){
   abaAtiva=aba;
   $('abaCalibracao').hidden=aba!=='calibracao';
   $('abaSensores').hidden=aba!=='sensores';
+  $('abaMover').hidden=aba!=='mover';
   $('btAbaCal').className=aba==='calibracao'?'ativo':'secondary';
   $('btAbaLaser').className=aba==='sensores'?'ativo':'secondary';
+  $('btAbaMover').className=aba==='mover'?'ativo':'secondary';
   if(aba==='sensores')atualizarLasersTela();
 }
 function guardarPosicoes(){
@@ -329,6 +369,29 @@ function baixarLasersLive(){
  const csv=[ch.join(';'),...historicoLaserExport.map(r=>ch.map(k=>String(r[k]??'')).join(';'))].join('\r\n');
  const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='micromouse_lasers_visual_'+Date.now()+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function iniciarTesteFrontal(){
+ const dist=Number($('frenteDist').value),rpm=Number($('frenteRpm').value),limiar=Number($('frenteLimiar').value);
+ if(!Number.isFinite(dist)||dist<30||dist>250||!Number.isFinite(rpm)||rpm<20||rpm>35||!Number.isFinite(limiar)||limiar<200||limiar>1000){msg('Teste frontal: 30..250 mm; 20..35 RPM; limiar 200..1000 mm.',true);return}
+ if(!confirm('TESTE FRONTAL: use uma placa rigida, area livre, velocidade baixa e chave fisica acessivel. As distancias do U3 ainda nao estao calibradas. Continuar?'))return;
+ return post('/api/reto/start',{distancia:String(dist),rpm:String(rpm),duracao:'10000',sync:'suave',frontal:'1',limiar:String(limiar)});
+}
+function movPreset(mm){$('ctrlDist').value=mm}
+function moverGirar(lado){
+ const rpm=Number($('ctrlGiroRpm').value);
+ if(!Number.isFinite(rpm)||rpm<20||rpm>60){msg('RPM do giro deve estar entre 20 e 60.',true);return}
+ if(!confirm('Giro 90 graus '+lado+': confirme espaco livre para TODO o chassi girar. Nenhum laser evita colisao no giro.'))return;
+ return post('/api/giro/start',{tipo:'encoder',lado,rpm:String(rpm),duracao:'7000',syncGiro:'suave'});
+}
+function moverReto(sentido){
+ const mm=Number($('ctrlDist').value),rpm=Number($('ctrlRpm').value);
+ const protegido=$('ctrlProtecao').checked,limiar=Number($('ctrlLimiar').value);
+ if(!Number.isFinite(mm)||mm<30||mm>10000||!Number.isFinite(rpm)||rpm<20||rpm>60){msg('Distancia 30..10000 mm e RPM 20..60.',true);return}
+ if(protegido&&sentido<0){msg('Desmarque manualmente a protecao frontal antes de dar re. U3 nao protege atras.',true);return}
+ if(protegido&&(rpm>35||!Number.isFinite(limiar)||limiar<200||limiar>1000)){msg('Com U3 ativo, max 35 RPM e limiar 200..1000 mm.',true);return}
+ const texto=protegido?'U3 EXPERIMENTAL: falha de leitura freia; distancia bruta superestimada nos testes.':'SEM PROTECAO ANTICOLISAO!';
+ if(!confirm('Movimento '+(sentido>0?'FRENTE':'RE')+' de '+mm+' mm a '+rpm+' RPM. '+texto+' Area LIVRE, acompanhe ate a parada e tenha corte fisico acessivel?'))return;
+ return post('/api/reto/start',{distancia:String(sentido*mm),rpm:String(rpm),sync:'suave',longo:'1',frontal:protegido?'1':'0',limiar:String(limiar)});
 }
 recuperarPosicoes();
 setInterval(atualizarLasersTela,300);

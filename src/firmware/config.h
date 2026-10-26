@@ -110,7 +110,20 @@ constexpr float GIRO_SUAVE_META_TOLERANCIA_MM = 0.7f;
 // ===== V4.5 - MOVIMENTO RETO (ENCODERS, SEM CORRECAO LASER) =====
 // Limites iniciais de bancada: distancia curta e RPM baixos.
 constexpr float RETO_DISTANCIA_MIN_MM = 30.0f;
-constexpr float RETO_DISTANCIA_MAX_MM = 250.0f;
+constexpr float RETO_DISTANCIA_MAX_MM = 10000.0f; // limite fisico de teste: 10 m, nao infinito
+constexpr float RETO_LIMITE_ENSAIO_CURTO_MM = 250.0f;
+constexpr uint32_t RETO_TEMPO_MAX_LONGO_MS = 420000; // 7 minutos
+// V4.6: sensor frontal U3 nao calibrado; limiar minimo CONSERVADOR,
+// contado desde a janela optica do laser (nao ate a extremidade frontal).
+constexpr uint16_t FRENTE_LIMIAR_MIN_MM = 200;
+constexpr uint16_t FRENTE_LIMIAR_MAX_MM = 1000;
+constexpr uint16_t FRENTE_LIMIAR_PADRAO_MM = 250;
+constexpr uint32_t FRENTE_IDADE_MAX_MS = 150;
+constexpr float FRENTE_RPM_MAX_TESTE = 35.0f;
+// 250 ms de reacao + desaceleracao aproximada: apenas margem EXPERIMENTAL.
+// Esta previsao nao comprova distancia de frenagem; medir com regua.
+constexpr float FRENTE_REACAO_S = 0.25f;
+constexpr float FRENTE_DESACEL_ESTIMADA_MM_S2 = 200.0f;
 constexpr float RETO_RPM_MIN = 20.0f;
 constexpr float RETO_RPM_MAX = 60.0f;
 constexpr float RETO_META_TOL_MM = 0.7f;
@@ -124,7 +137,7 @@ constexpr float RETO_SYNC_LIMITE_CHEGADA_MM = 2.5f;
 constexpr float RETO_MARGEM_CURSO_MM = 12.0f;
 
 // ===== V4.4 - BANCADA VL53L0X, SEM NAVEGACAO AUTOMATICA =====
-// U2/U3/U4 sao identificacoes ELETRICAS, nao posicoes fisicas validadas.
+// Posicoes fisicas confirmadas: U2=ESQUERDO; U3=FRONTAL; U4=DIREITO.
 constexpr uint8_t LASER_XSHUT_U2 = 23;
 constexpr uint8_t LASER_XSHUT_U3 = 18;
 constexpr uint8_t LASER_XSHUT_U4 = 19;

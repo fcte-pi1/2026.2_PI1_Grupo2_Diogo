@@ -22,10 +22,8 @@ void setup() {
         Serial.println("FALHA FATAL NO PWM. Desabilitando drivers.");
         while (true) { delay(1000); }
     }
-    // V4.4: manter os tres sensores em shutdown durante o scan inicial.
-    // VL53L0X ainda não usados na V4: manter os 3 XSHUT em LOW.
-    // Isso evita 3 sensores responderem simultaneamente no endereco 0x29.
-    // Ao implementar os lasers, remover este isolamento e reendereçar um a um.
+    // Inicializacao sequencial dos VL53L0X: manter os tres em XSHUT LOW
+    // antes de colocar cada um nos enderecos 0x30, 0x31 e 0x32.
     const uint8_t xshut[] = {23, 18, 19};
     for (uint8_t gpio : xshut) {
         digitalWrite(gpio, LOW);
@@ -57,7 +55,10 @@ void setup() {
 void loop() {
     atualizarIMU();
     atualizarEncoders();
-    if (!testeMotorAtivo()) atualizarLasers(); // prioriza controle de motores; diagnose lasers somente com motores parados
+    // Durante movimento, a V4.6 consulta SOMENTE o U3 quando o teste
+    // frontal estiver armado; U2/U4 nao participam do controle.
+    if (!testeMotorAtivo()) atualizarLasers();
+    else if (frenteEmMonitoramento()) atualizarLaserFrontal();
     updateBattery();
     loopTelemetry();   // deadlines de PWM e watchdog não bloqueantes
     server.handleClient();
