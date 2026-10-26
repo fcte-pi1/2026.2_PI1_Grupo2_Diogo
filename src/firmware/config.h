@@ -25,6 +25,24 @@
 #define ADDR_LASER_FTE 0x31
 #define ADDR_LASER_DIR 0x32
 
+// Lasers: ajustar com os testes 3.3/3.4
+#define LASER_DIST_MIN_MM 20
+#define LASER_DIST_MAX_MM 2000
+
+#define LASER_MODO_PADRAO        0
+#define LASER_MODO_LONG_RANGE    1
+#define LASER_MODO_ALTA_VELOC    2
+#define LASER_MODO_ALTA_PRECISAO 3
+#define LASER_MODO               LASER_MODO_LONG_RANGE
+
+#define LASER_ORCAMENTO_US      50000  // 0 = orçamento do próprio modo
+#define LASER_MARGEM_PERIODO_MS 10
+#define LASER_CICLOS_VALIDADE   4
+#define LASER_FILTRO_ALFA       0.5f
+
+#define PAREDE_LIMIAR_COM_MM 120
+#define PAREDE_LIMIAR_SEM_MM 160
+
 // Endereço I2C da IMU MPU-6050
 #define ADDR_IMU 0x68
 

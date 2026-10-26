@@ -15,6 +15,11 @@ const unsigned long INTERVALO_MS = 100;
 
 WebServer server(80); // Servidor HTTP na porta padrão 80
 
+// A telemetria só conhece -1 para "sem dado"; o serial mostra o código real
+static int distanciaParaTelemetria(int leitura) {
+  return leitura >= 0 ? leitura : -1;
+}
+
 static void girar(bool paraDireita) {
   girar90Graus(paraDireita);
   tempoAnterior = millis();
@@ -81,8 +86,9 @@ void loop() {
     float rpsA = 0, rpsB = 0;
     getEncoderSpeeds(dt, rpsA, rpsB);
 
-    int dEsq = -1, dFte = -1, dDir = -1;
-    readLasers(dEsq, dFte, dDir);
+    int dEsq = ler_distancia_mm(LASER_ESQ);
+    int dFte = ler_distancia_mm(LASER_FTE);
+    int dDir = ler_distancia_mm(LASER_DIR);
 
     updatePower();
     if (bateriaCritica()) stopMotors(); // Protege a LiPo contra descarga profunda
@@ -95,13 +101,17 @@ void loop() {
     updateTelemetryData(
         rpsA, rpsB,
         getYawAngle(), getYawRate(), gx, gy, gz,
-        dEsq, dFte, dDir
+        distanciaParaTelemetria(dEsq), distanciaParaTelemetria(dFte), distanciaParaTelemetria(dDir)
     );
 
     // Telemetria no Serial para depuração local
     Serial.printf("[MOTORES]     A: %5.2f RPS | B: %5.2f RPS\n", rpsA, rpsB);
     Serial.printf("[IMU]         Yaw: %6.1f deg | Taxa: %5.2f deg/s\n", getYawAngle(), getYawRate());
+    Serial.printf("[LASERBRUTO]  Esq: %4d mm | Frente: %4d mm | Dir: %4d mm\n",
+                  ler_distancia_bruta_mm(LASER_ESQ), ler_distancia_bruta_mm(LASER_FTE), ler_distancia_bruta_mm(LASER_DIR));
     Serial.printf("[LASER]       Esq: %4d mm | Frente: %4d mm | Dir: %4d mm\n", dEsq, dFte, dDir);
+    Serial.printf("[PAREDE]      Esq: %s | Frente: %s | Dir: %s\n",
+                  textoParede(obter_parede(LASER_ESQ)), textoParede(obter_parede(LASER_FTE)), textoParede(obter_parede(LASER_DIR)));
     Serial.printf("[ENERGIA]     %5.2f V | %7.1f mA | %7.1f mW | %5.1f %%\n", obter_tensao_bateria(), obter_corrente_mA(), obter_potencia_mW(), obter_bateria_pct());
     Serial.printf("[TELEMETRIA]  RTT: %3u ms | Enviados: %4u | Falhas: %2u | Conectado: %s\n",
                   getTelemetryLatency(), getTelemetryPacketsSent(), getTelemetryPacketsLost(),
