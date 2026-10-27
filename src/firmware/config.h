@@ -28,6 +28,13 @@
 // Endereço I2C da IMU MPU-6050
 #define ADDR_IMU 0x68
 
+// Calibração do giroscópio
+#define IMU_AMOSTRAS_CALIBRACAO   800
+#define IMU_INTERVALO_AMOSTRA_MS  3
+#define IMU_TENTATIVAS_CALIBRACAO 3
+#define IMU_LIMITE_MOVIMENTO_DPS  0.5f  // Desvio acima disso indica robô em movimento
+#define IMU_ZONA_MORTA_DPS        0.25f
+
 // Sensor de energia INA219 (U12)
 #define INA219_ADDR 0x40
 
@@ -40,4 +47,21 @@
 #define I_SOBRECORRENTE_TEMPO_MS 500
 
 // Constantes mecânicas
-#define PULSOS_POR_VOLTA 210.0f
+#define PULSOS_POR_VOLTA 210.0f  // Pulsos totais por rotação completa da roda (com caixa de redução)
+#define DIAMETRO_RODA_CM 3.4f    // Diâmetro da roda com pneu
+#define BITOLA_CM        10.0f   // Distância entre o centro das duas rodas
+
+// Constante calculada de pulsos para exatamente 90 graus
+#define PULSOS_90_GRAUS ((BITOLA_CM * PULSOS_POR_VOLTA) / (4.0f * DIAMETRO_RODA_CM))
+
+// Configurações de Telemetria e Rede
+#define TELEMETRY_INTERVAL_MS   100   // Taxa de 10 Hz (intervalo <= 1s, atende RNF-SW01)
+#define TELEMETRY_SERVER_HOST   "192.168.4.2" // IP padrão da estação base conectada ao SoftAP do robô
+#define TELEMETRY_SERVER_PORT   8000
+#define TELEMETRY_ENDPOINT      "/api/telemetry"
+#define TELEMETRY_TIMEOUT_MS    80    // Timeout de envio HTTP para não sobrecarregar conexão
+#define TELEMETRY_MAX_RETRIES   3     // Tentativas antes de marcar desconectado
+
+// Opcional: Wi-Fi em modo Station (conectar a uma rede externa ou roteador)
+#define WIFI_STA_SSID           ""
+#define WIFI_STA_PASSWORD       ""
