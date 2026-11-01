@@ -10,6 +10,7 @@ from app.models import Metrics
 from app.models import Event
 from app.models import Maze
 from app.schemas.sessions import FinishExecutionInput, StartExecutionInput, HistoryItem, HistoryResponse
+from app.services.esp_websocket import esp_websocket_manager
 from typing import Literal
 
 router = APIRouter(tags=["sessions"])
@@ -47,7 +48,7 @@ def get_active_session(db: Session = Depends(get_db)):
 
 
 @router.post("/sessions", status_code=201)
-def start_execution(
+async def start_execution(
     request: StartExecutionInput,
     db: Session = Depends(get_db),
 ):
@@ -75,12 +76,20 @@ def start_execution(
         {"labirinto_id": maze_id},
     ).mappings().one()
     db.commit()
+    esp_notified = await esp_websocket_manager.send_json(
+        {
+            "type": "execution_started",
+            "execution_active": True,
+            "execution_id": str(execution["id"]),
+        }
+    )
     return {
         "id": str(execution["id"]),
         "labirinto_id": str(execution["labirinto_id"]),
         "iniciada_em": execution["iniciada_em"],
         "status": execution["status"],
         "algorithm": "Flood Fill",
+        "esp_notified": esp_notified,
     }
 
 @router.get(
@@ -142,7 +151,20 @@ def get_history(
             "  e.tempo_total_ms, "
             "  e.status, "
             "  e.resultado, "
+            "  e.algoritmo, "
             "  e.velocidade_media_cm_s, "
+            "  (SELECT AVG((t.rpm_motor_esq + t.rpm_motor_dir) / 2.0) "
+            "   FROM amostra_telemetria t WHERE t.execucao_id = e.id) AS rpm, "
+            "  CASE WHEN EXISTS (SELECT 1 FROM amostra_telemetria t "
+            "                    WHERE t.execucao_id = e.id) "
+            "  THEN GREATEST("
+            "    (SELECT t.nivel_bateria_pct FROM amostra_telemetria t "
+            "     WHERE t.execucao_id = e.id "
+            "     ORDER BY t.tempo_relativo_ms ASC, t.id ASC LIMIT 1) - "
+            "    (SELECT t.nivel_bateria_pct FROM amostra_telemetria t "
+            "     WHERE t.execucao_id = e.id "
+            "     ORDER BY t.tempo_relativo_ms DESC, t.id DESC LIMIT 1), "
+            "    0) ELSE NULL END AS bateria_consumida_pct, "
             "  e.quantidade_celulas_visitadas "
             "FROM execucao e "
             "JOIN labirinto l ON l.id = e.labirinto_id "
@@ -171,7 +193,7 @@ def get_history(
 
 
 @router.post("/sessions/{session_id}/finish")
-def finish_execution(
+async def finish_execution(
     session_id: int,
     request: FinishExecutionInput,
     db: Session = Depends(get_db),
@@ -194,7 +216,14 @@ def finish_execution(
     if execution is None:
         raise HTTPException(status_code=404, detail="Execução ativa não encontrada.")
     db.commit()
-    return dict(execution)
+    esp_notified = await esp_websocket_manager.send_json(
+        {
+            "type": "execution_stopped",
+            "execution_active": False,
+            "execution_id": str(execution["id"]),
+        }
+    )
+    return {**dict(execution), "esp_notified": esp_notified}
 
 
 @router.get("/sessions/{session_id}/telemetry")

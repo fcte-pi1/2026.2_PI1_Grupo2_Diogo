@@ -55,6 +55,7 @@ def test_active_session_shape_matches_model(unit_client, active_execution):
         "algorithm",
     }
 
+
 @pytest.mark.parametrize("tipo", ["4x4", "8x4", "12x4"])
 def test_start_execution_returns_201_and_session(unit_client, active_execution, tipo):
     client, db = unit_client

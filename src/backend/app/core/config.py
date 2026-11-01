@@ -20,7 +20,7 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
     )
 
-    cors_origins: str = "http://localhost:5173"
+    cors_origins: str = "http://localhost:5173,http://0.0.0.0:5173"
 
     @property
     def database_url(self) -> str:

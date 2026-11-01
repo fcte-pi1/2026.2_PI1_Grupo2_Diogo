@@ -23,6 +23,7 @@ export function Sidebar() {
       ws.onmessage = (event) => {
         try {
           const dados = JSON.parse(event.data)
+          console.log(dados)
           setStatus(Boolean(dados.connected))
         } catch {
           setStatus(false)

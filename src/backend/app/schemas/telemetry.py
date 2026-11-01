@@ -50,7 +50,7 @@ class TelemetryResponse(TelemetryData):
 
 
 class EspTelemetryInput(BaseModel):
-    """Formato enviado pela rota HTTP da ESP."""
+    """Formato simples enviado pela ESP, com posição opcional."""
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -58,3 +58,16 @@ class EspTelemetryInput(BaseModel):
     speed_cm_s: float = Field(alias="velocidade", ge=0)
     rpm: int = Field(alias="rpm_motor", ge=0)
     connected: bool = True
+    position: PositionData | None = None
+    row: int | None = Field(
+        default=None, validation_alias=AliasChoices("row", "pos_y")
+    )
+    col: int | None = Field(
+        default=None, validation_alias=AliasChoices("col", "pos_x")
+    )
+
+    @model_validator(mode="after")
+    def validate_position_pair(self):
+        if (self.row is None) != (self.col is None):
+            raise ValueError("Informe row e col juntos quando enviar a posição.")
+        return self

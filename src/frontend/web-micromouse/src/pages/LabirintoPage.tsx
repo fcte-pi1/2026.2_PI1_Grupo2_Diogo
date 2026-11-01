@@ -1,43 +1,39 @@
 import { useState, type ReactNode } from 'react'
 import { Percurso } from '../components/Percurso'
-import { SeletorLabirinto } from '../components/SeletorLabirinto'
 import { useLabirinto } from '../hooks/useLabirinto'
 import { LABIRINTOS, type TipoLabirinto } from '../types'
 
 const mmss = (ms: number) => new Date(ms).toISOString().slice(14, 19)
 
 export function LabirintoPage() {
-  const [tipo, setTipo] = useState<TipoLabirinto>('4x4')
+  const [tipo] = useState<TipoLabirinto>('4x4')
   const { telemetria, trajetoria } = useLabirinto()
   const{linhas, colunas} = telemetria?.labirinto ?? LABIRINTOS[tipo]
 
-  const status = telemetria?.status ?? 'Sem conexão'
 
   return (
     <main className="flex-1 overflow-y-auto px-4 pb-4 pt-[136px] text-slate-200 sm:p-12">
       <header className="mb-8 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl text-slate-100">Labirinto</h1>
-          <p className="mt-1 text-xs text-slate-500">{tipo}</p>
+          <p className="mt-1 text-xs text-slate-500">{linhas}×{colunas}</p>
         </div>
-        <Status texto={status} />
+        <Status texto={telemetria?.status ?? 'Sem execução registrada'} />
       </header>
 
       <div className="grid items-start gap-6 lg:grid-cols-2">
         <section className="rounded-xl border border-white/5 bg-card p-4">
           <div className="mb-4 flex items-center justify-between gap-3">
-            <h2 className="text-sm font-semibold text-slate-100">Labirinto Atual</h2>
-            <div className="flex items-center gap-3">
-              <SeletorLabirinto valor={tipo} onChange={setTipo} />
-              <Status texto={status} />
-            </div>
+            <h2 className="text-sm font-semibold text-slate-100">Percurso da última execução</h2>
+      
           </div>
           <Percurso key={tipo} linhas={linhas} colunas={colunas} trajetoria={trajetoria} />
         </section>
 
         <div className="flex flex-col gap-4">
           <Card titulo="Detalhes da Execução">
-            <Campo nome="tipo" valor={tipo} />
+            <Campo nome="Algoritmo" valor={telemetria?.algoritmo} />
+            <Campo nome="Labirinto" valor={`${linhas}×${colunas}`} />
             <Campo nome="tempo" valor={telemetria && mmss(telemetria.tempoMS)} />
             <Campo nome="Células visitadas" valor={telemetria?.celulasPercorridas} />
             <Campo nome="Posição" valor={telemetria && `(${telemetria.posicao.x}, ${telemetria.posicao.y})`} />
@@ -45,17 +41,18 @@ export function LabirintoPage() {
 
           <Card titulo="Métricas da Corrida">
             <div className="grid grid-cols-2 gap-3">
-              <Metrica nome="Velocidade" valor={telemetria?.velocidade} unidade="cm/s" cor="text-cyan-400" />
+              <Metrica nome="Velocidade" valor={Number(telemetria?.velocidade).toFixed(2)} unidade="cm/s" cor="text-cyan-400" />
               <Metrica nome="RPM" valor={telemetria?.rpm} unidade="rpm" cor="text-cyan-400" />
-              <Metrica nome="Bateria" valor={telemetria?.bateria} unidade="%" cor="text-emerald-400" />
+              <Metrica nome="Bateria restante" valor={telemetria?.bateriaRestante} unidade="%" cor="text-emerald-400" />
+              <Metrica nome="Bateria consumida" valor={telemetria?.bateriaConsumida} unidade="%" cor="text-amber-400" />
               <Metrica nome="Tempo" valor={telemetria && mmss(telemetria.tempoMS)} cor="text-slate-100" />
             </div>
             <div className="mt-5 flex justify-between text-[10px] text-slate-400">
               <span>Bateria restante</span>
-              <span>{telemetria ? `${telemetria.bateria}%` : '-'}</span>
+              <span>{telemetria?.bateriaRestante != null ? `${telemetria.bateriaRestante}%` : '-'}</span>
             </div>
             <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-800">
-              <div className="h-full rounded-full bg-cyan-500" style={{ width: `${telemetria?.bateria ?? 0}%` }} />
+              <div className="h-full rounded-full bg-cyan-500" style={{ width: `${Math.min(100, Math.max(0, telemetria?.bateriaRestante ?? 0))}%` }} />
             </div>
           </Card>
         </div>

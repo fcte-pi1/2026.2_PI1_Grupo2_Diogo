@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.core.database import SessionLocal, get_db
 from app.schemas.telemetry import EspTelemetryInput, TelemetryData
 from app.services.telemetry_service import telemetry_service
+from app.services.esp_websocket import esp_websocket_manager
 
 
 router = APIRouter(
@@ -140,8 +141,9 @@ def _save_telemetry(telemetry: EspTelemetryInput | TelemetryData, db: Session):
         speed = telemetry.speed_cm_s
         rpm_left = telemetry.rpm
         rpm_right = telemetry.rpm
-        pos_x = 0
-        pos_y = 0
+        position = telemetry.position
+        pos_x = position.col if position is not None else telemetry.col
+        pos_y = position.row if position is not None else telemetry.row
 
     last_telemetry = db.execute(
         text(
@@ -159,6 +161,12 @@ def _save_telemetry(telemetry: EspTelemetryInput | TelemetryData, db: Session):
         ),
         {"execucao_id": execution["id"]},
     ).mappings().first()
+
+    # Pacotes antigos podem não carregar posição; nesse caso, mantenha a última
+    # posição registrada em vez de gravar um retorno artificial para (0, 0).
+    if pos_x is None or pos_y is None:
+        pos_x = last_movement["pos_x"] if last_movement is not None else 0
+        pos_y = last_movement["pos_y"] if last_movement is not None else 0
 
     if last_telemetry is not None and last_movement is not None:
         unchanged = (
@@ -219,6 +227,17 @@ def _save_telemetry(telemetry: EspTelemetryInput | TelemetryData, db: Session):
             "pos_y": pos_y,
         },
     ).scalar_one()
+    db.execute(
+        text(
+            "UPDATE execucao SET quantidade_celulas_visitadas = ("
+            "  SELECT COUNT(*) FROM ("
+            "    SELECT DISTINCT pos_x, pos_y FROM amostra_movimento "
+            "    WHERE execucao_id = :execucao_id"
+            "  ) AS celulas_visitadas"
+            ") WHERE id = :execucao_id"
+        ),
+        {"execucao_id": execution["id"]},
+    )
     db.commit()
 
     return {
@@ -234,6 +253,7 @@ def _save_telemetry(telemetry: EspTelemetryInput | TelemetryData, db: Session):
 async def receive_telemetry_websocket(websocket: WebSocket):
     """Recebe amostras JSON da ESP por uma conexão WebSocket persistente."""
     await websocket.accept()
+    esp_websocket_manager.connect(websocket)
     telemetry_service.mark_websocket_connected()
     try:
         while True:
@@ -241,21 +261,23 @@ async def receive_telemetry_websocket(websocket: WebSocket):
                 payload = await websocket.receive_json()
                 telemetry = telemetry_input_adapter.validate_python(payload)
             except (ValidationError, ValueError, TypeError) as error:
-                await websocket.send_json({"status": "error", "detail": str(error)})
+                await esp_websocket_manager.send_json(
+                    {"status": "error", "detail": str(error)}
+                )
                 continue
 
             db = SessionLocal()
             try:
                 result = _save_telemetry(telemetry, db)
-                await websocket.send_json(result)
+                await esp_websocket_manager.send_json(result)
             except HTTPException as error:
                 db.rollback()
-                await websocket.send_json(
+                await esp_websocket_manager.send_json(
                     {"status": "error", "detail": error.detail, "code": error.status_code}
                 )
             except Exception:
                 db.rollback()
-                await websocket.send_json(
+                await esp_websocket_manager.send_json(
                     {"status": "error", "detail": "Falha ao salvar telemetria."}
                 )
                 raise
@@ -264,6 +286,7 @@ async def receive_telemetry_websocket(websocket: WebSocket):
     except WebSocketDisconnect:
         pass
     finally:
+        esp_websocket_manager.disconnect(websocket)
         telemetry_service.mark_websocket_disconnected()
 
 
