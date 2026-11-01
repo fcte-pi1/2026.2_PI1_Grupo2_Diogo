@@ -28,7 +28,7 @@ export function Percurso({ linhas, colunas, trajetoria, mostrarControles = true 
   const atual = passo === null ? fim : Math.min(passo, fim)
   const rodando = tocando && atual < fim
   const visivel = trajetoria.slice(0, atual + 1)
-  const robo = visivel.at(-1)
+  const robo = visivel.at(-1) ?? { x: 0, y: 0, direcao: 'N' as const }
 
   useEffect(() => {
     if (!rodando) return

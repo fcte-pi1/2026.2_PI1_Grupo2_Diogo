@@ -4,7 +4,7 @@ import { MotorRPMCard } from "../components/telemetria/MotorRPMCard";
 import { SpeedCard } from "../components/telemetria/SpeedCard";
 
 import { Percurso } from "../components/Percurso";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { LABIRINTOS, type Posicao, type TipoLabirinto } from "../types";
 import { TbRestore } from "react-icons/tb";
 
@@ -12,31 +12,7 @@ import { toast } from "sonner";
 
 import { api } from "../services/api";
 import axios from "axios";
-interface PropsExec {
-  connected:boolean;
-  execucao_id?: number;
-  id?: string | number;
-  algorithm: string;
-  iniciada_em?: string | Date;
-  labirinto_id: number;
-  status: string;
-  metrics?: {
-    battery_pct: number;
-    rpm: number;
-    speed_cm_s: number;
-    rpmLeft: number;
-    rpmRight: number;
-  };
-  movement?: {
-    giro_x_deg_s: number;
-    giro_y_deg_s: number;
-    giro_z_deg_s: number;
-  };
-  position: {
-    col: number;
-    row: number;
-  };
-}
+import type { PropsExec } from "../types/index";
 type StatusConexao = true | false;
 
 function segundosDesdeInicio(iniciadaEm?: string | Date): number {
@@ -59,7 +35,8 @@ export function TelemetryPage() {
   const [inicioExecucao, setInicioExecucao] = useState<string | Date>();
   const [verificandoExecucao, setVerificandoExecucao] = useState(true);
   const [tempoSegundos, setTempoSegundos] = useState(0);
-  const [trajetoria] = useState<Posicao[]>([]);
+  const [trajetoria, setTrajetoria] = useState<Posicao[]>([]);
+  const execucaoAtivaRef = useRef(false);
   const { linhas, colunas } = LABIRINTOS[tipo];
   const [conectada, setStatus] = useState<StatusConexao>(false);
 
@@ -122,6 +99,30 @@ export function TelemetryPage() {
               iniciada_em: dados.iniciada_em ?? anterior?.iniciada_em,
             }));
           }
+
+          if (
+            execucaoAtivaRef.current &&
+            dados.position &&
+            Number.isInteger(dados.position.row) &&
+            Number.isInteger(dados.position.col)
+          ) {
+            setTrajetoria((anterior) => {
+              const ultimo = anterior.at(-1);
+              const { row, col } = dados.position;
+              // A API envia row/col; no desenho, x corresponde à coluna e y à linha.
+              if (ultimo?.x === col && ultimo.y === row) return anterior;
+
+              let direcao: Posicao["direcao"] = "N";
+              if (ultimo) {
+                if (row > ultimo.y) direcao = "S";
+                else if (row < ultimo.y) direcao = "N";
+                else if (col > ultimo.x) direcao = "L";
+                else direcao = "O";
+              }
+
+              return [...anterior, { x: col, y: row, direcao }];
+            });
+          }
         } catch {
           setStatus(false);
         }
@@ -148,6 +149,8 @@ export function TelemetryPage() {
         tipo,
       });
       setDataExec(data);
+      execucaoAtivaRef.current = true;
+      setTrajetoria([]);
       setInicioExecucao(data.iniciada_em);
       setTempoSegundos(segundosDesdeInicio(data.iniciada_em));
       return true;
@@ -281,7 +284,9 @@ export function TelemetryPage() {
               onClick={async () => {
                 const execucaoAtiva = await handleVerificar();
                 if (execucaoAtiva) {
+                  execucaoAtivaRef.current = true;
                   setDataExec(execucaoAtiva);
+                  setTrajetoria([]);
                   setInicioExecucao(execucaoAtiva.iniciada_em);
                   setTempoSegundos(segundosDesdeInicio(execucaoAtiva.iniciada_em));
                   setIniciada(true);
@@ -291,6 +296,7 @@ export function TelemetryPage() {
 
                 const ok = await handleIniciarExecucao();
                 if (ok) {
+                  execucaoAtivaRef.current = true;
                   setTempoSegundos(0);
                   setIniciada(true);
                   toast("Execução Iniciada");

@@ -26,7 +26,10 @@ class HistoryItem(BaseModel):
     tempo_total_ms: int | None
     status: str     # em_execucao | concluido | interrompido
     resultado: str | None   # sucesso | falha
+    algoritmo: str
     velocidade_media_cm_s: float | None
+    rpm: float | None
+    bateria_consumida_pct: float | None
     quantidade_celulas_visitadas: int | None
 
 class HistoryResponse(BaseModel):

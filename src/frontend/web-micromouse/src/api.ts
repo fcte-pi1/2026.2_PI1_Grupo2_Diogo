@@ -35,6 +35,28 @@ export type ApiEvent = {
     message: string
 }
 
+export type ApiHistoryItem = {
+    id: string;
+    status: string;
+    algoritmo: string;
+    labirinto_nome: string;
+    labirinto_tipo: string;
+    tempo_total_ms: number | null;
+    velocidade_media_cm_s: number | null;
+    quantidade_celulas_visitadas: number | null;
+    rpm: number | null;
+    bateria_consumida_pct: number | null;
+}
+
+export type ApiTelemetrySample = {
+    pos_x: number | null;
+    pos_y: number | null;
+    velocidade_instantanea_cm_s: number | null;
+    rpm_motor_esq: number | null;
+    rpm_motor_dir: number | null;
+    nivel_bateria_pct: number | null;
+}
+
 // <---> Faz um GET na API. O <T> é o tipo do que vai voltar, quem chama é que diz.
 async function get<T>(url: string): Promise<T> {
     const response = await fetch(`/api/${url}`);
@@ -50,4 +72,6 @@ export const api = {
     trajetoria: (id: string) => get<ApiPosition[]>(`sessions/${id}/path`),
     metricas: (id: string) => get<ApiMetrics>(`sessions/${id}/metrics`),
     eventos: (id: string) => get<ApiEvent[]>(`sessions/${id}/events`),
+    historico: () => get<{ items: ApiHistoryItem[] }>('sessions/history?limit=1&offset=0'),
+    telemetriaExecucao: (id: string) => get<{ samples: ApiTelemetrySample[] }>(`sessions/${id}/telemetry?limit=1000&offset=0`),
 }

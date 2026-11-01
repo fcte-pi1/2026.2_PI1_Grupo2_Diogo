@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { TelemetryData } from "../types/telemetry";
+import type { TelemetryData } from "../types/index";
 
 const initialTelemetry: TelemetryData = {
   connected: true,
