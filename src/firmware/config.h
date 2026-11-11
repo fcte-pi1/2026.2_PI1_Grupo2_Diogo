@@ -43,7 +43,7 @@ constexpr unsigned int PWM_RESOLUCAO_BITS = 8;
 constexpr int PWM_LIMITE_TESTE = 180;  // teto provisório de segurança
 constexpr uint32_t AMOSTRA_ENCODER_MS = 20;
 constexpr uint32_t PERIODO_CONTROLE_MS = 20;
-constexpr uint32_t AMOSTRA_BATERIA_MS = 750;
+constexpr uint32_t AMOSTRA_BATERIA_MS = 100;  // mesmo ritmo do monitor de bateria anterior
 constexpr uint32_t TESTE_DURACAO_MAX_MS = 10000;
 constexpr uint32_t TESTE_DURACAO_MIN_MS = 250;
 constexpr uint32_t WATCHDOG_WEB_MS = 1200;
@@ -167,11 +167,20 @@ constexpr float RETO_MARGEM_CURSO_MM = 12.0f;
 
 // Integracao 4.7: protecao frontal ainda NAO homologada na nova posicao.
 // O firmware nao deve considerar leitura invalida como caminho livre.
-// A alimentacao e tipo de bateria tambem precisam ser confirmados antes de
-// habilitar cortes automáticos baseados em tensao.
-constexpr bool CORTE_BATERIA_AUTOMATICO_HABILITADO = false;
-constexpr float BAT_TENSAO_CORTE_V = 6.6f; // REFERENCIA 2S; confirmar quimica/celulas.
-constexpr uint32_t BAT_CONFIRMACAO_CORTE_MS = 850;
+
+// ===== Protecao da bateria LiPo 2S (battery.cpp / power_logic.h) =====
+// Corte travado: abaixo de BAT_V_CORTE por BAT_TEMPO_CONFIRMACAO_MS, os motores
+// param em qualquer modo e novos testes ficam bloqueados.
+constexpr uint8_t INA219_ADDR = 0x40;
+constexpr int BAT_CELULAS = 2;
+constexpr float BAT_V_ALERTA = 7.0f;
+constexpr float BAT_V_CORTE = 6.6f;
+constexpr uint32_t BAT_TEMPO_CONFIRMACAO_MS = 2000;
+constexpr float I_SOBRECORRENTE_MA = 2000.0f;   // somente aviso
+constexpr uint32_t I_SOBRECORRENTE_TEMPO_MS = 500;
+// Faixa dos limites temporarios de ensaio (POST /api/bateria/limites).
+constexpr float BAT_V_CORTE_MAX_ENSAIO = 9.0f;
+constexpr float I_SOBRECORRENTE_MIN_ENSAIO_MA = 50.0f;
 
 // Envio remoto via HTTP. Desabilitado por padrao ate informar IP do PC.
 constexpr bool TELEMETRIA_REMOTA_HABILITADA = false;
@@ -183,15 +192,3 @@ constexpr uint16_t TELEMETRIA_PORTA = 8000;
 constexpr char TELEMETRIA_CAMINHO[] = "/api/telemetry";
 constexpr uint32_t TELEMETRIA_PERIODO_MS = 500; // 2 Hz; nao interfere no PI
 constexpr uint32_t TELEMETRIA_TIMEOUT_MS = 150;
-
-
-// ===== Limites do monitor de bateria do firmware anterior (power.cpp / power_logic.h) =====
-// O power.cpp esta fora da compilacao nesta integracao (ver platformio.ini).
-// As constantes ficam aqui para religar a protecao sem redefinir os valores.
-#define INA219_ADDR 0x40
-#define BAT_CELULAS              2
-#define BAT_V_ALERTA             7.0f
-#define BAT_V_CORTE              6.6f
-#define BAT_TEMPO_CONFIRMACAO_MS 2000
-#define I_SOBRECORRENTE_MA       2000.0f
-#define I_SOBRECORRENTE_TEMPO_MS 500

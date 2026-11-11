@@ -24,6 +24,7 @@ Conecte ao AP existente `Xaropinho-WiFi`, abra `http://192.168.4.1`. Abas: Encod
 - `GET /api/telemetria/remota`: estatisticas HTTP.
 - `POST /api/reto/start`: teste curto, `distancia`, `rpm`, `duracao`, `sync` e opcional `frontal=1`, `limiar`.
 - `POST /api/pwm/stop`: parada segura.
+- `POST /api/bateria/limites`: limites temporarios de corte e sobrecorrente para ensaio, `corte` (V) e `sobrecorrente` (mA); sem parametros volta ao padrao.
 
 ## Telemetria externa
 
@@ -37,7 +38,7 @@ Por padrao **DESATIVADA** para evitar tentativas de rede sem backend. Edite `TEL
 
 - Medir distancia janela U3 -> frente fisica do chassi; calibrar U2/U4; testar distancia de parada com coast.
 - Validar feedback e CPU/heap com Wi-Fi durante marcha. A leitura de lasers durante movimento so acontece com U3 frontal explicitamente armado.
-- Testar corrente com o shunt/circuito concreto, e configurar protecao de bateria conforme a bateria real. Corte automatico permanece desativado.
+- Testar corrente com o shunt/circuito concreto. A protecao de bateria (corte travado em 6,6 V) foi religada na issue #150; falta repetir na placa os testes 2.7, 2.8 e 2.9 do docs/7.2.
 - Separar missao autonoma de testes com heartbeat, integrar controlador de missao/maze feito pela equipe, definir checkpoints em flash.
 - Executar compilacao PlatformIO e ensaios no ESP32; nao declarar sistema homologado sem isso.
 

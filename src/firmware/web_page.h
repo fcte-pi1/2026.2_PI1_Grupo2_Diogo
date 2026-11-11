@@ -212,7 +212,7 @@ async function atualizar(){
  try{
   const r=await fetch('/api/status',{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);
   const d=await r.json();ultimo=d;ultimoStatusOk=Date.now();$('online').textContent='ESP32 conectada';$('online').className='tag good';
-  $('modo').textContent='Estado: '+d.modo;$('energia').textContent='INA219: '+(d.inaOk?'OK':'indisponível');
+  $('modo').textContent='Estado: '+d.modo;$('energia').textContent=d.inaOk?('Bateria: '+d.bateriaEstado+(d.sobrecorrente?' | SOBRECORRENTE':'')):'INA219: indisponível';$('energia').className='tag'+((d.bateriaEstado==='CRITICA'||d.sobrecorrente)?' bad':'');
   const cprOk=Number(d.cprE)>0&&Number(d.cprD)>0;
   $('heapLivre').textContent='Heap livre: '+fmt(d.heapLivreBytes,0)+' bytes';
   $('saidaReto').textContent='Modo: '+d.modo+' | Motivo: '+d.motivo+'\nAlvo: '+fmt(d.retoAlvoMm,1)+' mm; progresso: '+fmt(d.retoProgressoMm,2)+' mm; erro: '+fmt(d.retoErroMm,2)+' mm'+

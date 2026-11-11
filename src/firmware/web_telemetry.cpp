@@ -62,7 +62,6 @@ static Estatisticas estatD;
 static uint32_t testeInicio = 0;
 static uint32_t duracaoTeste = 0;
 static uint32_t ultimoHeartbeat = 0;
-static uint32_t bateriaBaixaDesde = 0;
 static int64_t testeInicioE = 0, testeInicioD = 0;
 static int64_t ultimoTesteDeltaE = 0, ultimoTesteDeltaD = 0;
 static int pwmE = 0, pwmD = 0;
@@ -173,6 +172,11 @@ static void handleStatus() {
     json += ",\"tensao\":" + numeroOuNull(getVoltage());
     json += ",\"corrente\":" + numeroOuNull(getCurrent());
     json += ",\"inaOk\":" + String(batteryAvailable() ? "true" : "false");
+    json += ",\"bateriaEstado\":\"" + String(estadoBateriaTexto()) + "\"";
+    json += ",\"bateriaPct\":" + numeroOuNull(getBatteryPercent(), 1);
+    json += ",\"sobrecorrente\":" + String(sobrecorrente() ? "true" : "false");
+    json += ",\"bateriaCorteV\":" + numeroOuNull(limiteCorteBateriaV());
+    json += ",\"sobrecorrenteLimiteMa\":" + numeroOuNull(limiteSobrecorrenteMa(), 0);
     json += ",\"manualLado\":\"" + ladoManual + "\"";
     json += ",\"manualDeltaE\":" + inteiro64(deltaManualE);
     json += ",\"manualDeltaD\":" + inteiro64(deltaManualD);
@@ -378,6 +382,7 @@ static void handleSalvarCpr() {
 static void handlePWMStart() {
     if (capturaLaserAtiva()) return respostaErro(409, "Aguarde a captura laser terminar antes de mover motores");
     if (!motorHardwareReady()) return respostaErro(503, "Driver PWM nao inicializado");
+    if (bateriaCritica()) return respostaErro(409, "Bateria critica: motores bloqueados (corte travado)");
     if (modo != Modo::PARADO || aguardandoMedicaoFreio()) return respostaErro(409, "Finalize teste e aguarde 1 s apos o freio");
     String lado = server.arg("lado");
     if (!lateralValida(lado)) return respostaErro(400, "Lado invalido");
@@ -438,7 +443,6 @@ static void iniciarRelogioMotorizado(int duracao, Modo novoModo) {
     testeInicio = millis();
     ultimoHeartbeat = testeInicio;
     duracaoTeste = static_cast<uint32_t>(duracao);
-    bateriaBaixaDesde = 0;
     pwmE = pwmD = 0;
     modo = novoModo;
     prepararMotoresControle(); // ponte H desabilitada apos cada parada; rearmar com PWM zero
@@ -446,6 +450,7 @@ static void iniciarRelogioMotorizado(int duracao, Modo novoModo) {
 
 static void handlePosicaoStart() {
     if (capturaLaserAtiva()) return respostaErro(409, "Aguarde a captura laser terminar antes de mover motores");
+    if (bateriaCritica()) return respostaErro(409, "Bateria critica: motores bloqueados (corte travado)");
     if (!podeIniciarControle())
         return respostaErro(409, "Exige CPR salvo, motores prontos, PARADO e freio concluido");
     int e, d, duracao;
@@ -465,6 +470,7 @@ static void handlePosicaoStart() {
 
 static void handleRpmStart() {
     if (capturaLaserAtiva()) return respostaErro(409, "Aguarde a captura laser terminar antes de mover motores");
+    if (bateriaCritica()) return respostaErro(409, "Bateria critica: motores bloqueados (corte travado)");
     if (!podeIniciarControle())
         return respostaErro(409, "Exige CPR salvo, motores prontos, PARADO e freio concluido");
     int duracao;
@@ -507,6 +513,7 @@ static uint32_t prazoAutomaticoReto(float distanciaMm, float rpm) {
 static void handleRetoStart() {
     if (capturaLaserAtiva())
         return respostaErro(409, "Aguarde a captura laser terminar antes de mover motores");
+    if (bateriaCritica()) return respostaErro(409, "Bateria critica: motores bloqueados (corte travado)");
     if (!podeIniciarControle())
         return respostaErro(409, "Exige CPR salvo, motores prontos, PARADO e freio finalizado");
     float distancia = 0, rpm = 0;
@@ -557,6 +564,7 @@ static void handleRetoStart() {
 
 static void handleGiroStart() {
     if (capturaLaserAtiva()) return respostaErro(409, "Aguarde a captura laser terminar antes de mover motores");
+    if (bateriaCritica()) return respostaErro(409, "Bateria critica: motores bloqueados (corte travado)");
     if (!podeIniciarControle())
         return respostaErro(409, "Exige CPR salvo, PARADO e freio concluido");
     float rpm = 0;
@@ -611,6 +619,20 @@ static void handleReiniciarImu() {
     if (!lerIMU().presente)
         return respostaErro(503, "MPU nao detectado; consulte /diagnostico-i2c e o serial");
     respostaOk("MPU detectado; mantenha o robo parado durante a calibracao");
+}
+
+// Limites temporarios da protecao de bateria, para ensaio em bancada sem
+// descarregar a LiPo. Sem parametros, volta aos limites padrao.
+static void handleBateriaLimites() {
+    if (modo != Modo::PARADO || aguardandoMedicaoFreio())
+        return respostaErro(409, "Troque os limites somente parado e apos o freio");
+    float corte = BAT_V_CORTE, sobre = I_SOBRECORRENTE_MA;
+    if ((server.hasArg("corte") && !floatValido("corte", corte)) ||
+        (server.hasArg("sobrecorrente") && !floatValido("sobrecorrente", sobre)))
+        return respostaErro(400, "Use numeros em corte (V) e sobrecorrente (mA)");
+    const char* recusa = definirLimitesBateria(corte, sobre);
+    if (recusa != nullptr) return respostaErro(409, recusa);
+    respostaOk("Limites da bateria aplicados");
 }
 
 bool testeMotorAtivo() { return modoMotorizado(); }
@@ -695,6 +717,7 @@ void setupTelemetry() {
         pararTesteDeEmergencia("parado_pela_pagina");
         respostaOk("Motores frenados");
     });
+    server.on("/api/bateria/limites", HTTP_POST, handleBateriaLimites);
     server.on("/api/heartbeat", HTTP_POST, handleHeartbeat);
     server.onNotFound([]() { respostaErro(404, "Rota nao encontrada"); });
 }
@@ -704,8 +727,11 @@ void loopTelemetry() {
     if (!modoMotorizado()) return;
     uint32_t agora = millis();
     // Segurança vem antes do cálculo de controle.
-    if (modo == Modo::RETO && (!CORTE_BATERIA_AUTOMATICO_HABILITADO || !batteryAvailable() ||
-         !isfinite(getVoltage()) || getVoltage() >= BAT_TENSAO_CORTE_V)) bateriaBaixaDesde = 0;
+    // Protecao da LiPo: o corte travado vale para qualquer modo motorizado.
+    if (bateriaCritica()) {
+        encerrarTeste("bateria_critica_corte");
+        return;
+    }
     // V4.6: fronteira de seguranca ANTES do controle PI. Nao utilizamos EMA
     // na protecao: ela acrescentaria atraso. Falha ou valor velho => FRENAR.
     if (modo == Modo::RETO && frenteProtegida) {
@@ -734,11 +760,6 @@ void loopTelemetry() {
         encerrarTeste("watchdog_conexao_perdida");
     } else if (agora - testeInicio >= duracaoTeste) {
         encerrarTeste("limite_de_tempo");
-    } else if (modo == Modo::RETO && CORTE_BATERIA_AUTOMATICO_HABILITADO && batteryAvailable() &&
-               isfinite(getVoltage()) && getVoltage() < BAT_TENSAO_CORTE_V &&
-               ((bateriaBaixaDesde == 0) ? (bateriaBaixaDesde = agora, false)
-                                          : agora - bateriaBaixaDesde > BAT_CONFIRMACAO_CORTE_MS)) {
-        encerrarTeste("reto_bateria_tensao_critica");
     } else if (modo == Modo::RPM || modo == Modo::POSICAO || modo == Modo::GIRO || modo == Modo::RETO) {
         const char* motivo = atualizarControleMovimento();
         if (motivo != nullptr) encerrarTeste(motivo);
