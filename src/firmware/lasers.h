@@ -5,7 +5,8 @@
 enum SensorLaser : uint8_t { LASER_U2=0, LASER_U3=1, LASER_U4=2 };
 struct LeituraLaser {
     bool inicializado=false;
-    int brutoMm=LASER_SEM_LEITURA;          // negative means invalid
+    int semOffsetMm=LASER_SEM_LEITURA;      // leitura do sensor antes do offset de calibracao
+    int brutoMm=LASER_SEM_LEITURA;          // com offset, sem filtro; negative means invalid
     int filtradoMm=LASER_SEM_LEITURA;       // negative means invalid
     uint8_t statusVL=255;
     EstadoParede parede=PAREDE_INDEFINIDA;

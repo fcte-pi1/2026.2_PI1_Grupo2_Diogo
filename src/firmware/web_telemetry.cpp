@@ -547,8 +547,9 @@ static void handleRetoStart() {
             return respostaErro(400, "No teste frontal use no maximo 35 RPM");
         if (!inteiroEmFaixa("limiar", FRENTE_LIMIAR_MIN_MM, FRENTE_LIMIAR_MAX_MM, limiar))
             return respostaErro(400, "Limiar frontal bruto deve estar entre 200 e 1000 mm");
-        // Para ativar, um EVENTO atual e valido e obrigatorio. A distancia
-        // nao e corrigida, pois o offset do U3 ainda nao foi calibrado.
+        // Para ativar, um EVENTO atual e valido e obrigatorio. A leitura ja
+        // tem o offset de calibracao do sensor, mas continua contada desde a
+        // janela optica: a distancia ate a frente do chassi ainda nao foi medida.
         const LeituraLaser dado = lerLaser(LASER_U3);
         const uint32_t agora=millis();
         if (!dado.inicializado || dado.brutoMm<0 || dado.ultimaValidaMs==0 ||

@@ -290,7 +290,7 @@ function atualizarCartoesLaser(t){
     const s=d[i],inval=s.status!=='VALIDO'||!s.valido;
     $('laserBruto'+i).textContent=inval?'—':fmtLaser(s.brutoMm);
     $('laserFiltrado'+i).textContent=inval?'—':fmtLaser(s.filtradoMm);
-    $('laserInfo'+i).textContent='Sensor: '+(s.inicializado?'ONLINE':'NÃO INICIALIZADO')+' | '+s.status+' | status VL='+s.rangeStatus+
+    $('laserInfo'+i).textContent='Sensor: '+(s.inicializado?'ONLINE':'NÃO INICIALIZADO')+' | sem offset: '+fmtLaser(s.semOffsetMm)+' mm (offset '+s.offsetMm+') | '+s.status+' | status VL='+s.rangeStatus+
       '\nParede: '+s.parede+' | idade da última leitura válida: '+(s.idadeValidaMs===null?'—':s.idadeValidaMs+' ms')+
       '\nTotal: '+s.total+' | válidas: '+s.validas+' | inválidas: '+s.invalidas+
       '\nPeríodo configurado: '+s.periodoMs+' ms | último intervalo: '+s.intervaloRealMs+' ms';

@@ -30,6 +30,10 @@ Conecte ao AP existente `Xaropinho-WiFi`, abra `http://192.168.4.1`. Abas: Encod
 
 Ligada por padrao desde a issue #154 (`TELEMETRIA_REMOTA_HABILITADA` em `config.h`). So ha tentativa de envio com algum aparelho conectado na rede do robo; o destino e `TELEMETRIA_HOST`. O percentual de bateria usa `BAT_CELULAS` (2S). Sem leitura de tensao valida, o POST nao sera enviado. O computador roda o FastAPI em `0.0.0.0:8000` e pode se conectar ao AP da ESP32. Em cada POST `/api/telemetry` sao enviados campos planos aceitos pelo `EspTelemetryInput` da branch da equipe: `bateria`, `velocidade`, `rpm_motor`, `connected`. A `velocidade` (cm/s) vem dos encoders e exige o CPR salvo no painel. Metadados extras sao diagnosticos, podem nao ser persistidos pelo backend; entre eles vao `velocidade_media` (cm/s) e `distancia_mm`, que o backend ainda nao le. O percentual, quando habilitado, e somente uma **estimativa por tensao de LiPo** e nao SOC preciso; valide a curva com o pacote real antes de usar no site. `posicao_estimada:null` e `mapa_disponivel:false` enquanto algoritmo de navegacao nao existir.
 
+## Offset dos lasers
+
+Cada VL53L0X le um valor acima da distancia real. O `config.h` tem um offset por sensor (`LASER_OFFSET_U2_MM`, `LASER_OFFSET_U3_MM`, `LASER_OFFSET_U4_MM`: 20, 20 e 15 mm), subtraido da leitura antes do filtro e da deteccao de parede. No `/api/lasers/status` e na aba de lasers, `brutoMm` e `filtradoMm` ja vem corrigidos, e `semOffsetMm` mostra a leitura original. O CSV de captura ganhou a coluna `sem_offset_mm`. Para recalibrar, capture cada sensor contra uma distancia conhecida e ajuste o offset pela diferenca entre `sem_offset_mm` e a referencia. A conta fica em `lasers_logic.h`, testada em `test/test_lasers_logic`.
+
 ## Velocidade media
 
 `speed.cpp` calcula a velocidade pelos encoders: a instantanea e a media (distancia do centro do robo dividida pelo tempo com motor ligado). O `/api/status` e o painel mostram a media do ultimo teste (`velMediaTrechoCmS`, com `distTrechoMm` e `tempoTrechoMs`) e a media de todos os testes desde que o robo foi ligado (`velMediaTotalCmS`). Para conferir, rode um reto de distancia conhecida, cronometre e compare distancia real / tempo com o valor do painel. As contas ficam em `speed_logic.h`, testadas em `test/test_speed_logic`.
@@ -40,7 +44,8 @@ Ligada por padrao desde a issue #154 (`TELEMETRIA_REMOTA_HABILITADA` em `config.
 
 ## O que continua pendente
 
-- Medir distancia janela U3 -> frente fisica do chassi; calibrar U2/U4; testar distancia de parada com coast.
+- Medir distancia janela U3 -> frente fisica do chassi; testar distancia de parada com coast.
+- Repetir o teste 3.2 do docs/7.3 com gabarito (50, 100, 150 e 200 mm) para conferir os offsets da issue #151 e rever os limiares de parede (120 e 160 mm).
 - Validar feedback e CPU/heap com Wi-Fi durante marcha. A leitura de lasers durante movimento so acontece com U3 frontal explicitamente armado.
 - Testar corrente com o shunt/circuito concreto. A protecao de bateria (corte travado em 6,6 V) foi religada na issue #150; falta repetir na placa os testes 2.7, 2.8 e 2.9 do docs/7.2.
 - Separar missao autonoma de testes com heartbeat, integrar controlador de missao/maze feito pela equipe, definir checkpoints em flash.
