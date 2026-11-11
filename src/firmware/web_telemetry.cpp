@@ -14,6 +14,8 @@
 #include <Preferences.h>
 #include <math.h>
 #include <stdlib.h>
+#include "telemetry_remote.h"
+#include "maze_state.h"
 
 extern WebServer server;
 static Preferences prefs;
@@ -151,6 +153,10 @@ static void handleStatus() {
     json.reserve(5200);
     json += "{\"ms\":" + String(agora);
     json += ",\"modo\":\"" + String(nomeModo()) + "\"";
+    json += ",\"driverPreparado\":" + String(motorHardwareReady() ? "true" : "false");
+    json += ",\"stbyAtivo\":" + String(ponteHabilitada() ? "true" : "false");
+    json += ",\"heapLivreBytes\":" + String(ESP.getFreeHeap());
+    json += ",\"heapMinBytes\":" + String(ESP.getMinFreeHeap());
     json += ",\"motivo\":\"" + ultimoMotivo + "\"";
     json += ",\"contE\":" + inteiro64(d.esq);
     json += ",\"contD\":" + inteiro64(d.dir);
@@ -248,7 +254,7 @@ static void handleStatus() {
     json += ",\"syncPausaD\":" + String(ctrl.pausaSyncD ? "true" : "false");
     // V4.5: odometria e erro do movimento reto. Se ja freou por 1 s,
     // usar contagem congelada do monitor de freio, nao do motor movido a mao.
-    if (ctrl.retoAlvoMm != 0) {
+    if (ctrl.retoAlvoMm != 0 && cprE > 0 && cprD > 0) {
         const bool congelado = modo == Modo::PARADO && f.valido && f.tem1000;
         const int64_t contEFinal = congelado ? f.em1000E : d.esq;
         const int64_t contDFinal = congelado ? f.em1000D : d.dir;
@@ -401,6 +407,7 @@ static void handlePWMStart() {
     ultimoHeartbeat = testeInicio;
     modo = Modo::PWM;
     ultimoMotivo = "teste_pwm_em_andamento";
+    prepararMotoresControle(); // restaura STBY da placa validada antes de acionar
     setMotorEsq(pwmE, frenteE);
     setMotorDir(pwmD, frenteD);
     respostaOk("Teste PWM iniciado; mantenha esta pagina aberta para heartbeat");
@@ -434,6 +441,7 @@ static void iniciarRelogioMotorizado(int duracao, Modo novoModo) {
     bateriaBaixaDesde = 0;
     pwmE = pwmD = 0;
     modo = novoModo;
+    prepararMotoresControle(); // ponte H desabilitada apos cada parada; rearmar com PWM zero
 }
 
 static void handlePosicaoStart() {
@@ -659,6 +667,13 @@ void setupTelemetry() {
     server.on("/api/i2c/scan", HTTP_GET, handleScanI2C);
     server.on("/api/imu/reiniciar", HTTP_POST, handleReiniciarImu);
     server.on("/api/status", HTTP_GET, handleStatus);
+    server.on("/api/telemetria/remota", HTTP_GET, []() {
+        server.send(200, "application/json", remotoDiagnosticoJson());
+    });
+    server.on("/api/maze", HTTP_GET, []() {
+        server.sendHeader("Cache-Control", "no-store");
+        server.send(200, "application/json", mazeEstadoJson());
+    });
     server.on("/api/lasers/status", HTTP_GET, handleLasersStatus);
     server.on("/api/lasers/capture/start", HTTP_POST, handleLasersCapturaStart);
     server.on("/api/lasers/capture/clear", HTTP_POST, handleLasersClear);
@@ -689,8 +704,8 @@ void loopTelemetry() {
     if (!modoMotorizado()) return;
     uint32_t agora = millis();
     // Segurança vem antes do cálculo de controle.
-    if (modo == Modo::RETO && (!batteryAvailable() ||
-         !isfinite(getVoltage()) || getVoltage() >= 6.6f)) bateriaBaixaDesde = 0;
+    if (modo == Modo::RETO && (!CORTE_BATERIA_AUTOMATICO_HABILITADO || !batteryAvailable() ||
+         !isfinite(getVoltage()) || getVoltage() >= BAT_TENSAO_CORTE_V)) bateriaBaixaDesde = 0;
     // V4.6: fronteira de seguranca ANTES do controle PI. Nao utilizamos EMA
     // na protecao: ela acrescentaria atraso. Falha ou valor velho => FRENAR.
     if (modo == Modo::RETO && frenteProtegida) {
@@ -719,11 +734,11 @@ void loopTelemetry() {
         encerrarTeste("watchdog_conexao_perdida");
     } else if (agora - testeInicio >= duracaoTeste) {
         encerrarTeste("limite_de_tempo");
-    } else if (modo == Modo::RETO && batteryAvailable() &&
-               isfinite(getVoltage()) && getVoltage() < 6.6f &&
+    } else if (modo == Modo::RETO && CORTE_BATERIA_AUTOMATICO_HABILITADO && batteryAvailable() &&
+               isfinite(getVoltage()) && getVoltage() < BAT_TENSAO_CORTE_V &&
                ((bateriaBaixaDesde == 0) ? (bateriaBaixaDesde = agora, false)
-                                          : agora - bateriaBaixaDesde > 850)) {
-        encerrarTeste("reto_bateria_abaixo_6v6");
+                                          : agora - bateriaBaixaDesde > BAT_CONFIRMACAO_CORTE_MS)) {
+        encerrarTeste("reto_bateria_tensao_critica");
     } else if (modo == Modo::RPM || modo == Modo::POSICAO || modo == Modo::GIRO || modo == Modo::RETO) {
         const char* motivo = atualizarControleMovimento();
         if (motivo != nullptr) encerrarTeste(motivo);

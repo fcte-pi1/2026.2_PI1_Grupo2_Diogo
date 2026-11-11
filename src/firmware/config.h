@@ -1,10 +1,13 @@
 #pragma once
 #include <Arduino.h>
 
-// === PINOS ORIGINAIS DO SEU MICROMOUSE (mantidos) ===
-// CANAL A (PWMA/AIN1/AIN2) = roda fisica DIREITA
-// CANAL B (PWMB/BIN1/BIN2) = roda fisica ESQUERDA
-// ENCODER ESQ (32/33) = roda esquerda; ENCODER DIR (14/13) = roda direita
+// === NOVA ELETRONICA - REMAPEAMENTO DE 03/11/2026 ===
+// CANAL A (AO1/AO2) = MOTOR ESQUERDO; encoder esquerdo C1=32 C2=33.
+// CANAL B (BO1/BO2) = MOTOR DIREITO; encoder direito C1=14 C2=13.
+// TB6612FNG: AO1/AO2 e BO1/BO2 sao SAIDAS da ponte H (nao pinos da ESP32).
+// IMPORTANTE: GPIOs de CONTROLE da ponte H abaixo foram mantidos da V4.4,
+// pois a nova mensagem so confirmou as SAIDAS de motor. CONFIRMAR na placa.
+// GPIO 2, 4, 5 e 15 sao pinos de strap no ESP32 classico; confira o boot.
 #define PIN_STBY 5
 #define PIN_PWMA 15
 #define PIN_AIN1 2
@@ -20,12 +23,16 @@
 #define PIN_SDA 21
 #define PIN_SCL 22
 
-// Pelos testes CSV anteriores, durante a marcha a re no firmware antigo:
-// ENC_ESQ diminuia, ENC_DIR aumentava. Ao inverter ambos os motores,
-// esperamos ambos os encoders POSITIVOS ao andar para FRENTE com o
-// sinal da direita invertido. CONFIRMAR em teste com rodas suspensas.
+// Polaridade dos ENCODERS mantida da V4.3/V4.4 porque C1/C2 continuam
+// nos mesmos GPIOs. CONFIRMAR contagens positivas para a frente antes de girar.
 #define SINAL_ENCODER_ESQ 1
 #define SINAL_ENCODER_DIR -1
+
+// Polaridades PROVISORIAS do comando "frente" por roda fisica.
+// Mantidas da convencao logica antiga ao trocar os canais A/B.
+// Se a roda girar para tras ao comandar frente, INVERTA apenas o bool da roda.
+constexpr bool ESQ_FRENTE_IN1_ALTO = false; // AIN1 LOW, AIN2 HIGH
+constexpr bool DIR_FRENTE_IN1_ALTO = true;  // BIN1 HIGH, BIN2 LOW
 
 // Valores geométricos NOMINAIS: NÃO são calibração concluída.
 constexpr float DIAMETRO_RODA_MM = 34.0f;
@@ -107,6 +114,27 @@ constexpr uint32_t GIRO_SUAVE_FALHA_MS = 250;
 constexpr float GIRO_SUAVE_META_TOLERANCIA_MM = 0.7f;
 
 
+// ===== V4.4 - BANCADA VL53L0X, SEM NAVEGACAO AUTOMATICA =====
+// Identificacao fisica CONFIRMADA pelo usuario: U2 esquerda, U3 frente, U4 direita.
+constexpr uint8_t LASER_XSHUT_U2 = 18; // ESQUERDO
+constexpr uint8_t LASER_XSHUT_U3 = 19; // FRONTAL
+constexpr uint8_t LASER_XSHUT_U4 = 23; // DIREITO
+constexpr uint8_t LASER_ADDR_U2 = 0x30;
+constexpr uint8_t LASER_ADDR_U3 = 0x31;
+constexpr uint8_t LASER_ADDR_U4 = 0x32;
+constexpr uint16_t LASER_MIN_DIAGNOSTICO_MM = 20;   // abaixo disso: INVALIDO, nao obstaculo livre
+constexpr uint16_t LASER_MAX_DIAGNOSTICO_MM = 2000;
+constexpr uint32_t LASER_ORCAMENTO_MEDICAO_US = 50000;
+constexpr uint16_t LASER_FOLGA_PERIODO_MS = 10;
+constexpr uint8_t LASER_CICLOS_VALIDADE = 4;
+constexpr float LASER_EMA_ALFA = 0.50f;
+constexpr int LASER_PAREDE_PRESENTE_MM = 120;
+constexpr int LASER_PAREDE_AUSENTE_MM = 160;
+constexpr uint32_t LASER_CAPTURE_TIMEOUT_MS = 20000;
+constexpr uint16_t LASER_CAPTURE_MAX_AMOSTRAS = 120;
+constexpr float LARGURA_CHASSI_ALVO_MM = 110.0f; // hipotese futura, nao largura medida atual
+
+
 // ===== V4.5 - MOVIMENTO RETO (ENCODERS, SEM CORRECAO LASER) =====
 // Limites iniciais de bancada: distancia curta e RPM baixos.
 constexpr float RETO_DISTANCIA_MIN_MM = 30.0f;
@@ -136,22 +164,22 @@ constexpr uint32_t RETO_SYNC_FALHA_MS = 300;
 constexpr float RETO_SYNC_LIMITE_CHEGADA_MM = 2.5f;
 constexpr float RETO_MARGEM_CURSO_MM = 12.0f;
 
-// ===== V4.4 - BANCADA VL53L0X, SEM NAVEGACAO AUTOMATICA =====
-// Posicoes fisicas confirmadas: U2=ESQUERDO; U3=FRONTAL; U4=DIREITO.
-constexpr uint8_t LASER_XSHUT_U2 = 23;
-constexpr uint8_t LASER_XSHUT_U3 = 18;
-constexpr uint8_t LASER_XSHUT_U4 = 19;
-constexpr uint8_t LASER_ADDR_U2 = 0x30;
-constexpr uint8_t LASER_ADDR_U3 = 0x31;
-constexpr uint8_t LASER_ADDR_U4 = 0x32;
-constexpr uint16_t LASER_MIN_DIAGNOSTICO_MM = 20;   // abaixo disso: INVALIDO, nao obstaculo livre
-constexpr uint16_t LASER_MAX_DIAGNOSTICO_MM = 2000;
-constexpr uint32_t LASER_ORCAMENTO_MEDICAO_US = 50000;
-constexpr uint16_t LASER_FOLGA_PERIODO_MS = 10;
-constexpr uint8_t LASER_CICLOS_VALIDADE = 4;
-constexpr float LASER_EMA_ALFA = 0.50f;
-constexpr int LASER_PAREDE_PRESENTE_MM = 120;
-constexpr int LASER_PAREDE_AUSENTE_MM = 160;
-constexpr uint32_t LASER_CAPTURE_TIMEOUT_MS = 20000;
-constexpr uint16_t LASER_CAPTURE_MAX_AMOSTRAS = 120;
-constexpr float LARGURA_CHASSI_ALVO_MM = 110.0f; // hipotese futura, nao largura medida atual
+
+// Integracao 4.7: protecao frontal ainda NAO homologada na nova posicao.
+// O firmware nao deve considerar leitura invalida como caminho livre.
+// A alimentacao e tipo de bateria tambem precisam ser confirmados antes de
+// habilitar cortes automáticos baseados em tensao.
+constexpr bool CORTE_BATERIA_AUTOMATICO_HABILITADO = false;
+constexpr float BAT_TENSAO_CORTE_V = 6.6f; // REFERENCIA 2S; confirmar quimica/celulas.
+constexpr uint32_t BAT_CONFIRMACAO_CORTE_MS = 850;
+
+// Envio remoto via HTTP. Desabilitado por padrao ate informar IP do PC.
+constexpr bool TELEMETRIA_REMOTA_HABILITADA = false;
+// Desconhecido ate validar bateria real; configure 2 (2S), 3 (3S) etc.
+// Sem esta configuracao, nenhum POST e enviado, para nao exibir 0% falso.
+constexpr uint8_t TELEMETRIA_BATERIA_CELULAS_LIPO = 0;
+constexpr char TELEMETRIA_HOST[] = "192.168.4.2"; // computador conectado ao AP
+constexpr uint16_t TELEMETRIA_PORTA = 8000;
+constexpr char TELEMETRIA_CAMINHO[] = "/api/telemetry";
+constexpr uint32_t TELEMETRIA_PERIODO_MS = 500; // 2 Hz; nao interfere no PI
+constexpr uint32_t TELEMETRIA_TIMEOUT_MS = 150;

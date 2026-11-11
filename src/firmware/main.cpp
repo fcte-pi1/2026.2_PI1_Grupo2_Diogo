@@ -10,6 +10,8 @@
 #include "lasers.h"
 #include "ota_manager.h"
 #include "web_telemetry.h"
+#include "telemetry_remote.h"
+#include "maze_state.h"
 
 WebServer server(80);
 
@@ -18,13 +20,14 @@ void setup() {
     delay(300);
     Serial.println("\n=== MICROMOUSE | BANCADA DE CALIBRACAO ===");
     setupMotors(); // mantém motores parados desde a inicialização
+    mazeReset(); // mapa com todas as paredes desconhecidas; sem pose ficticia
     if (!motorHardwareReady()) {
         Serial.println("FALHA FATAL NO PWM. Desabilitando drivers.");
         while (true) { delay(1000); }
     }
-    // Inicializacao sequencial dos VL53L0X: manter os tres em XSHUT LOW
-    // antes de colocar cada um nos enderecos 0x30, 0x31 e 0x32.
-    const uint8_t xshut[] = {23, 18, 19};
+    // Todos os VL53L0X em XSHUT LOW antes de inicializar/reenderecar.
+    // GPIOs definidos em config.h (U2=18, U3=19, U4=23).
+    const uint8_t xshut[] = {LASER_XSHUT_U2, LASER_XSHUT_U3, LASER_XSHUT_U4};
     for (uint8_t gpio : xshut) {
         digitalWrite(gpio, LOW);
         pinMode(gpio, OUTPUT);
@@ -48,6 +51,7 @@ void setup() {
     initOTA();
     setupTelemetry(); // TODAS as rotas antes do begin()
     server.begin();
+    iniciarTelemetriaRemota();
     Serial.println("Painel: http://192.168.4.1/");
     Serial.println("Serial: digite 's' para frear imediatamente.");
 }
@@ -55,12 +59,11 @@ void setup() {
 void loop() {
     atualizarIMU();
     atualizarEncoders();
-    // Durante movimento, a V4.6 consulta SOMENTE o U3 quando o teste
-    // frontal estiver armado; U2/U4 nao participam do controle.
     if (!testeMotorAtivo()) atualizarLasers();
     else if (frenteEmMonitoramento()) atualizarLaserFrontal();
     updateBattery();
     loopTelemetry();   // deadlines de PWM e watchdog não bloqueantes
+    atualizarSnapshotRemoto(); // copia dados; HTTP roda em outra task
     server.handleClient();
     handleOTA();
     while (Serial.available()) {

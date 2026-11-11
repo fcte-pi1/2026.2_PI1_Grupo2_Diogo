@@ -6,7 +6,7 @@ const char PAGINA_HTML[] PROGMEM = R"HTML(
 <!DOCTYPE html>
 <html lang="pt-BR"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Micromouse V4.6 | Bancada de testes</title>
+<title>Micromouse V4.7 | Integracao em bancada</title>
 <style>
 :root{color-scheme:dark;--bg:#101826;--box:#1b2739;--bd:#32435a;--text:#eff5ff;--muted:#9fb1c8;--green:#4ce2a7;--blue:#60b7ff;--red:#ff697d}
 *{box-sizing:border-box}body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,sans-serif;margin:0;padding:22px;line-height:1.5}
@@ -15,11 +15,11 @@ main{max-width:1090px;margin:auto}h1{font-size:clamp(1.35rem,3vw,2.3rem);margin:
 .abas{display:flex;gap:10px;margin:17px 0;flex-wrap:wrap}.abas button.ativo{background:var(--green);color:#092017}.aba-pagina[hidden]{display:none!important}.sensormini{border-left:4px solid #60b7ff}.legendinha{font-size:.86rem;color:var(--muted)}
 </style></head><body><main>
 <div class="eyebrow">ESP32 • TB6612FNG • Encoders X4</div>
-<h1>Bancada de calibração Micromouse</h1>
+<h1>Micromouse V4.7 — Integracao em bancada</h1>
 <div class="top"><span id="online" class="tag bad">Sem conexão</span><span id="modo" class="tag">—</span><span id="energia" class="tag">INA219: —</span></div>
 <p>Conecte ao Wi-Fi <strong>Xaropinho-WiFi</strong>. Para o primeiro ensaio, apoie o robô com as rodas livres e tenha acesso à chave da bateria.</p>
 <div class="card"><div class="top"><button class="danger" onclick="parar()">■ FREAR / CANCELAR TESTE</button><button class="secondary" onclick="zerar()">Zerar contadores</button><button class="secondary" onclick="baixarCSV()">Baixar telemetria CSV</button></div><p id="mensagem" class="notice">Sem dados ainda.</p></div>
-<nav class="abas" aria-label="Areas de teste"><button id="btAbaCal" class="ativo" onclick="mostrarAba('calibracao')">Motores e giros</button><button id="btAbaLaser" class="secondary" onclick="mostrarAba('sensores')">Sensores · proteção frontal</button><button id="btAbaMover" class="secondary" onclick="mostrarAba('mover')">Controle de movimento</button></nav>
+<nav class="abas" aria-label="Areas de teste"><button id="btAbaCal" class="ativo" onclick="mostrarAba('calibracao')">Encoders e calibração</button><button id="btAbaMov" class="secondary" onclick="mostrarAba('movimento')">MOVIMENTO E GIRO 90°</button><button id="btAbaReto" class="secondary" onclick="mostrarAba('reto')">Reto V4.5</button><button id="btAbaLaser" class="secondary" onclick="mostrarAba('sensores')">Lasers V4.4</button></nav>
 <div id="abaCalibracao" class="aba-pagina">
 <div class="grid">
 <section class="card"><h2>Motor esquerdo</h2><div class="metrics"><div><span class="label">Contagem acumulada</span><span class="metric" id="contE">—</span></div><div><span class="label">Velocidade (CPS)</span><span class="metric" id="cpsE">—</span></div><div><span class="label">RPM estimado</span><span class="metric" id="rpmE">—</span></div><div><span class="label">PWM aplicado</span><span class="metric" id="pwmE">0</span></div></div></section>
@@ -36,19 +36,28 @@ main{max-width:1090px;margin:auto}h1{font-size:clamp(1.35rem,3vw,2.3rem);margin:
 <div class="row"><div class="field"><label for="cprE">CPR esquerdo (X4)</label><input type="number" id="cprE" min="1" max="100000" step="0.0001" placeholder="A calibrar"></div><div class="field"><label for="cprD">CPR direito (X4)</label><input type="number" id="cprD" min="1" max="100000" step="0.0001" placeholder="A calibrar"></div></div>
 <div class="actions"><button onclick="cprCopiarUltimos()" class="secondary">Copiar médias das medições</button><button class="green" onclick="salvarCPR()">Salvar CPR</button></div>
 <div class="output" id="referencia">Meta teórica de 90°: só após CPR medido.</div></section>
+</div>
+<div id="abaMovimento" class="aba-pagina" hidden>
+<section class="card"><h2>Movimento e giro — testes V3.1 / V4.3</h2>
+<p><strong>Esta aba recupera os testes de PWM, RPM, posição para frente/trás e giro de 90° com sincronismo suave.</strong> O deslocamento em posição usa PI individual, ainda sem correção de trajetória por lasers.</p>
+<div id="statusMovimento" class="notice">Verificando CPR salvo e ponte H...</div>
+<div class="actions"><button class="secondary" onclick="mostrarAba('calibracao')">Configurar CPR nos encoders</button></div>
+</section>
 <section class="card"><h2>3. Teste temporizado de PWM</h2><p>Rodas suspensas. Teste em malha aberta para medir CPS × PWM. A página envia batimentos de segurança; se a conexão falhar, a ESP32 freia automaticamente. PWM máximo nesta versão: <strong>180/255</strong>.</p>
 <div class="row"><div class="field"><label>Lado</label><select id="ladoPwm"><option value="esq">Esquerda</option><option value="dir">Direita</option><option value="ambos">Ambos</option></select></div><div class="field"><label>Tempo (ms)</label><input id="tempoPwm" type="number" min="250" max="10000" value="2500"></div></div>
 <div class="row"><div class="field"><label>PWM esquerdo</label><input id="pwmTesteE" type="number" min="0" max="180" value="80"></div><div class="field"><label>Sentido esquerdo</label><select id="sentidoE"><option value="frente">Frente</option><option value="tras">Trás</option></select></div><div class="field"><label>PWM direito</label><input id="pwmTesteD" type="number" min="0" max="180" value="80"></div><div class="field"><label>Sentido direito</label><select id="sentidoD"><option value="frente">Frente</option><option value="tras">Trás</option></select></div></div>
 <div class="actions"><button class="green" onclick="pwmIniciar()">▶ Iniciar ensaio</button><button class="danger" onclick="parar()">■ FREAR</button></div>
 <div class="bar"><div id="barra"></div></div><div class="output" id="saidaTeste">Nenhum ensaio PWM executado.</div></section>
 <section class="card"><h2>4. Controle de velocidade por RPM (V3)</h2>
-<p>Malha PI independente em cada motor. <strong>RPM positivo = frente</strong>; RPM negativo = trás; zero = roda freada. O ajuste é preliminar: comece com rodas suspensas e só depois compare no solo.</p>
+<p>Malha PI independente em cada motor. <strong>RPM positivo = frente</strong>; RPM negativo = trás; zero = roda sem acionamento. O ajuste é preliminar: comece com rodas suspensas e só depois compare no solo.</p>
 <div class="row"><div class="field"><label for="rpmAlvoE">RPM alvo esquerda (-120 a 120)</label><input id="rpmAlvoE" type="number" min="-120" max="120" value="60" step="5"></div><div class="field"><label for="rpmAlvoD">RPM alvo direita (-120 a 120)</label><input id="rpmAlvoD" type="number" min="-120" max="120" value="60" step="5"></div><div class="field"><label for="tempoRpm">Duração (ms)</label><input id="tempoRpm" type="number" min="500" max="10000" value="2500"></div></div>
 <div class="actions"><button class="green" onclick="iniciarRpm()">▶ Testar RPM</button><button class="secondary" onclick="fixarRpm(40,40)">40 / 40 RPM</button><button class="secondary" onclick="fixarRpm(60,60)">60 / 60 RPM</button><button class="secondary" onclick="fixarRpm(60,0)">60 / 0 RPM</button><button class="secondary" onclick="fixarRpm(0,60)">0 / 60 RPM</button><button class="danger" onclick="parar()">■ FREAR</button></div>
 <small>Primeiro teste: 40/0 RPM por 2500 ms; depois 0/40 RPM. Confirme o sentido físico e a contagem positiva antes de testar ambas.</small></section>
 <section class="card"><h2>5. Movimento por contagens de encoder (V3)</h2>
 <p>Metas relativas ao início do teste. Valores positivos = frente; negativos = trás. Cada motor freia individualmente ao atingir sua meta. O controle <strong>não usa a IMU</strong> e ainda não garante um giro de 90°.</p>
 <div class="row"><div class="field"><label for="alvoPosE">Meta esquerda (-2000 a 2000)</label><input id="alvoPosE" type="number" min="-2000" max="2000" step="1" value="100"></div><div class="field"><label for="alvoPosD">Meta direita (-2000 a 2000)</label><input id="alvoPosD" type="number" min="-2000" max="2000" step="1" value="0"></div><div class="field"><label for="velPos">Limite RPM (20 a 75)</label><input id="velPos" type="number" min="20" max="75" value="45"></div><div class="field"><label for="tempoPos">Tempo máximo (ms)</label><input id="tempoPos" type="number" min="500" max="10000" value="5000"></div></div>
+<p><b>Testes rápidos de avanço (preset, não executa sozinho):</b> escolha a distância e depois clique em <b>Iniciar movimento</b>. Não é um alinhamento por paredes.</p>
+<div class="actions"><button class="secondary" onclick="presetDistanciaMm(50)">Preparar avanço 50 mm</button><button class="secondary" onclick="presetDistanciaMm(100)">Preparar avanço 100 mm</button><button class="secondary" onclick="presetDistanciaMm(150)">Preparar avanço 150 mm</button><button class="secondary" onclick="presetDistanciaMm(-50)">Preparar ré 50 mm</button></div>
 <div class="actions"><button class="secondary" onclick="presetPos(100,0)">E +100</button><button class="secondary" onclick="presetPos(0,100)">D +100</button><button class="secondary" onclick="presetPos(300,300)">Ambas +300</button><button class="secondary" onclick="presetPos(600,-600)">Simular giro ±600</button></div>
 <div class="actions"><button class="green" onclick="iniciarPosicao()">▶ Executar posição</button><button class="danger" onclick="parar()">■ FREAR</button></div>
 <div class="output" id="saidaPosicao">Nenhum ensaio de posição executado.</div>
@@ -68,42 +77,40 @@ main{max-width:1090px;margin:auto}h1{font-size:clamp(1.35rem,3vw,2.3rem);margin:
 <canvas id="graficoGiro" width="920" height="160" aria-label="Gráfico de Yaw relativo ao longo do teste"></canvas>
 </section>
 
-<section class="card"><h2>6. Frenagem medida na ESP32 (V3)</h2><p>O contador é registrado imediatamente antes do comando de freio, depois aproximadamente 300 ms e 1000 ms. Espere concluir a medição antes de iniciar outro ensaio.</p><div class="output" id="saidaFreio">Nenhuma frenagem capturada.</div></section>
-<section class="card"><h2>7. Gráficos de referência × medição</h2><small>Linhas verde/azul = medição E/D; linhas tracejadas = referências E/D. A coleta ocorre enquanto esta página está aberta.</small><p>RPM: alvo e velocidade medida</p><canvas id="graficoRPM" width="800" height="235"></canvas><p>Posição: meta relativa e progresso (contagens)</p><canvas id="graficoPosicao" width="800" height="235"></canvas></section>
-<section class="card"><h2>8. Velocidade em tempo real</h2><small>Verde = roda esquerda; azul = roda direita (CPS). Histórico recente sem bibliotecas externas.</small><canvas id="grafico" width="800" height="235"></canvas><div class="top"><span class="tag" id="batV">Tensão: —</span><span class="tag" id="batI">Corrente: —</span></div></section>
-<section class="card"><h2>Orientações de segurança</h2><p>O botão vermelho freia por software. Ele não substitui uma chave física que corte a energia dos motores. No chão, faça apenas ensaios supervisionados em área livre, começando por baixas velocidades. Não deixe o robô sem supervisão.</p><div class="notice warn">Se a página parar de enviar sinais por mais de 1,2 s durante um teste PWM, os motores serão frenados. Um ensaio também tem duração máxima de 10 s.</div></section>
+<section class="card"><h2>7. Parada medida na ESP32</h2><p><strong>V4.4.2 usa coast/STBY LOW, não freio elétrico ativo.</strong> O contador é registrado imediatamente antes do comando de parada, depois aproximadamente 300 ms e 1000 ms. Espere concluir a medição antes de iniciar outro ensaio.</p><div class="output" id="saidaFreio">Nenhuma frenagem capturada.</div></section>
+<section class="card"><h2>8. Gráficos de referência × medição</h2><small>Linhas verde/azul = medição E/D; linhas tracejadas = referências E/D. A coleta ocorre enquanto esta página está aberta.</small><p>RPM: alvo e velocidade medida</p><canvas id="graficoRPM" width="800" height="235"></canvas><p>Posição: meta relativa e progresso (contagens)</p><canvas id="graficoPosicao" width="800" height="235"></canvas></section>
+<section class="card"><h2>9. Velocidade em tempo real</h2><small>Verde = roda esquerda; azul = roda direita (CPS). Histórico recente sem bibliotecas externas.</small><canvas id="grafico" width="800" height="235"></canvas><div class="top"><span class="tag" id="batV">Tensão: —</span><span class="tag" id="batI">Corrente: —</span></div></section>
+<section class="card"><h2>Orientações de segurança</h2><p>O botão vermelho freia por software. Ele não substitui uma chave física que corte a energia dos motores. No chão, faça apenas ensaios supervisionados em área livre, começando por baixas velocidades. Não deixe o robô sem supervisão.</p><div class="notice warn">Se a página parar de enviar sinais por mais de 1,2 s durante qualquer teste motorizado, o firmware desabilita STBY. A parada é por inércia (coast), não por frenagem ativa. Duração máxima: 10 s.</div></section>
 <div class="footer">Contagens absolutas de encoder são independentes de CPR. A meta de 90° é geométrica; testes ±600 devem ser validados inicialmente com rodas suspensas e não garantem ângulo exato.</div>
 
 </div>
+<div id="abaReto" class="aba-pagina" hidden>
+<section class="card"><h2>Movimento reto V4.5 — sincronismo por encoders</h2>
+<div class="notice warn"><strong>EM VALIDAÇÃO:</strong> nesta etapa o controle nao corrige paredes. Sem a protecao frontal ativada, nao ha anticolisao. Primeiros testes com rodas suspensas e pista livre, com chave fisica acessivel. O sensor frontal foi reposicionado; sua distancia ate a frente do chassi precisa ser medida.</div>
+<div class="row"><div class="field"><label>Distancia assinada (mm, -250 a +250)</label><input id="retoDist" type="number" min="-250" max="250" value="50"></div><div class="field"><label>RPM (20–60)</label><input id="retoRpm" type="number" min="20" max="60" value="25"></div><div class="field"><label>Timeout (ms)</label><input id="retoTempo" type="number" min="1000" max="10000" value="7000"></div><div class="field"><label>Sincronismo</label><select id="retoSync"><option value="suave">Suave</option><option value="desligado">Desligado</option></select></div></div>
+<div class="actions"><button class="secondary" onclick="presetReto(50)">50 mm</button><button class="secondary" onclick="presetReto(100)">100 mm</button><button class="secondary" onclick="presetReto(150)">150 mm</button><button class="secondary" onclick="presetReto(-50)">Ré 50 mm</button><button class="green" onclick="iniciarReto()">Iniciar reto</button><button class="danger" onclick="parar()">PARAR</button></div>
+<pre class="output" id="saidaReto">Aguardando telemetria...</pre>
+</section>
+<section class="card"><h2>Proteção frontal U3 — experimental</h2>
+<p>A opção exige leitura válida/recente e interrompe o avanço se a distancia bruta ficar abaixo de um limiar. <strong>Não constitui um sistema anticolisão homologado:</strong> não contempla ainda o recuo do sensor, correção de offset nem a distância de parada medida.</p>
+<div class="row"><div class="field"><label>Distancia curta (mm, 30–250)</label><input id="frontDist" type="number" value="100" min="30" max="250"></div><div class="field"><label>RPM (20–35)</label><input id="frontRpm" type="number" value="25" min="20" max="35"></div><div class="field"><label>Limiar bruto U3 (mm, 200–1000)</label><input id="frontLimiar" type="number" value="250" min="200" max="1000"></div></div>
+<div class="actions"><button class="secondary" onclick="iniciarFrontal()">Testar frontal (supervisionado)</button><button class="danger" onclick="parar()">PARAR</button></div>
+<pre class="output" id="saidaFrontal">Proteção não ativa.</pre>
+</section>
+<section class="card"><h2>Estado da integração</h2><p>O mapa 16×16 fica na RAM da ESP32. Até a equipe entregar o módulo de exploração, a posição é desconhecida e as células começam não observadas. Os campos não são preenchidos artificialmente.</p><div class="actions"><a class="tag" href="/api/maze" target="_blank">Ver estado do mapa (JSON)</a><a class="tag" href="/api/telemetria/remota" target="_blank">Ver telemetria remota</a></div><p id="heapLivre">Heap livre: aguardando...</p></section>
+</div>
 <div id="abaSensores" class="aba-pagina" hidden>
 <section class="card"><h2>V4.4 — Diagnóstico dos sensores VL53L0X</h2>
-<p>U2 = esquerdo, U3 = frontal e U4 = direito (identificação física confirmada). A aba mantém as capturas estáticas e acrescenta um ensaio frontal com movimento supervisionado.</p>
+<p><strong>Somente leitura:</strong> nenhum botão desta aba aciona motores. Mapeamento físico confirmado: U2 esquerdo (GPIO 18), U3 frontal (GPIO 19), U4 direito (GPIO 23).</p>
 <div class="notice">Largura do chassi <strong>alvo: 110 mm</strong>. Num corredor de 168 mm, folga geométrica nominal ~29 mm de cada lado antes de descontar parafusos, pneus e a posição das janelas ópticas. Leituras inválidas <strong>não significam caminho livre</strong>.</div>
 <div class="actions"><button class="secondary" onclick="reinitLasers()">Reiniciar ESP32 e lasers</button><button class="secondary" onclick="baixarLasersLive()">Exportar histórico exibido (CSV)</button><a class="tag" href="/diagnostico-i2c">Scanner I²C</a></div>
 <p id="laserAlerta" class="notice">Aguardando primeiras leituras.</p></section>
-<section class="card" id="ensaioReto">
-<h2>V4.5 — Movimento reto por encoders</h2>
-<div class="notice warn"><strong>Teste V4.5 original:</strong> rodas suspensas inicialmente. No chao somente em pista livre, sem paredes proximas. <strong>Neste ensaio original o laser NAO para o robo;</strong> use a secao frontal separada para isso. A IMU apenas mede o Yaw. Mantenha o navegador aberto para o watchdog de 1,2 s.</div>
-<p>O alvo e o deslocamento da <strong>media das rodas</strong>. Contagem positiva = frente; negativa = re. A sincronizacao suave diminui a diferenca entre as distancias das rodas durante todo o trajeto. Opcao desligada apenas para comparacao controlada.</p>
-<div class="row">
- <div class="field"><label>Distancia assinada (mm)</label><input id="retoDist" type="number" min="-250" max="250" step="5" value="50"></div>
- <div class="field"><label>Limite velocidade (RPM)</label><input id="retoRpm" type="number" min="20" max="60" step="5" value="30"></div>
- <div class="field"><label>Sincronismo</label><select id="retoSync"><option value="suave">Suave (recomendado)</option><option value="desligado">Sem correcao (diagnostico)</option></select></div>
- <div class="field"><label>Timeout (ms)</label><input id="retoTempo" type="number" min="1000" max="10000" step="500" value="7000"></div>
-</div>
-<div class="actions"><button class="secondary" onclick="presetReto(50,30)">50 mm · 30 RPM</button><button class="secondary" onclick="presetReto(100,30)">100 mm · 30 RPM</button><button class="secondary" onclick="presetReto(150,40)">150 mm · 40 RPM</button><button class="secondary" onclick="presetReto(-50,25)">-50 mm · 25 RPM</button></div>
-<div class="actions"><button class="green" onclick="iniciarReto()">▶ Iniciar movimento reto</button><button class="danger" onclick="parar()">■ FREAR AGORA</button></div>
-<div class="output" id="saidaReto">Sem ensaio. Use inicialmente as rodas suspensas.</div>
-<small>O resultado final de contagens e calculado 1 s apos a frenagem. Um giro de Yaw pequeno nao comprova ausencia de deriva lateral. Compare sempre com uma regua ou marca no piso.</small>
-<canvas id="graficoReto" width="800" height="250"></canvas>
-<div class="legendinha">Verde = percurso medio; azul tracejado = meta. Apos os testes, exporte o CSV geral pelo botao no topo da pagina.</div>
-</section>
 <div class="grid">
-<section class="card sensormini"><h2>U2 · GPIO 23 · 0x30</h2><label>Posição física (só anotação no navegador)</label><select id="posU2" onchange="guardarPosicoes()"><option value="?">A identificar</option><option value="E">Esquerdo</option><option value="F">Frontal</option><option value="D">Direito</option></select>
+<section class="card sensormini"><h2>U2 · Esquerdo · GPIO 18 · 0x30</h2><p>Posição física confirmada: esquerdo.</p>
 <div class="metrics"><div><span class="label">Bruto (mm)</span><span class="metric" id="laserBruto0">—</span></div><div><span class="label">Filtrado (mm)</span><span class="metric" id="laserFiltrado0">—</span></div></div><div class="output" id="laserInfo0">Aguardando</div></section>
-<section class="card sensormini"><h2>U3 · GPIO 18 · 0x31</h2><label>Posição física (só anotação no navegador)</label><select id="posU3" onchange="guardarPosicoes()"><option value="?">A identificar</option><option value="E">Esquerdo</option><option value="F">Frontal</option><option value="D">Direito</option></select>
+<section class="card sensormini"><h2>U3 · Frontal · GPIO 19 · 0x31</h2><p>Posição física confirmada: frontal.</p>
 <div class="metrics"><div><span class="label">Bruto (mm)</span><span class="metric" id="laserBruto1">—</span></div><div><span class="label">Filtrado (mm)</span><span class="metric" id="laserFiltrado1">—</span></div></div><div class="output" id="laserInfo1">Aguardando</div></section>
-<section class="card sensormini"><h2>U4 · GPIO 19 · 0x32</h2><label>Posição física (só anotação no navegador)</label><select id="posU4" onchange="guardarPosicoes()"><option value="?">A identificar</option><option value="E">Esquerdo</option><option value="F">Frontal</option><option value="D">Direito</option></select>
+<section class="card sensormini"><h2>U4 · Direito · GPIO 23 · 0x32</h2><p>Posição física confirmada: direito.</p>
 <div class="metrics"><div><span class="label">Bruto (mm)</span><span class="metric" id="laserBruto2">—</span></div><div><span class="label">Filtrado (mm)</span><span class="metric" id="laserFiltrado2">—</span></div></div><div class="output" id="laserInfo2">Aguardando</div></section>
 </div>
 <section class="card"><h2>Gráfico em tempo real — leitura bruta × filtrada</h2>
@@ -116,34 +123,8 @@ main{max-width:1090px;margin:auto}h1{font-size:clamp(1.35rem,3vw,2.3rem);margin:
 <div class="actions"><button class="green" onclick="capturarLaser()">Iniciar 100 medições</button><a id="capBaixar" href="/api/lasers/capture.csv" class="tag" download="vl53l0x_captura.csv">Baixar captura CSV</a><button class="secondary" onclick="limparCaptura()">Limpar captura</button></div>
 <div id="capResultado" class="output">Ainda sem captura.</div>
 <p><small>Para distâncias de 20–30 mm, um VL53L0X pode retornar dados instáveis. Registre todas as leituras inválidas; não remova falhas do CSV.</small></p></section>
-<section class="card" id="frontalV46"><h2>V4.6 — Experimento: parada pelo laser frontal U3</h2>
-<div class="notice warn"><strong>EXPERIMENTAL — NÃO É SISTEMA ANTICOLISÃO VALIDADO.</strong> O U3 superestimou distâncias em testes anteriores. O limiar é a <strong>leitura BRUTA do laser</strong>, não o espaço livre da carroceria. Experimente só no chão, a 20–35 RPM, com placa rígida e chave física para cortar os motores. Nunca aponte para pessoas.</div>
-<p>O robô percorrerá no máximo a distância solicitada, mas interromperá a marcha quando o U3 medir abaixo do limiar bruto + margem dinâmica, ou quando a leitura ficar inválida/desatualizada. A parada frontal só vale para avanço, não para ré nem para giro.</p>
-<div class="row"><div class="field"><label>Distância máxima (mm)</label><input id="frenteDist" type="number" min="30" max="250" value="250"></div><div class="field"><label>RPM</label><input id="frenteRpm" type="number" min="20" max="35" value="25"></div><div class="field"><label>Limiar BRUTO U3 (mm)</label><input id="frenteLimiar" type="number" min="200" max="1000" value="250"></div></div>
-<div class="actions"><button class="green" onclick="iniciarTesteFrontal()">▶ Testar parada frontal</button><button class="danger" onclick="parar()">■ FREAR</button></div>
-<div class="output" id="frenteResultado">Teste ainda não iniciado.</div>
-<p><small>Comece com placa rígida a cerca de 40–45 cm da janela U3, com trajeto livre e ensaio máximo de 250 mm. Marque no chão onde a frente do chassi parou e meça a folga REAL da carroceria. Primeiro teste preferencialmente 30–50 cm de marcha com área livre, mudando o limiar somente após medir o resultado.</small></p></section>
 <section class="card"><h2>Roteiro da primeira rodada</h2><p>1) Confirme 0x40, 0x68, 0x30, 0x31 e 0x32 no scanner. 2) Aproxime uma placa, um sensor de cada vez, e identifique U2/U3/U4. 3) Meça 25, 30, 40, 50, 100, 150 e 200 mm; faça 100 amostras por distância e sensor. 4) Aproxime/afaste uma placa para observar o atraso da filtragem. 5) Salve o CSV de cada ensaio. Sem movimento nesta fase.</p>
-<div class="notice warn">A centralização lateral ainda NÃO está ativa. U2 e U4 são apenas diagnóstico. Somente o teste frontal explicitamente ativado usa U3 para frear.</div></section>
-</div>
-<div id="abaMover" class="aba-pagina" hidden>
-<section class="card"><h2>V4.6 — Controle manual do Micromouse</h2>
-<div class="notice warn"><strong>ENSÁIOS SUPERVISIONADOS:</strong> a navegação por paredes ainda não foi implementada. Giro = encoder + sincronismo suave V4.3. Reto = encoders V4.5. Se desligar a proteção frontal, <strong>NÃO EXISTE ANTICOLISÃO</strong>. Qualquer comando exige navegador ativo (watchdog 1,2 s), pista livre e acesso à chave física dos motores.</div>
-<div class="metrics"><div><span class="label">Movimento</span><span id="ctrlModo" class="metric">—</span></div><div><span class="label">Última parada</span><span id="ctrlMotivo" style="display:block;font-size:.91rem;overflow-wrap:anywhere">—</span></div><div><span class="label">Reto percorrido</span><span id="ctrlProgresso" class="metric">—</span> mm</div><div><span class="label">U3 frontal bruto</span><span id="ctrlFrente" class="metric">—</span> mm</div></div>
-<div class="output" id="ctrlDetalhes">Aguardando telemetria.</div></section>
-<section class="card"><h2>Giro rápido de 90°</h2>
-<p>Usa o giro de 90° por encoders com sincronismo suave, sem depender do laser. <strong>Verifique a área varrida pelo chassi antes de girar perto de paredes.</strong></p>
-<div class="row"><div class="field"><label>RPM do giro</label><input id="ctrlGiroRpm" type="number" min="20" max="60" value="35"></div></div>
-<div class="actions"><button onclick="moverGirar('esquerda')">↶ 90° ESQUERDA</button><button onclick="moverGirar('direita')">↷ 90° DIREITA</button><button class="danger" onclick="parar()">■ FREAR</button></div></section>
-<section class="card"><h2>Avançar ou dar ré a uma distância escolhida</h2>
-<p>Digite a distância em <strong>milímetros</strong>. Exemplos: 1000 mm = 1 metro; 2000 mm = 2 metros. Limite experimental: <strong>30–10000 mm (10 m)</strong>. O tempo máximo é calculado automaticamente pela ESP32; ao atingir a meta, ela freia.</p>
-<div class="row"><div class="field"><label>Distância (mm)</label><input id="ctrlDist" type="number" min="30" max="10000" step="1" value="100"></div><div class="field"><label>RPM máximo</label><input id="ctrlRpm" type="number" min="20" max="60" step="5" value="30"></div></div>
-<div class="actions"><button class="secondary" onclick="movPreset(100)">100 mm</button><button class="secondary" onclick="movPreset(500)">500 mm</button><button class="secondary" onclick="movPreset(1000)">1 m</button><button class="secondary" onclick="movPreset(2000)">2 m</button></div>
-<div class="row"><div class="field" style="min-width:270px"><label><input id="ctrlProtecao" type="checkbox" checked style="width:auto;min-height:auto"> Proteção frontal U3 experimental (somente AVANÇAR)</label></div><div class="field"><label>Limiar bruto U3 (mm, 200–1000)</label><input id="ctrlLimiar" type="number" min="200" max="1000" value="250"></div></div>
-<div class="notice warn">Com proteção frontal ativada, limite de <strong>35 RPM</strong>, U3 válido obrigatório e frenagem por falha de leitura. Leituras do U3 ainda não estão calibradas; mantenha margem ampla. <strong>Ré não tem sensor traseiro</strong> e exige desativar essa opção deliberadamente.</div>
-<div class="actions"><button class="green" onclick="moverReto(1)">▲ AVANÇAR</button><button onclick="moverReto(-1)">▼ RÉ (SEM SENSOR TRASEIRO)</button><button class="danger" onclick="parar()">■ FREAR AGORA</button></div>
-<small>Comando livre não é teleoperação contínua: cada clique inicia UMA trajetória que para automaticamente na meta. Aguarde 1 segundo após uma parada para permitir a medição final dos encoders. Distâncias >250 mm só estão habilitadas nesta aba.</small>
-</section>
+<div class="notice warn">Não habilitamos ainda a parada frontal nem a centralização pelas paredes. Nenhum controle de movimento usa os resultados dos lasers nesta versão.</div></section>
 </div>
 </main><script>
 const $=id=>document.getElementById(id);
@@ -168,6 +149,15 @@ function salvarCPR(){return post('/api/cpr',{esq:$('cprE').value,dir:$('cprD').v
 function pwmIniciar(){if(!confirm('Rodas suspensas, alimentação conferida e chave física acessível?'))return;return post('/api/pwm/start',{lado:$('ladoPwm').value,pwmE:$('pwmTesteE').value,pwmD:$('pwmTesteD').value,duracao:$('tempoPwm').value,sentidoE:$('sentidoE').value,sentidoD:$('sentidoD').value})}
 function fixarRpm(e,d){$('rpmAlvoE').value=e;$('rpmAlvoD').value=d}
 function presetPos(e,d){$('alvoPosE').value=e;$('alvoPosD').value=d}
+function presetDistanciaMm(mm){
+ if(!ultimo || !(Number(ultimo.cprE)>0 && Number(ultimo.cprD)>0)){
+   msg('Antes, salve os dois CPRs na aba Encoders e calibração.',true); mostrarAba('calibracao');return;
+ }
+ const circ=Math.PI*34.0;
+ presetPos(Math.round(mm*Number(ultimo.cprE)/circ),Math.round(mm*Number(ultimo.cprD)/circ));
+ msg('Metas preenchidas para '+mm+' mm. Clique em Iniciar movimento; teste primeiro com rodas suspensas.');
+}
+
 function iniciarRpm(){if(!confirm('Teste de RPM: valide PRIMEIRO suspenso; no chão use área livre, supervise e mantenha corte físico acessível.'))return;return post('/api/rpm/start',{rpmE:$('rpmAlvoE').value,rpmD:$('rpmAlvoD').value,duracao:$('tempoRpm').value})}
 function calibrarIMU(){if(!confirm('Robo totalmente IMOVEL por pelo menos 2,5 segundos?'))return;return post('/api/imu/calibrar')}
 function zerarIMU(){return post('/api/imu/zero')}
@@ -176,12 +166,18 @@ function iniciarGiro(){
  if(!confirm(tipo==='imu' ? 'GIRO IMU: chassi DEVE estar no chão (não funciona suspenso), eixo Z vertical, yaw positivo à direita já conferido, área livre e chave física acessível. Continuar?' : 'GIRO ENCODERS: primeiro teste com RODAS SUSPENSAS; no chão só depois, em área livre e com chave física acessível. Continuar?'))return;
  return post('/api/giro/start',{tipo:tipo,lado:$('ladoGiro').value,rpm:$('rpmGiro').value,duracao:$('tempoGiro').value,syncGiro:$('syncGiro').value});
 }
-function presetReto(mm,rpm){$('retoDist').value=mm;$('retoRpm').value=rpm}
+function presetReto(mm){$('retoDist').value=mm}
 function iniciarReto(){
- const dist=Number($('retoDist').value),rpm=Number($('retoRpm').value),t=Number($('retoTempo').value);
- if(!Number.isFinite(dist)||Math.abs(dist)<30||Math.abs(dist)>250||!Number.isFinite(rpm)||rpm<20||rpm>60||!Number.isFinite(t)||t<1000||t>10000){msg('Distancia 30..250 mm; RPM 20..60; timeout 1000..10000 ms',true);return}
- if(!confirm('RETO V4.5: primeiro teste suspenso. No chao, use pista livre e chave fisica de corte. Lasers NAO evitam colisoes. Continuar?'))return;
- return post('/api/reto/start',{distancia:String(dist),rpm:String(rpm),duracao:String(t),sync:$('retoSync').value});
+ const dist=Number($('retoDist').value),rpm=Number($('retoRpm').value),tempo=Number($('retoTempo').value);
+ if(!Number.isFinite(dist)||Math.abs(dist)<30||Math.abs(dist)>250||!Number.isFinite(rpm)||rpm<20||rpm>60||!Number.isFinite(tempo)||tempo<1000||tempo>10000){msg('Reto: 30..250 mm, RPM 20..60 e timeout 1000..10000 ms.',true);return}
+ if(!confirm('RETO V4.5: rodas suspensas inicialmente; sem anti-colisao! Continuar?'))return;
+ return post('/api/reto/start',{distancia:String(dist),rpm:String(rpm),duracao:String(tempo),sync:$('retoSync').value});
+}
+function iniciarFrontal(){
+ const d=Number($('frontDist').value),r=Number($('frontRpm').value),l=Number($('frontLimiar').value);
+ if(!Number.isFinite(d)||d<30||d>250||!Number.isFinite(r)||r<20||r>35||!Number.isFinite(l)||l<200||l>1000){msg('Frontal: 30..250 mm, 20..35 RPM, limiar 200..1000 mm.',true);return}
+ if(!confirm('ATENCAO: o recuo do U3 e distancia de parada AINDA NAO foram calibrados. Executar somente teste supervisionado em area livre?'))return;
+ return post('/api/reto/start',{distancia:String(d),rpm:String(r),duracao:'10000',sync:'suave',frontal:'1',limiar:String(l)});
 }
 function iniciarPosicao(){if(!confirm('Teste de POSIÇÃO: confirmou lados e sinais? Primeiro com rodas suspensas; no chão, apenas em área livre e com parada física acessível.'))return;return post('/api/pos/start',{alvoE:$('alvoPosE').value,alvoD:$('alvoPosD').value,rpm:$('velPos').value,duracao:$('tempoPos').value})}
 function desenharV3(id,lista,keys){
@@ -216,19 +212,22 @@ async function atualizar(){
  try{
   const r=await fetch('/api/status',{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);
   const d=await r.json();ultimo=d;ultimoStatusOk=Date.now();$('online').textContent='ESP32 conectada';$('online').className='tag good';
-  $('ctrlModo').textContent=d.modo;
-  $('ctrlMotivo').textContent=d.motivo;
-  $('ctrlProgresso').textContent=fmt(d.retoProgressoMm,1);
-  $('ctrlFrente').textContent=fmt(d.frenteBrutoMm,0);
-  $('ctrlDetalhes').textContent='U3 status: '+(d.frenteLeituraValida?'VALIDO':'INVALIDO/ANTIGO')+
-    ' | idade '+(d.frenteIdadeMs===null?'—':d.frenteIdadeMs+' ms')+
-    '\nFrontal armado: '+(d.frenteAtiva?'SIM':'NAO')+' | limiar base '+d.frenteLimiarMm+
-    ' mm | limiar com margem '+fmt(d.frenteLimiarDinamicoMm,1)+' mm'+
-    '\nAvanco encoder: '+fmt(d.retoProgressoMm,1)+' / '+fmt(d.retoAlvoMm,1)+' mm'+
-    ' | erro '+fmt(d.retoErroMm,1)+' mm | sincronismo '+fmt(d.retoSyncErroMm,2)+' mm'+
-    '\nTimeout restante: '+fmt(d.restanteMs,0)+' ms | Fim laser: '+(d.frenteParouPorLaser?'SIM':'NAO');
-  $('frenteResultado').textContent=$('ctrlDetalhes').textContent+'\nÚltima parada: '+d.motivo;
   $('modo').textContent='Estado: '+d.modo;$('energia').textContent='INA219: '+(d.inaOk?'OK':'indisponível');
+  const cprOk=Number(d.cprE)>0&&Number(d.cprD)>0;
+  $('heapLivre').textContent='Heap livre: '+fmt(d.heapLivreBytes,0)+' bytes';
+  $('saidaReto').textContent='Modo: '+d.modo+' | Motivo: '+d.motivo+'\nAlvo: '+fmt(d.retoAlvoMm,1)+' mm; progresso: '+fmt(d.retoProgressoMm,2)+' mm; erro: '+fmt(d.retoErroMm,2)+' mm'+
+    '\nEsquerda: '+fmt(d.retoDistEMm,2)+' mm; direita: '+fmt(d.retoDistDMm,2)+' mm; descompasso: '+fmt(d.retoSyncErroMm,2)+' mm; correcao: '+fmt(d.retoSyncCorrecaoRpm,1)+' RPM'+
+    '\nYaw IMU: '+fmt(d.retoYawImu,2)+' graus; yaw encoder: '+fmt(d.retoYawEncoder,2)+' graus; concluido apos coast: '+(d.retoFinalPronto?'SIM':'NAO')+
+    '\nFinal: '+fmt(d.retoFinalCentro,2)+' mm / erro '+fmt(d.retoErroFinal,2)+' mm';
+  $('saidaFrontal').textContent='U3 bruto: '+fmt(d.frenteBrutoMm,0)+' mm; valido: '+d.frenteLeituraValida+'; idade: '+fmt(d.frenteIdadeMs,0)+' ms'+
+    '\nProtecao ativa: '+d.frenteAtiva+'; limiar base: '+fmt(d.frenteLimiarMm,0)+' mm; dinamico: '+fmt(d.frenteLimiarDinamicoMm,1)+' mm; parada: '+d.frenteParouPorLaser;
+  const statusM=$('statusMovimento');
+  statusM.textContent='CPR: '+(cprOk?'OK (E '+fmt(d.cprE,2)+' / D '+fmt(d.cprD,2)+')':'NÃO CONFIGURADO — abra Encoders e calibração e salve os dois CPRs')+
+    ' | PWM driver: '+(d.driverPreparado?'OK':'ERRO')+
+    ' | STBY: '+(d.stbyAtivo?'HIGH (habilitada)':'LOW (desabilitada)')+
+    ' | Estado: '+d.modo+' | Último motivo: '+d.motivo;
+  statusM.className='notice'+(!cprOk||!d.driverPreparado?' warn':'');
+
   $('contE').textContent=d.contE;$('contD').textContent=d.contD;
   $('cpsE').textContent=fmt(d.cpsE);$('cpsD').textContent=fmt(d.cpsD);
   $('rpmE').textContent=fmt(d.rpmE);$('rpmD').textContent=fmt(d.rpmD);
@@ -242,26 +241,13 @@ async function atualizar(){
   historicoGiro.push({yaw:Number(d.imuYaw)||0,alvo:d.modo==='GIRO'?Number(d.giroAlvoYaw)||0:0});
   if(historicoGiro.length>limiteHistorico)historicoGiro.shift();
   desenharV3('graficoGiro',historicoGiro,[{key:'yaw',color:'#4ce2a7'},{key:'alvo',color:'#60b7ff',dash:true}]);
-  const inicioReto=d.retoAlvoMm!==null&&Number(d.retoAlvoMm)!==0;
-  if(inicioReto){
-   $('saidaReto').textContent='Estado: '+d.modo+' | Motivo: '+d.motivo+'\nAlvo: '+fmt(d.retoAlvoMm,1)+' mm | Media: '+fmt(d.retoProgressoMm,2)+' mm | Erro durante teste: '+fmt(d.retoErroMm,2)+' mm'+
-   '\nRoda E: '+fmt(d.retoDistEMm,2)+' mm | Roda D: '+fmt(d.retoDistDMm,2)+' mm'+
-   '\nSincronismo: '+(d.retoSyncAtivo?'SUAVE':'SEM CORRECAO')+' | Descompasso: '+fmt(d.retoSyncErroMm,2)+' mm | Pico: '+fmt(d.retoSyncMaxMm,2)+' mm | Correcao: '+fmt(d.retoSyncCorrecaoRpm,2)+' RPM'+
-   '\nIMU (somente observa): '+fmt(d.retoYawImu,2)+' graus | Encoder Yaw: '+fmt(d.retoYawEncoder,2)+' graus'+
-   '\nOdometria: X='+fmt(d.retoOdomXmm,2)+' mm; Y='+fmt(d.retoOdomYmm,2)+' mm (nao mede escorregamento)'+
-   '\nPOS-FREIO (1 s): '+(d.retoFinalPronto?'PRONTO; E='+fmt(d.retoFinalE,2)+' D='+fmt(d.retoFinalD,2)+' media='+fmt(d.retoFinalCentro,2)+' erro='+fmt(d.retoErroFinal,2)+' mm':'aguardando 1 s depois da parada');
-  }
-  historicoReto.push({alvo:inicioReto?Number(d.retoAlvoMm)||0:0,
-                    progresso:inicioReto?Number(d.retoProgressoMm)||0:0});
-  if(historicoReto.length>limiteHistorico)historicoReto.shift();
-  desenharV3('graficoReto',historicoReto,[{key:'progresso',color:'#4ce2a7'},{key:'alvo',color:'#60b7ff',dash:true}]);
   $('batV').textContent='Barramento: '+fmt(d.tensao,2)+' V';$('batI').textContent='INA219: '+fmt(d.corrente,1)+' mA';
   $('saidaManual').textContent=(d.modo==='MANUAL'?'MEDINDO AGORA\n':'ÚLTIMA MEDIÇÃO\n')+'Δ contagens esq: '+(d.modo==='MANUAL'?d.manualDeltaE:d.manualUltDeltaE)+'\nΔ contagens dir: '+(d.modo==='MANUAL'?d.manualDeltaD:d.manualUltDeltaD)+'\nVoltas declaradas: '+d.ultimaQuantidadeVoltas+'\nCPR esq medido: '+fmt(d.ultimaMedidaE,4)+'\nCPR dir medido: '+fmt(d.ultimaMedidaD,4)+'\n\nMédia ESQ ('+d.nE+' medições): '+fmt(d.mediaE,4)+' ± '+fmt(d.desvioE,4)+'\nMédia DIR ('+d.nD+' medições): '+fmt(d.mediaD,4)+' ± '+fmt(d.desvioD,4);
   $('referencia').textContent='CPR salvo: E='+fmt(d.cprE,4)+'; D='+fmt(d.cprD,4)+'\nMeta TEÓRICA por roda no giro de 90°: E='+fmt(d.meta90E,2)+'; D='+fmt(d.meta90D,2)+' contagens';
   $('saidaPosicao').textContent='Progresso E: '+d.progressoE+' / '+d.alvoE+' contagens\nProgresso D: '+d.progressoD+' / '+d.alvoD+' contagens\nErro final/atual E: '+(Number(d.alvoE)-Number(d.progressoE))+' contagens\nErro final/atual D: '+(Number(d.alvoD)-Number(d.progressoD))+' contagens\nRPM solicitada E: '+fmt(d.referenciaRpmE)+'; medida E: '+fmt(d.rpmE)+'\nRPM solicitada D: '+fmt(d.referenciaRpmD)+'; medida D: '+fmt(d.rpmD)+'\nRampa PI E: '+fmt(d.rampaRpmE)+'; D: '+fmt(d.rampaRpmD)+'\nAjuda partida E: '+d.ajudaPartidaE+'; D: '+d.ajudaPartidaD+'\nSem pulsos E: '+d.semPulsosMsE+' ms; D: '+d.semPulsosMsD+' ms\nRoda E concluiu: '+d.chegouE+' | Roda D concluiu: '+d.chegouD;
   $('saidaFreio').textContent=d.freioValido ? 'Contagem no comando: E='+d.freioInicioE+' D='+d.freioInicioD+'\n300 ms: '+(d.freio300Pronto?'E='+d.freio300E+' D='+d.freio300D+' | ΔE='+d.freioDelta300E+' ΔD='+d.freioDelta300D:'ainda não disponível')+'\n1000 ms: '+(d.freio1000Pronto?'E='+d.freio1000E+' D='+d.freio1000D+' | ΔE='+d.freioDelta1000E+' ΔD='+d.freioDelta1000D:'aguardando') : 'Nenhum freio registrado ainda';
   $('saidaTeste').textContent='Estado: '+d.modo+'\nMotivo da última parada: '+d.motivo+'\nTempo restante: '+d.restanteMs+' ms\nΔ último ensaio E: '+d.testeDeltaE+'\nΔ último ensaio D: '+d.testeDeltaD;
-  $('barra').style.width=['PWM','RPM','POSICAO','GIRO','RETO'].includes(d.modo)&&d.duracaoMs>0?(100*d.decorridoMs/d.duracaoMs).toFixed(1)+'%':'0%';
+  $('barra').style.width=['PWM','RPM','POSICAO','GIRO'].includes(d.modo)&&d.duracaoMs>0?(100*d.decorridoMs/d.duracaoMs).toFixed(1)+'%':'0%';
   if(!$('cprE').dataset.iniciado){if(d.cprE>0)$('cprE').value=d.cprE;if(d.cprD>0)$('cprD').value=d.cprD;$('cprE').dataset.iniciado='1'}
   historico.push({e:Number(d.cpsE)||0,d:Number(d.cpsD)||0});if(historico.length>limiteHistorico)historico.shift();desenhar();
   historicoRPM.push({e:Number(d.rpmE)||0,d:Number(d.rpmD)||0,te:['RPM','POSICAO'].includes(d.modo)?Number(d.referenciaRpmE)||0:0,td:['RPM','POSICAO'].includes(d.modo)?Number(d.referenciaRpmD)||0:0});
@@ -275,31 +261,26 @@ async function atualizar(){
 }
 function baixarCSV(){
  if(!amostras.length){msg('Ainda sem dados para exportar',true);return}
- const chaves=['hora','ms','modo','contE','contD','cpsE','cpsD','rpmE','rpmD','pwmE','pwmD','alvoE','alvoD','progressoE','progressoD','referenciaRpmE','referenciaRpmD','rampaRpmE','rampaRpmD','ajudaPartidaE','ajudaPartidaD','semPulsosMsE','semPulsosMsD','realControleRpmE','realControleRpmD','freioValido','freio300Pronto','freio1000Pronto','freioDelta300E','freioDelta300D','freioDelta1000E','freioDelta1000D','tensao','corrente','motivo','cprE','cprD','giroTipo','giroAlvoYaw','giroYawRelativo','giroErroYaw','imuPresente','imuCalibrada','imuCalibrando','imuOk','imuEndereco','imuWhoAmI','imuFalhaInit','imuYaw','imuTaxa','imuBias','imuRuido','imuFalhasI2C','syncErroMm','syncErroMaxMm','syncSuave','odomXmm','odomYmm','odomYawGraus','giroYawDepoisFreio','giroErroDepoisFreio','syncDistE','syncDistD','syncCorrecaoRpm','syncPausaE','syncPausaD','retoAlvoMm','retoProgressoMm','retoErroMm','retoDistEMm','retoDistDMm','retoSyncErroMm','retoSyncMaxMm','retoSyncCorrecaoRpm','retoSyncAtivo','retoYawImu','retoYawEncoder','retoOdomXmm','retoOdomYmm','retoFinalPronto','retoFinalE','retoFinalD','retoFinalCentro','retoErroFinal','frenteAtiva','frenteLimiarMm','frenteLimiarDinamicoMm','frenteBrutoMm','frenteFiltradoMm','frenteLeituraValida','frenteStatusVL','frenteIdadeMs','frenteParouPorLaser'];
+ const chaves=['hora','ms','modo','contE','contD','cpsE','cpsD','rpmE','rpmD','pwmE','pwmD','alvoE','alvoD','progressoE','progressoD','referenciaRpmE','referenciaRpmD','rampaRpmE','rampaRpmD','ajudaPartidaE','ajudaPartidaD','semPulsosMsE','semPulsosMsD','realControleRpmE','realControleRpmD','freioValido','freio300Pronto','freio1000Pronto','freioDelta300E','freioDelta300D','freioDelta1000E','freioDelta1000D','tensao','corrente','motivo','cprE','cprD','giroTipo','giroAlvoYaw','giroYawRelativo','giroErroYaw','imuPresente','imuCalibrada','imuCalibrando','imuOk','imuEndereco','imuWhoAmI','imuFalhaInit','imuYaw','imuTaxa','imuBias','imuRuido','imuFalhasI2C','syncErroMm','syncErroMaxMm','syncSuave','odomXmm','odomYmm','odomYawGraus','giroYawDepoisFreio','giroErroDepoisFreio','syncDistE','syncDistD','syncCorrecaoRpm','syncPausaE','syncPausaD'];
  const linhas=[chaves.join(';'),...amostras.map(a=>chaves.map(k=>String(a[k]??'').replaceAll(';',',')).join(';'))];
  const blob=new Blob(['\ufeff'+linhas.join('\r\n')],{type:'text/csv;charset=utf-8'});
  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='micromouse_telemetria_'+Date.now()+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 
 // ===== V4.4 - Aba de diagnostico dos lasers =====
-let historicoReto=[];
 let abaAtiva='calibracao', consultaLaserEmCurso=false,ultimoLaser=null;
 let historicoLaser=[[],[],[]],historicoLaserExport=[];
 function mostrarAba(aba){
   abaAtiva=aba;
   $('abaCalibracao').hidden=aba!=='calibracao';
+  $('abaMovimento').hidden=aba!=='movimento';
   $('abaSensores').hidden=aba!=='sensores';
-  $('abaMover').hidden=aba!=='mover';
   $('btAbaCal').className=aba==='calibracao'?'ativo':'secondary';
+  $('btAbaMov').className=aba==='movimento'?'ativo':'secondary';
   $('btAbaLaser').className=aba==='sensores'?'ativo':'secondary';
-  $('btAbaMover').className=aba==='mover'?'ativo':'secondary';
+  $('btAbaReto').className=aba==='reto'?'ativo':'secondary';
+  $('abaReto').hidden=aba!=='reto';
   if(aba==='sensores')atualizarLasersTela();
-}
-function guardarPosicoes(){
-  try{localStorage.setItem('micromousePosLasersV44',JSON.stringify([$('posU2').value,$('posU3').value,$('posU4').value]));}catch(e){}
-}
-function recuperarPosicoes(){
-  try{const v=JSON.parse(localStorage.getItem('micromousePosLasersV44')||'null');if(Array.isArray(v)&&v.length===3){for(let i=0;i<3;i++)$('posU'+(i+2)).value=v[i]}}catch(e){}
 }
 function fmtLaser(v){return typeof v==='number'&&Number.isFinite(v)?String(v):'—'}
 function atualizarCartoesLaser(t){
@@ -325,7 +306,7 @@ function atualizarCartoesLaser(t){
     '\nMédia filtrada: '+fmt(cp.mediaFiltrada,2)+' mm | Duração: '+cp.duracaoMs+' ms';
   const ativos=d.filter(s=>s.inicializado).length;
   $('laserAlerta').textContent='Sensores inicializados: '+ativos+'/3. Endereços esperados: U2=0x30, U3=0x31, U4=0x32. '+
-    (ativos<3?'Confira alimentação, XSHUT e I²C; não avance para movimento.':'Leituras prontas para diagnóstico; identifique fisicamente cada posição.');
+    (ativos<3?'Confira alimentação, XSHUT e I²C; não avance para movimento.':'Leituras prontas para diagnóstico; mapeamento físico confirmado: esquerdo, frontal e direito.');
 }
 function desenharLaser(){
  const cv=$('graficoLaser');if(!cv)return;
@@ -370,30 +351,6 @@ function baixarLasersLive(){
  const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='micromouse_lasers_visual_'+Date.now()+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
-function iniciarTesteFrontal(){
- const dist=Number($('frenteDist').value),rpm=Number($('frenteRpm').value),limiar=Number($('frenteLimiar').value);
- if(!Number.isFinite(dist)||dist<30||dist>250||!Number.isFinite(rpm)||rpm<20||rpm>35||!Number.isFinite(limiar)||limiar<200||limiar>1000){msg('Teste frontal: 30..250 mm; 20..35 RPM; limiar 200..1000 mm.',true);return}
- if(!confirm('TESTE FRONTAL: use uma placa rigida, area livre, velocidade baixa e chave fisica acessivel. As distancias do U3 ainda nao estao calibradas. Continuar?'))return;
- return post('/api/reto/start',{distancia:String(dist),rpm:String(rpm),duracao:'10000',sync:'suave',frontal:'1',limiar:String(limiar)});
-}
-function movPreset(mm){$('ctrlDist').value=mm}
-function moverGirar(lado){
- const rpm=Number($('ctrlGiroRpm').value);
- if(!Number.isFinite(rpm)||rpm<20||rpm>60){msg('RPM do giro deve estar entre 20 e 60.',true);return}
- if(!confirm('Giro 90 graus '+lado+': confirme espaco livre para TODO o chassi girar. Nenhum laser evita colisao no giro.'))return;
- return post('/api/giro/start',{tipo:'encoder',lado,rpm:String(rpm),duracao:'7000',syncGiro:'suave'});
-}
-function moverReto(sentido){
- const mm=Number($('ctrlDist').value),rpm=Number($('ctrlRpm').value);
- const protegido=$('ctrlProtecao').checked,limiar=Number($('ctrlLimiar').value);
- if(!Number.isFinite(mm)||mm<30||mm>10000||!Number.isFinite(rpm)||rpm<20||rpm>60){msg('Distancia 30..10000 mm e RPM 20..60.',true);return}
- if(protegido&&sentido<0){msg('Desmarque manualmente a protecao frontal antes de dar re. U3 nao protege atras.',true);return}
- if(protegido&&(rpm>35||!Number.isFinite(limiar)||limiar<200||limiar>1000)){msg('Com U3 ativo, max 35 RPM e limiar 200..1000 mm.',true);return}
- const texto=protegido?'U3 EXPERIMENTAL: falha de leitura freia; distancia bruta superestimada nos testes.':'SEM PROTECAO ANTICOLISAO!';
- if(!confirm('Movimento '+(sentido>0?'FRENTE':'RE')+' de '+mm+' mm a '+rpm+' RPM. '+texto+' Area LIVRE, acompanhe ate a parada e tenha corte fisico acessivel?'))return;
- return post('/api/reto/start',{distancia:String(sentido*mm),rpm:String(rpm),sync:'suave',longo:'1',frontal:protegido?'1':'0',limiar:String(limiar)});
-}
-recuperarPosicoes();
 setInterval(atualizarLasersTela,300);
 
 setInterval(atualizar,200);
