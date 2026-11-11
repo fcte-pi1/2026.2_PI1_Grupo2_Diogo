@@ -67,7 +67,7 @@ main{max-width:1090px;margin:auto}h1{font-size:clamp(1.35rem,3vw,2.3rem);margin:
 <div class="metrics"><div><span class="label">IMU MPU-6050 / 6515</span><span class="metric" style="font-size:1rem" id="imuStatus">—</span></div><div><span class="label">Yaw relativo (direita positivo)</span><span class="metric" id="imuYaw">—</span>°</div><div><span class="label">Velocidade angular</span><span class="metric" id="imuTaxa">—</span> °/s</div><div><span class="label">Descompasso rodas</span><span class="metric" id="syncErro">—</span> mm</div></div>
 <p class="notice">IMU ausente? <a href="/diagnostico-i2c" target="_blank" rel="noopener">Abrir diagnostico do barramento I2C</a> (GPIO21/22, 100 kHz, WHO_AM_I).</p>
 <p id="imuCalib" class="notice">Deixe o robô IMÓVEL ao inicializar para calibrar o bias. Teste a deriva com Yaw zerado por 10 segundos.</p>
-<div class="actions"><button class="secondary" onclick="calibrarIMU()">Calibrar MPU parado (~2 s)</button><button class="secondary" onclick="zerarIMU()">Zerar Yaw</button></div>
+<div class="actions"><button class="secondary" onclick="calibrarIMU()">Calibrar MPU parado (~4 s)</button><button class="secondary" onclick="zerarIMU()">Zerar Yaw</button></div>
 <p class="hint"><strong>V4.3:</strong> modo <b>Suave</b> evita frear uma roda sozinha durante o giro. O valor X/Y por odometria NAO detecta derrapagem.</p>
 <div class="row"><div class="field"><label>Sincronismo</label><select id="syncGiro"><option value="suave" selected>Suave (novo)</option><option value="legado">Antigo (pausa roda)</option></select></div></div>
 <div class="row"><div class="field"><label>Algoritmo</label><select id="tipoGiro"><option value="encoder">Encoders (IMU só mede)</option><option value="imu">IMU (alvo angular + sincronismo)</option></select></div><div class="field"><label>Direção do giro</label><select id="ladoGiro"><option value="direita">Direita (+90°)</option><option value="esquerda">Esquerda (−90°)</option></select></div><div class="field"><label>RPM máximo</label><input id="rpmGiro" type="number" min="20" max="60" value="35"></div><div class="field"><label>Timeout (ms)</label><input id="tempoGiro" type="number" min="1000" max="10000" value="6000"></div></div>
@@ -159,7 +159,7 @@ function presetDistanciaMm(mm){
 }
 
 function iniciarRpm(){if(!confirm('Teste de RPM: valide PRIMEIRO suspenso; no chão use área livre, supervise e mantenha corte físico acessível.'))return;return post('/api/rpm/start',{rpmE:$('rpmAlvoE').value,rpmD:$('rpmAlvoD').value,duracao:$('tempoRpm').value})}
-function calibrarIMU(){if(!confirm('Robo totalmente IMOVEL por pelo menos 2,5 segundos?'))return;return post('/api/imu/calibrar')}
+function calibrarIMU(){if(!confirm('Robo totalmente IMOVEL por pelo menos 4 segundos?'))return;return post('/api/imu/calibrar')}
 function zerarIMU(){return post('/api/imu/zero')}
 function iniciarGiro(){
  const tipo=$('tipoGiro').value;
@@ -232,7 +232,7 @@ async function atualizar(){
   $('cpsE').textContent=fmt(d.cpsE);$('cpsD').textContent=fmt(d.cpsD);
   $('rpmE').textContent=fmt(d.rpmE);$('rpmD').textContent=fmt(d.rpmD);
   $('pwmE').textContent=d.pwmE;$('pwmD').textContent=d.pwmD;
-  $('imuStatus').textContent=d.imuCalibrando?'Calibrando…':(d.imuOk?'Pronta':(d.imuPresente?'Recalibrar':'Ausente'));
+  $('imuStatus').textContent=d.imuCalibrando?('Calibrando… (tentativa '+d.imuTentativa+')'):(d.imuOk?'Pronta':(d.imuPresente?'Recalibrar':'Ausente'));
   $('imuYaw').textContent=fmt(d.imuYaw,2);
   $('imuTaxa').textContent=fmt(d.imuTaxa,2);
   $('syncErro').textContent=fmt(d.syncErroMm,2);

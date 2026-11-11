@@ -16,6 +16,7 @@ struct DadosIMU {
     uint8_t falhaInit = 0; // 0 ok; 1 sem ACK; 2 WHO nao lido; 3 WHO inesperado; 4 configuracao falhou
 
     int amostrasBias = 0;
+    uint8_t tentativaCalibracao = 0; // 1..IMU_TENTATIVAS_CALIBRACAO
 };
 void iniciarIMU();
 void atualizarIMU();

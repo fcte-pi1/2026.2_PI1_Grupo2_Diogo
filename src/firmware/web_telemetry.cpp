@@ -248,6 +248,7 @@ static void handleStatus() {
     json += ",\"imuRuido\":" + numeroOuNull(imu.ruidoDps, 4);
     json += ",\"imuFalhasI2C\":" + String(imu.falhasI2C);
     json += ",\"imuAmostrasBias\":" + String(imu.amostrasBias);
+    json += ",\"imuTentativa\":" + String(imu.tentativaCalibracao);
     json += ",\"giroTipo\":\"" + String(ctrl.alvoYawGraus != 0 ? (ctrl.usandoIMU ? "IMU" : "ENCODER") : "NENHUM") + "\"";
     json += ",\"giroAlvoYaw\":" + numeroOuNull(ctrl.alvoYawGraus);
     json += ",\"giroYawRelativo\":" + numeroOuNull(ctrl.yawMedido);
@@ -505,7 +506,7 @@ static void handleImuCalibrar() {
     frearMotoresTudo();
     if (!iniciarCalibracaoIMU()) return respostaErro(503, "IMU nao encontrada");
     ultimoMotivo = "calibrando_imu_parado";
-    respostaOk("Deixe o robo IMOVEL por ~2,5 s e acompanhe imuCalibrada");
+    respostaOk("Deixe o robo IMOVEL por ~4 s e acompanhe imuCalibrada");
 }
 static void handleImuZerar() {
     if (modo != Modo::PARADO || aguardandoMedicaoFreio())
