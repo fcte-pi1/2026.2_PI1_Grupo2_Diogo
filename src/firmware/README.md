@@ -24,7 +24,7 @@ Firmware do ESP32 DevKit, feito com PlatformIO e o framework Arduino. Este docum
 > [!IMPORTANT]
 > **Estado atual (integração da V4.7):** o firmware compilado hoje é a versão 4.7 de bancada, descrita em [README_V47.md](README_V47.md), com o roteiro de validação em [VALIDACAO_INTEGRACAO.md](VALIDACAO_INTEGRACAO.md). Ela ainda não foi testada na placa.
 >
-> As seções abaixo descrevem o firmware anterior, exceto a de energia, que já vale para a V4.7. Os módulos `telemetry.cpp` e `i2c_check.cpp` continuam na pasta, mas estão fora da compilação (`build_src_filter` no `platformio.ini`), porque a V4.7 traz os seus equivalentes (`telemetry_remote.cpp` e `i2c_diagnostics.cpp`).
+> As seções abaixo descrevem o firmware anterior, exceto as de energia e do giroscópio, que já valem para a V4.7. Os módulos `telemetry.cpp` e `i2c_check.cpp` continuam na pasta, mas estão fora da compilação (`build_src_filter` no `platformio.ini`), porque a V4.7 traz os seus equivalentes (`telemetry_remote.cpp` e `i2c_diagnostics.cpp`).
 
 ## Como compilar e testar
 
@@ -119,48 +119,58 @@ Doze testes no computador (`test/test_power_logic`): percentual nos limites, int
 - **Implementado e testes passando.**
 - **Falta a bancada:** repetir na placa, com o firmware integrado, os testes 2.7, 2.8 e 2.9 do docs/7.2.
 
-## Giroscópio: calibração de bias e zona morta
+## Giroscópio: calibração, zona morta e correção do giro
 
-Issue #119, PR #124.
+Issue #119 (PR #124) no firmware anterior. Refeito sobre a IMU da V4.7 na issue #153.
 
 ### O que faz
 
-O MPU6050 (endereço 0x68) mede a velocidade de giro no eixo Z, que é integrada para obter o ângulo do robô. Todo giroscópio tem um desvio (bias): mesmo parado, mede uma pequena rotação, e na integração isso vira um ângulo que cresce sem parar. A calibração mede esse desvio no boot e o subtrai das leituras.
+A IMU (MPU-6050 ou MPU-6515, endereço 0x68 ou 0x69) mede a velocidade de giro no eixo Z, que é integrada para obter o ângulo do robô (yaw). Todo giroscópio tem um desvio (bias): mesmo parado, mede uma pequena rotação, e na integração isso vira um ângulo que cresce sem parar.
 
-No `initIMU()`:
+**Calibração.** Ao ligar, e pelo botão do painel, o firmware:
 
-1. Lê **800 amostras** do eixo Z com o robô parado, uma a cada 3 ms (~2,4 s).
-2. Calcula a **média** (o bias) e o **desvio padrão** das leituras pelo método de Welford, que não precisa guardar as amostras na memória.
-3. Se o desvio passar de 0,5 °/s, o robô foi mexido durante a calibração: ela é **repetida até 3 vezes**. Se todas falharem, usa a última média e avisa na serial.
-4. Leituras com falha no I2C são descartadas. Se sobrarem menos da metade, a tentativa é invalidada.
+1. Lê **800 amostras** do eixo Z com o robô parado, a 200 Hz (~4 s). A coleta acontece dentro do `loop()`, sem travar o resto.
+2. Calcula a **média** (o bias) e o **desvio padrão** pelo método de Welford, que não guarda as amostras na memória.
+3. Se o desvio passar de 1,4 °/s, o robô foi mexido: a coleta é **repetida sozinha, até 3 tentativas**. Se todas falharem, a IMU fica sem calibração até alguém calibrar pelo painel.
 
-Durante a execução, o `updateIMU()` subtrai o bias e aplica uma **zona morta** de 0,25 °/s: abaixo disso, a rotação é considerada zero, o que impede o ruído de acumular no ângulo com o robô parado.
+**Zona morta.** Na integração, taxas abaixo de 0,25 °/s contam como zero, o que impede o ruído de acumular no ângulo com o robô parado.
+
+**Ângulo confiável.** Se o loop atrasar mais de 100 ms ou houver 3 falhas seguidas de I2C, o ângulo perde a continuidade e deixa de ser confiável (`imuOk` falso). O bias continua válido. O ângulo volta a valer quando o yaw é zerado, o que acontece no início de todo giro e pelo botão "Zerar Yaw". Para zerar, é preciso ter calibração, leitura recente e o robô parado.
+
+### Giro de 90° com correção
+
+O giro de 90° termina um pouco antes do alvo (cerca de 89° na bancada). Com a opção **"Correção pelo giroscópio"** ligada no painel (parâmetro `corrigir=1` em `POST /api/giro/start`), o firmware continua depois do giro:
+
+1. Corta os motores e espera o robô parar: no mínimo 300 ms e até a taxa de giro ficar abaixo de 1 °/s por 100 ms.
+2. Mede o erro em relação aos 90° pelo yaw.
+3. Se o erro for de até 1°, termina. Se passar de 15°, termina sem corrigir, porque algo deu errado no giro.
+4. Caso contrário, faz um **giro curto pela IMU** do tamanho do erro, a 20 RPM, cortando o PWM quando faltam 0,4°. Depois volta ao passo 1. São no máximo 2 correções.
+
+O modo continua `GIRO` durante todas as fases, então o heartbeat, o limite de tempo e o corte de bateria seguem valendo. O `/api/status` e o painel mostram a fase (`giroFase`), o número de correções, o erro antes da correção (`giroErroAntesCorrecao`), a última medição (`giroErroMedido`) e o erro total em relação aos 90° (`giroErroTotal`). O motivo final indica o desfecho: `giro_dentro_da_tolerancia`, `giro_corrigido_dentro_da_tolerancia`, `giro_correcoes_esgotadas`, `giro_erro_grande_demais_para_corrigir`, `giro_sem_correcao_robo_nao_parou` ou `giro_sem_correcao_imu_indisponivel`.
+
+A correção vem **desligada por padrão**, porque os valores ainda não foram ajustados na placa.
 
 ### Arquivos
 
 | Arquivo | Conteúdo |
 |---|---|
-| `imu.h` / `imu.cpp` | Inicialização, calibração e integração do ângulo. `imuCalibrada()` informa se a calibração foi confiável |
-| `imu_logic.h` | `EstatisticaGiro` (média e desvio), `aplicarZonaMorta()` e `calibracaoValida()`, sem Arduino |
-| `config.h` | `IMU_AMOSTRAS_CALIBRACAO`, `IMU_INTERVALO_AMOSTRA_MS`, `IMU_TENTATIVAS_CALIBRACAO`, `IMU_LIMITE_MOVIMENTO_DPS`, `IMU_ZONA_MORTA_DPS` |
-
-A interface pública (`getYawAngle()`, `getYawRate()`, `resetYawAngle()`) foi mantida, porque o giro de 90° e a telemetria dependem dela.
+| `imu.h` / `imu.cpp` | Identificação da IMU, calibração do bias, integração do yaw e `zerarYawIMU()` |
+| `imu_logic.h` | `EstatisticaGiro` (média e desvio), `aplicarZonaMorta()`, `calibracaoValida()` e `yawPodeSerZerado()`, sem Arduino |
+| `giro_logic.h` | `DetectorParado` e `decidirCorrecaoGiro()`, sem Arduino |
+| `motion_control.h` / `.cpp` | `iniciarControleGiroAngulo()`: giro de ângulo qualquer por encoder ou por IMU |
+| `web_telemetry.cpp` | Sequência do giro com correção (fases `PRINCIPAL`, `ASSENTANDO` e `CORRIGINDO`) |
+| `config.h` | `IMU_AMOSTRAS_BIAS`, `IMU_TENTATIVAS_CALIBRACAO`, `IMU_RUIDO_MAX_DPS`, `IMU_ZONA_MORTA_DPS` e as constantes `GIRO_CORRECAO_*` |
 
 ### Testes
 
-Sete testes no computador (`test/test_imu_logic`): média e desvio de um conjunto conhecido; desvio zero com sinal constante; calibração recusada com poucas amostras; calibração aceita com ruído pequeno; calibração recusada quando o robô é tocado no meio; zona morta zerando abaixo do limite e mantendo acima, nos dois sentidos.
-
-### Problemas e soluções
-
-| Problema | Solução |
-|---|---|
-| A calibração anterior usava 150 amostras e não percebia se o robô fosse mexido; o bias saía errado sem aviso e o ângulo derivava a corrida toda | 800 amostras, detecção de movimento pelo desvio e até 3 tentativas |
-| O retorno de `getEvent()` era ignorado, e uma falha no I2C virava leitura | Leituras com falha são descartadas, na calibração e no `updateIMU()` |
-| Parâmetros fixos no meio do código | Todos no `config.h` |
-| Na integração com a telemetria, o código novo voltava a usar a zona morta fixa e ignorava falhas de leitura | O `updateIMU()` passou a guardar os eixos X e Y para a telemetria mantendo a zona morta do `config.h` e o descarte de falhas |
-| O giro de 90° bloqueia o loop por até 2 s; o ângulo ficava parado durante o giro e depois era integrado de uma vez com um intervalo errado | A IMU é atualizada dentro do laço do giro, e o tempo do loop é reiniciado ao terminar |
+- `test/test_imu_logic` (11 testes): média e desvio, calibração aceita e recusada, zona morta e as condições para zerar o yaw.
+- `test/test_giro_logic` (10 testes): decisão da correção e detecção de robô parado, inclusive no estouro do `millis()`.
+- `tests/host/test_giro.cpp`: simulação com rodas ideais do giro de 90° por encoder e por IMU, de correções curtas e da sequência completa (giro que para em 86°, 84,5° ou 93° e é corrigido para dentro de 1°). A simulação não tem atrito nem inércia.
 
 ### Estado
 
 - **Implementado e testado no computador.**
-- **Falta a bancada:** o critério de aceite da #119 é o ângulo ficar estável e próximo de zero por 60 s com o robô parado. A meta proposta é deriva menor que 1° em 60 s. Também falta conferir o bias e o desvio impressos na serial e ajustar a zona morta e o limite de movimento, se preciso.
+- **Falta a bancada:**
+  - deriva menor que 1° em 60 s com o robô parado;
+  - 10 giros para cada lado com a correção ligada, conferindo o ângulo com um gabarito externo (critério: erro final de até 1°);
+  - ajustar as constantes `GIRO_CORRECAO_*`. Um giro de 1° corresponde a menos de 1 mm de curso na roda, então o atrito e a parada por inércia podem fazer a correção passar do ponto.
