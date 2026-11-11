@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <stdint.h>
 #include <math.h>
+#include "partida_logic.h"
 
 enum class TipoControle { INATIVO, RPM, POSICAO, GIRO_ENCODER, GIRO_IMU, RETO };
 
@@ -16,6 +17,8 @@ struct ControleInfo {
     float rampaE = 0, rampaD = 0; // referencia realmente usada no PI
     bool ajudaPartidaE = false, ajudaPartidaD = false;
     uint32_t semPulsosMsE = 0, semPulsosMsD = 0;
+    bool partidaConjunta = false;
+    DadosPartida partida;
     int pwmE = 0, pwmD = 0;
     bool finalizouE = false, finalizouD = false;
     float syncErroMm = 0, distanciaE = 0, distanciaD = 0;

@@ -62,6 +62,11 @@ constexpr int PWM_AJUDA_PARTIDA_CURTA = 55;
 constexpr int PWM_AJUDA_APROXIMACAO = 43;
 constexpr uint32_t PARTIDA_SEM_PULSOS_MS = 140;
 constexpr uint32_t PARTIDA_AJUDA_ATE_MS = 850;
+// Partida conjunta (#152). O piso precisa ficar acima dos 12 RPM que a ajuda exige.
+constexpr int64_t PARTIDA_PULSOS_MIN = 3;
+constexpr float PARTIDA_RPM_PISO = 18.0f;
+constexpr float PARTIDA_ADIANTAMENTO_MAX_MM = 1.0f;
+constexpr float PARTIDA_JANELA_MM = 50.0f;
 constexpr float KP_RPM = 0.40f;                 // parametros experimentais
 constexpr float KI_RPM = 1.25f;                 // PWM/(RPM*s)
 constexpr float FF_PWM_BASE = 8.0f;
