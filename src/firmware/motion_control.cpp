@@ -21,6 +21,7 @@ struct EstadoPI {
     bool ajudaAtiva = false;
 };
 EstadoPI estadoE, estadoD;
+RegistroPartida registroPartida(PARTIDA_JANELA_MM);
 int sentidoGiro = 1;  // +1 direita; E frente D tras
 uint32_t syncForaDesde = 0;
 float alvoFisicoMm = 0;
@@ -54,6 +55,7 @@ void inicializarBase(float cprE, float cprD) {
     estadoE = EstadoPI{};
     estadoD = EstadoPI{};
     estadoE.ultimoPulsoMs = estadoD.ultimoPulsoMs = anteriorMs;
+    registroPartida.reiniciar(anteriorMs);
     syncForaDesde = 0;
     erroSyncFiltrado = correcaoSyncAtual = 0;
     viagemAnteriorE = viagemAnteriorD = odomYawRad = 0;
@@ -74,16 +76,22 @@ float referenciaPosicao(int64_t restante, float cpr, float rpmMax) {
     return restante > 0 ? rpm : -rpm;
 }
 
+struct ComandoRoda {
+    bool freio = false;
+    bool frente = true;
+    float comando = 0;  // antes da ajuda de partida
+    bool precisaAjuda = false;
+};
+
 // Ref e real na convencao assinada: positivo = frente.
-// "distanciaRestante" so controla a ajuda em POSICAO.
-int acionarRoda(float ref, float real, float dt, EstadoPI &estado,
-               bool esquerda, bool modoPosicao, int64_t distanciaRestante,
-               uint32_t agora) {
+// So calcula; aplicarRoda aciona depois de decidir a ajuda olhando as duas rodas.
+ComandoRoda calcularRoda(float ref, float real, float dt, EstadoPI &estado, uint32_t agora) {
+    ComandoRoda c;
     estado.ajudaAtiva = false;
     if (fabsf(ref) < 2.0f) {
         estado.integral = 0;
-        if (esquerda) frearMotorEsq(); else frearMotorDir();
-        return 0;
+        c.freio = true;
+        return c;
     }
 
     float sinal = ref > 0.0f ? 1.0f : -1.0f;
@@ -101,28 +109,39 @@ int acionarRoda(float ref, float real, float dt, EstadoPI &estado,
         estado.integral = limitar(estado.integral + KI_RPM * erro * dt,
                                   -LIMITE_INTEGRAL_PWM, LIMITE_INTEGRAL_PWM);
     }
-    float comando = limitar(ff + KP_RPM * erro + estado.integral,
-                           PWM_MINIMO_CONTROLE, PWM_LIMITE_CONTROLE);
+    c.comando = limitar(ff + KP_RPM * erro + estado.integral,
+                        PWM_MINIMO_CONTROLE, PWM_LIMITE_CONTROLE);
+    c.frente = sinal > 0;
 
     // Se nao houver pulsos por 140 ms, ajuda curta de torque para vencer
     // o atrito ESTATICO; cancela imediatamente quando ha novos pulsos.
-    // Proximo do alvo a ajuda e menor para nao provocar grande ultrapassagem.
     uint32_t inativoMs = agora - estado.ultimoPulsoMs;
-    if (inativoMs >= PARTIDA_SEM_PULSOS_MS &&
-        inativoMs <= PARTIDA_AJUDA_ATE_MS && rpmDesejada >= 12.0f) {
-        int minimoAjuda = PWM_AJUDA_PARTIDA;
-        if (modoPosicao && llabs((long long)distanciaRestante) < 180)
-            minimoAjuda = PWM_AJUDA_PARTIDA_CURTA;
-        if (modoPosicao && llabs((long long)distanciaRestante) <= 22)
-            minimoAjuda = PWM_AJUDA_APROXIMACAO;
-        if (comando < minimoAjuda) {
-            comando = (float)minimoAjuda;
-            estado.ajudaAtiva = true;
-        }
+    c.precisaAjuda = inativoMs >= PARTIDA_SEM_PULSOS_MS &&
+                     inativoMs <= PARTIDA_AJUDA_ATE_MS && rpmDesejada >= 12.0f;
+    return c;
+}
+
+// Proximo do alvo a ajuda e menor para nao provocar grande ultrapassagem.
+// "distanciaRestante" so controla a ajuda em POSICAO.
+int minimoAjudaPartida(bool modoPosicao, int64_t distanciaRestante) {
+    if (modoPosicao && llabs((long long)distanciaRestante) <= 22) return PWM_AJUDA_APROXIMACAO;
+    if (modoPosicao && llabs((long long)distanciaRestante) < 180) return PWM_AJUDA_PARTIDA_CURTA;
+    return PWM_AJUDA_PARTIDA;
+}
+
+int aplicarRoda(const ComandoRoda &c, EstadoPI &estado, bool esquerda, bool ajuda, int minimoAjuda) {
+    if (c.freio) {
+        if (esquerda) frearMotorEsq(); else frearMotorDir();
+        return 0;
+    }
+    float comando = c.comando;
+    if (ajuda && comando < minimoAjuda) {
+        comando = (float)minimoAjuda;
+        estado.ajudaAtiva = true;
     }
     int pwm = (int)lroundf(comando);
-    if (esquerda) setMotorEsq(pwm, sinal > 0);
-    else setMotorDir(pwm, sinal > 0);
+    if (esquerda) setMotorEsq(pwm, c.frente);
+    else setMotorDir(pwm, c.frente);
     return pwm;
 }
 } // namespace
@@ -481,12 +500,37 @@ const char* atualizarControleMovimento() {
     if (girando && info.pausaSyncE) velocidadeAlvoE = 0;
     if (girando && info.pausaSyncD) velocidadeAlvoD = 0;
 
+    // Partida conjunta (#152).
+    const bool partiuE = rodaPartiu(info.progressoE, PARTIDA_PULSOS_MIN);
+    const bool partiuD = rodaPartiu(info.progressoD, PARTIDA_PULSOS_MIN);
+    const bool duasComandadas = fabsf(info.desejadoE) >= 2.0f && fabsf(info.desejadoD) >= 2.0f &&
+                                !(girando && (info.pausaSyncE || info.pausaSyncD));
+    info.partidaConjunta = duasComandadas && !(partiuE && partiuD);
+    // A roda presa nao e segurada, para ganhar torque.
+    if (info.partidaConjunta && (partiuE || !partiuD))
+        velocidadeAlvoE = segurarRampaPartida(velocidadeAlvoE, PARTIDA_RPM_PISO);
+    if (info.partidaConjunta && (partiuD || !partiuE))
+        velocidadeAlvoD = segurarRampaPartida(velocidadeAlvoD, PARTIDA_RPM_PISO);
+    const float circRoda = 3.14159265358979323846f * DIAMETRO_RODA_MM;
+    const float cursoPartidaE = fabsf((float)info.progressoE) * circRoda / cprE_;
+    const float cursoPartidaD = fabsf((float)info.progressoD) * circRoda / cprD_;
+    registroPartida.atualizar(cursoPartidaE, cursoPartidaD, partiuE, partiuD, agora);
+    info.partida = registroPartida.ler();
+
     info.rampaE = velocidadeAlvoE;
     info.rampaD = velocidadeAlvoD;
-    info.pwmE = acionarRoda(velocidadeAlvoE, info.realE, dt, estadoE, true,
-                           info.tipo == TipoControle::POSICAO || girando || reto, restanteE, agora);
-    info.pwmD = acionarRoda(velocidadeAlvoD, info.realD, dt, estadoD, false,
-                           info.tipo == TipoControle::POSICAO || girando || reto, restanteD, agora);
+    const bool modoPosicao = info.tipo == TipoControle::POSICAO || girando || reto;
+    const ComandoRoda cmdE = calcularRoda(velocidadeAlvoE, info.realE, dt, estadoE, agora);
+    const ComandoRoda cmdD = calcularRoda(velocidadeAlvoD, info.realD, dt, estadoD, agora);
+    bool ajudaE = cmdE.precisaAjuda, ajudaD = cmdD.precisaAjuda;
+    if (info.partidaConjunta) {
+        ajudaE = ajudaPartidaConjunta(cmdE.precisaAjuda, cmdD.precisaAjuda,
+                                      cursoPartidaE - cursoPartidaD, PARTIDA_ADIANTAMENTO_MAX_MM);
+        ajudaD = ajudaPartidaConjunta(cmdD.precisaAjuda, cmdE.precisaAjuda,
+                                      cursoPartidaD - cursoPartidaE, PARTIDA_ADIANTAMENTO_MAX_MM);
+    }
+    info.pwmE = aplicarRoda(cmdE, estadoE, true, ajudaE, minimoAjudaPartida(modoPosicao, restanteE));
+    info.pwmD = aplicarRoda(cmdD, estadoD, false, ajudaD, minimoAjudaPartida(modoPosicao, restanteD));
     if (girando && info.pausaSyncE) info.pwmE = 0;
     if (girando && info.pausaSyncD) info.pwmD = 0;
     info.ajudaPartidaE = estadoE.ajudaAtiva;
@@ -518,6 +562,7 @@ void desativarControleMovimento() {
     info.desejadoE = info.desejadoD = 0;
     info.rampaE = info.rampaD = 0;
     info.ajudaPartidaE = info.ajudaPartidaD = false;
+    info.partidaConjunta = false;
 }
 
 ControleInfo lerControleMovimento() { return info; }
