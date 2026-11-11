@@ -54,6 +54,24 @@ void test_zona_morta_mantem_acima_do_limite() {
   TEST_ASSERT_EQUAL_FLOAT(90.0f, aplicarZonaMorta(90.0f, 0.25f));
 }
 
+void test_yaw_zera_com_bias_calibrado_leitura_recente_e_robo_parado() {
+  TEST_ASSERT_TRUE(yawPodeSerZerado(true, 5, 100, 0.3f, 4.0f));
+  TEST_ASSERT_TRUE(yawPodeSerZerado(true, 100, 100, -4.0f, 4.0f));  // nos limites
+}
+
+void test_yaw_nao_zera_sem_calibracao() {
+  TEST_ASSERT_FALSE(yawPodeSerZerado(false, 5, 100, 0.0f, 4.0f));
+}
+
+void test_yaw_nao_zera_com_leitura_antiga() {
+  TEST_ASSERT_FALSE(yawPodeSerZerado(true, 101, 100, 0.0f, 4.0f));
+}
+
+void test_yaw_nao_zera_com_o_robo_girando() {
+  TEST_ASSERT_FALSE(yawPodeSerZerado(true, 5, 100, 4.5f, 4.0f));
+  TEST_ASSERT_FALSE(yawPodeSerZerado(true, 5, 100, -4.5f, 4.0f));  // o sentido não importa
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_media_e_desvio_de_conjunto_conhecido);
@@ -63,5 +81,9 @@ int main() {
   RUN_TEST(test_toque_no_robo_invalida_a_calibracao);
   RUN_TEST(test_zona_morta_zera_abaixo_do_limite);
   RUN_TEST(test_zona_morta_mantem_acima_do_limite);
+  RUN_TEST(test_yaw_zera_com_bias_calibrado_leitura_recente_e_robo_parado);
+  RUN_TEST(test_yaw_nao_zera_sem_calibracao);
+  RUN_TEST(test_yaw_nao_zera_com_leitura_antiga);
+  RUN_TEST(test_yaw_nao_zera_com_o_robo_girando);
   return UNITY_END();
 }

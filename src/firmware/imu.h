@@ -21,5 +21,5 @@ struct DadosIMU {
 void iniciarIMU();
 void atualizarIMU();
 bool iniciarCalibracaoIMU(); // somente com o robo imovel e motores parados
-bool zerarYawIMU();        // zerar a referencia imediatamente antes do giro
+bool zerarYawIMU();        // zerar a referencia imediatamente antes do giro; tambem recupera o yaw apos atraso do loop
 DadosIMU lerIMU();

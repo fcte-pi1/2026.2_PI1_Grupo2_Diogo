@@ -511,7 +511,7 @@ static void handleImuCalibrar() {
 static void handleImuZerar() {
     if (modo != Modo::PARADO || aguardandoMedicaoFreio())
         return respostaErro(409, "Pare os motores antes de zerar o yaw");
-    if (!zerarYawIMU()) return respostaErro(409, "IMU indisponivel, nao calibrada ou ainda girando");
+    if (!zerarYawIMU()) return respostaErro(409, "IMU indisponivel, nao calibrada, sem leitura recente ou ainda girando");
     respostaOk("Yaw relativo zerado; aguarde 10 s parado para medir deriva");
 }
 static uint32_t prazoAutomaticoReto(float distanciaMm, float rpm) {
@@ -559,6 +559,8 @@ static void handleRetoStart() {
         if (dado.brutoMm <= limiar + 35)
             return respostaErro(409, "Obstaculo proximo: afaste o robo ate U3 superar limiar + 35 mm");
     }
+    // No reto a IMU so mede; se o angulo perdeu a continuidade, cria nova referencia.
+    if (!lerIMU().confiavel) zerarYawIMU();
     if (!iniciarControleReto(distancia, rpm, cprE, cprD, sinc == "suave"))
         return respostaErro(409, "Controlador de movimento reto nao iniciou");
     frenteProtegida = usarFrente;
@@ -589,11 +591,13 @@ static void handleGiroStart() {
         !floatValido("rpm", rpm) || rpm < 20 || rpm > GIRO_RPM_MAX ||
         !inteiroEmFaixa("duracao", 1000, TESTE_DURACAO_MAX_MS, duracao))
         return respostaErro(400, "tipo encoder/imu, lado direita/esquerda, RPM 20..60, 1000..10000ms");
-    if (modoGiro == "imu" && !lerIMU().confiavel)
+    if (modoGiro == "imu" && !lerIMU().calibrada)
         return respostaErro(409, "Calibre a IMU com o robo parado antes do giro IMU");
     // Giro encoder usa IMU somente para telemetria; nao precisa MPU presente.
-    // Zerar yaw (se disponivel) para facilitar comparacao justa entre ensaios.
-    if (modoGiro == "encoder" && lerIMU().confiavel) zerarYawIMU();
+    // Zerar yaw (se disponivel) para facilitar comparacao justa entre ensaios;
+    // tambem recupera o angulo depois de um atraso do loop. No modo IMU o
+    // proprio controlador zera o yaw e recusa o giro se nao conseguir.
+    if (modoGiro == "encoder") zerarYawIMU();
     if (!iniciarControleGiro(lado == "direita", modoGiro == "imu", rpm, cprE, cprD, syncGiro == "suave"))
         return respostaErro(409, "Controlador nao iniciou: cheque IMU, orientacao e CPR");
     iniciarRelogioMotorizado(duracao, Modo::GIRO);

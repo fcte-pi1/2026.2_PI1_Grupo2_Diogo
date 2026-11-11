@@ -228,7 +228,7 @@ async function atualizar(){
   $('cpsE').textContent=fmt(d.cpsE);$('cpsD').textContent=fmt(d.cpsD);
   $('rpmE').textContent=fmt(d.rpmE);$('rpmD').textContent=fmt(d.rpmD);
   $('pwmE').textContent=d.pwmE;$('pwmD').textContent=d.pwmD;
-  $('imuStatus').textContent=d.imuCalibrando?('Calibrando… (tentativa '+d.imuTentativa+')'):(d.imuOk?'Pronta':(d.imuPresente?'Recalibrar':'Ausente'));
+  $('imuStatus').textContent=d.imuCalibrando?('Calibrando… (tentativa '+d.imuTentativa+')'):(d.imuOk?'Pronta':(d.imuCalibrada?'Zerar Yaw':(d.imuPresente?'Recalibrar':'Ausente')));
   $('imuYaw').textContent=fmt(d.imuYaw,2);
   $('imuTaxa').textContent=fmt(d.imuTaxa,2);
   $('syncErro').textContent=fmt(d.syncErroMm,2);

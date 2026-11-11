@@ -116,6 +116,8 @@ void atualizarIMU() {
     if (intervalo < IMU_INTERVALO_US) return;
     ultimoUs = agora;
     // Pulando intervalos longos: nao integrar uma amostra antiga como nova.
+    // O angulo perde a continuidade, mas o bias continua valido: o yaw volta
+    // a valer no proximo zerarYawIMU().
     if (intervalo > 100000UL) {
         d.confiavel = false;
     }
@@ -165,10 +167,13 @@ void atualizarIMU() {
     }
 }
 bool zerarYawIMU() {
-    if (!d.presente || !d.calibrada || !d.confiavel ||
-        millis() - d.ultimaLeituraMs > IMU_MAX_IDADE_MS ||
-        fabsf(d.taxaDireitaDps) > IMU_TAXA_PARADO_MAX_DPS) return false;
+    if (!d.presente || d.calibrando || falhasSeguidas > 0 ||
+        !yawPodeSerZerado(d.calibrada, millis() - d.ultimaLeituraMs, IMU_MAX_IDADE_MS,
+                          d.taxaDireitaDps, IMU_TAXA_PARADO_MAX_DPS)) return false;
     d.yawDireitaGraus = 0;
+    // Nova referencia de angulo: recupera a IMU depois de um atraso do loop
+    // ou de falhas de I2C, sem precisar recalibrar o bias.
+    d.confiavel = true;
     ultimoUs = micros();
     return true;
 }
