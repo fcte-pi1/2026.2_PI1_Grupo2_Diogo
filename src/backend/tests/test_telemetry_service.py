@@ -189,3 +189,44 @@ def test_old_esp_packet_reports_disconnected(monkeypatch):
     service._esp_reports_connected = True
 
     assert service.get_connection_status()["connected"] is False
+
+
+def test_sample_age_is_independent_from_recent_connection_heartbeat():
+    service = TelemetryService()
+    service.update(build_telemetry(datetime.now(timezone.utc) - timedelta(seconds=3)))
+    service.mark_esp_packet_received()
+    result = service.get_snapshot()
+    assert result["connected"] is True
+    assert result["stale"] is True
+    assert result["age_ms"] >= 3000
+    assert result["connection_age_ms"] < 1000
+    assert result["served_at"] > result["generated_at"]
+
+
+def test_restore_keeps_previous_readings_without_marking_robot_online():
+    service = TelemetryService()
+    telemetry = build_telemetry(datetime.now(timezone.utc) - timedelta(minutes=5))
+    service.restore(telemetry, execucao_id=2)
+    result = service.get_snapshot()
+    assert result["connected"] is False
+    assert result["stale"] is True
+    assert result["has_data"] is True
+    assert result["execucao_id"] == 2
+
+
+def test_slow_database_result_cannot_relabel_the_next_packet():
+    service = TelemetryService()
+    now = datetime.now(timezone.utc)
+    previous = build_telemetry(now)
+    newer = build_telemetry(now + timedelta(milliseconds=1))
+    service.update(previous)
+    service.update(newer)
+    service.associate_execution(previous, execucao_id=2, telemetry_sample_id=23)
+    assert service.get_snapshot()["telemetry_sample_id"] is None
+
+
+def test_naive_timestamp_is_normalized_before_comparing_with_utc():
+    service = TelemetryService()
+    now = datetime.now(timezone.utc)
+    service.update(build_telemetry(now.replace(tzinfo=None)))
+    assert service.update(build_telemetry(now + timedelta(milliseconds=1))) is True

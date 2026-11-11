@@ -1,102 +1,123 @@
 from datetime import datetime, timezone
+from threading import RLock
 
 from app.core.config import settings
 from app.schemas.telemetry import TelemetryData, TelemetryResponse
 
 
 class TelemetryService:
+    """Mantém a última leitura válida, independentemente da gravação da corrida."""
+
     def __init__(self):
+        self._lock = RLock()
         self._last_telemetry: TelemetryData | None = None
         self._last_esp_received_at: datetime | None = None
         self._esp_reports_connected = False
-        self._websocket_connections = 0
-
-    def mark_websocket_connected(self) -> None:
-        """Registra uma conexão WebSocket ativa da ESP."""
-        self._websocket_connections += 1
-
-    def mark_websocket_disconnected(self) -> None:
-        """Remove uma conexão WebSocket encerrada da ESP."""
-        self._websocket_connections = max(0, self._websocket_connections - 1)
-        if self._websocket_connections == 0:
-            self._esp_reports_connected = False
-
-    def is_websocket_connected(self) -> bool:
-        return self._websocket_connections > 0
+        self._metadata: dict = {}
 
     def mark_esp_packet_received(self, connected: bool = True) -> None:
-        """Registra o recebimento de um pacote da ESP, mesmo sem gravar amostra."""
-        self._last_esp_received_at = datetime.now(timezone.utc)
-        self._esp_reports_connected = connected
+        with self._lock:
+            self._last_esp_received_at = datetime.now(timezone.utc)
+            self._esp_reports_connected = connected
 
     def get_connection_status(self) -> dict:
-        now = datetime.now(timezone.utc)
-        last_seen = self._last_esp_received_at
-        age_ms = None if last_seen is None else max(
-            0.0, (now - last_seen).total_seconds() * 1000
-        )
-        packet_recently_received = (
-            last_seen is not None
-            and self._esp_reports_connected
-            and age_ms <= settings.ESP_CONNECTION_TIMEOUT_MS
-        )
-        return {
-            "connected": packet_recently_received,
-            "last_seen": last_seen,
-            "age_ms": None if age_ms is None else round(age_ms, 2),
-        }
+        with self._lock:
+            last_seen = self._last_esp_received_at
+            age_ms = None if last_seen is None else max(
+                0.0, (datetime.now(timezone.utc) - last_seen).total_seconds() * 1000
+            )
+            return {
+                "connected": bool(
+                    last_seen is not None
+                    and self._esp_reports_connected
+                    and age_ms <= settings.ESP_CONNECTION_TIMEOUT_MS
+                ),
+                "last_seen": last_seen,
+                "age_ms": None if age_ms is None else round(age_ms, 2),
+            }
 
     def update(self, telemetry: TelemetryData) -> bool:
-        """
-        Atualiza a telemetria somente se o dado recebido
-        for mais recente que o último dado válido.
-        """
+        with self._lock:
+            if self._last_telemetry is not None:
+                if telemetry.generated_at <= self._last_telemetry.generated_at:
+                    return False
+            self._last_telemetry = telemetry.model_copy(deep=True)
+            self._metadata = {}
+            return True
 
-        if self._last_telemetry is not None:
-            if telemetry.generated_at <= self._last_telemetry.generated_at:
-                return False
+    def associate_execution(self, telemetry: TelemetryData, **metadata) -> None:
+        """Uma gravação atrasada não pode alterar a identificação da leitura seguinte."""
+        with self._lock:
+            if self._last_telemetry is not None and (
+                self._last_telemetry.generated_at == telemetry.generated_at
+            ):
+                self._metadata.update(metadata)
 
-        self._last_telemetry = telemetry
-
-        return True
+    def restore(self, telemetry: TelemetryData, **metadata) -> None:
+        """Recupera o último registro após reinício, sem marcar a ESP como conectada."""
+        with self._lock:
+            if self._last_telemetry is None:
+                self.update(telemetry)
+                self._metadata.update(metadata)
 
     def get_current(self) -> TelemetryResponse | None:
-        """
-        Retorna o último dado válido e calcula sua idade
-        e se está defasado.
-        """
+        with self._lock:
+            if self._last_telemetry is None:
+                return None
+            now = datetime.now(timezone.utc)
+            age_ms = max(
+                0.0, (now - self._last_telemetry.generated_at).total_seconds() * 1000
+            )
+            stale_limit = (
+                settings.TELEMETRY_UPDATE_INTERVAL_MS
+                + settings.TELEMETRY_LATENCY_TOLERANCE_MS
+            )
+            return TelemetryResponse(
+                **self._last_telemetry.model_dump(),
+                served_at=now,
+                age_ms=round(age_ms, 2),
+                stale=age_ms > stale_limit,
+            )
 
-        if self._last_telemetry is None:
-            return None
-
-        now = datetime.now(timezone.utc)
-
-        generated_at = self._last_telemetry.generated_at
-
-        if generated_at.tzinfo is None:
-            generated_at = generated_at.replace(tzinfo=timezone.utc)
-
-        age_ms = (
-            now - generated_at
-        ).total_seconds() * 1000
-
-        stale_limit_ms = (
-            settings.TELEMETRY_UPDATE_INTERVAL_MS
-            + settings.TELEMETRY_LATENCY_TOLERANCE_MS
-        )
-
-        stale = age_ms > stale_limit_ms
-
-        return TelemetryResponse(
-            **self._last_telemetry.model_dump(),
-            served_at=now,
-            age_ms=round(age_ms, 2),
-            stale=stale,
-        )
-    
-    def receive_telemetry(telemetry: TelemetryData):
-            telemetry_service.update(telemetry)
-            return telemetry
+    def get_snapshot(self) -> dict:
+        with self._lock:
+            current = self.get_current()
+            connection = self.get_connection_status()
+            metrics = None if current is None else current.metrics
+            return {
+                "execucao_id": self._metadata.get("execucao_id"),
+                "telemetry_sample_id": self._metadata.get("telemetry_sample_id"),
+                "tempo_relativo_ms": self._metadata.get("tempo_relativo_ms"),
+                "has_data": current is not None,
+                "position": None if current is None else current.position.model_dump(),
+                "metrics": None if metrics is None else {
+                    "speed_cm_s": metrics.speed_cm_s,
+                    "battery_pct": metrics.battery_pct,
+                    "rpm": metrics.rpm,
+                    "rpmLeft": metrics.rpm_left if metrics.rpm_left is not None else metrics.rpm,
+                    "rpmRight": metrics.rpm_right if metrics.rpm_right is not None else metrics.rpm,
+                },
+                "movement": (
+                    None if current is None or current.movement is None
+                    else current.movement.model_dump()
+                ),
+                "events": (
+                    [] if current is None
+                    else [event.model_dump() for event in current.events]
+                ),
+                "generated_at": None if current is None else current.generated_at,
+                "served_at": datetime.now(timezone.utc),
+                "age_ms": None if current is None else current.age_ms,
+                "stale": current is None or current.stale or not connection["connected"],
+                "connected": connection["connected"],
+                "last_seen": connection["last_seen"],
+                "connection_age_ms": connection["age_ms"],
+                "connection_timeout_ms": settings.ESP_CONNECTION_TIMEOUT_MS,
+                "stale_after_ms": (
+                    settings.TELEMETRY_UPDATE_INTERVAL_MS
+                    + settings.TELEMETRY_LATENCY_TOLERANCE_MS
+                ),
+            }
 
 
 telemetry_service = TelemetryService()

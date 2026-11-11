@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class PositionData(BaseModel):
@@ -9,6 +9,8 @@ class PositionData(BaseModel):
 
 
 class MetricsData(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
     speed_cm_s: float = Field(ge=0)
     rpm: float | None = Field(default=None, ge=0)
     rpm_left: float | None = Field(
@@ -36,11 +38,27 @@ class TelemetryEventData(BaseModel):
     message: str
 
 
+class MovementData(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
+    giro_x_deg_s: float
+    giro_y_deg_s: float
+    giro_z_deg_s: float
+
+
 class TelemetryData(BaseModel):
     position: PositionData
     metrics: MetricsData
     events: list[TelemetryEventData] = Field(default_factory=list)
     generated_at: datetime
+    movement: MovementData | None = None
+
+    @field_validator("generated_at")
+    @classmethod
+    def normalize_generated_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
 
 
 class TelemetryResponse(TelemetryData):
@@ -52,7 +70,7 @@ class TelemetryResponse(TelemetryData):
 class EspTelemetryInput(BaseModel):
     """Formato enviado pela rota HTTP da ESP."""
 
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, allow_inf_nan=False)
 
     battery_pct: float = Field(alias="bateria", ge=0, le=100)
     speed_cm_s: float = Field(alias="velocidade", ge=0)

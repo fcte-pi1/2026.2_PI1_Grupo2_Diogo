@@ -53,7 +53,7 @@ Execute-os dentro de `src/frontend/web-micromouse`:
 - **Dashboard/Telemetria (`/`)**: apresenta bateria, velocidade, RPM dos motores, giroscópio e dados da execução.
 - **Labirinto (`/labirinto`)**: permite selecionar o tamanho do labirinto e visualizar o percurso e os detalhes da execução.
 
-No momento, a telemetria do dashboard é simulada no frontend; a interface ainda não busca esses dados de uma API. Os dados da página de labirinto também ainda não estão conectados ao backend.
+O dashboard recebe telemetria pelo WebSocket `/ws/telemetry/current`. O `TelemetryProvider` compartilha uma conexão entre a página e a barra lateral, conserva a última leitura e tenta reconectar automaticamente. A tela de labirinto consulta a API por polling.
 
 ## Organização
 
@@ -62,7 +62,7 @@ web-micromouse/
 ├── assets/       # Imagens e ícones
 └── src/
     ├── components/ # Componentes reutilizáveis da interface
-    ├── hooks/      # Hooks React, incluindo a telemetria simulada
+    ├── hooks/      # Hooks React, incluindo o acesso à telemetria compartilhada
     ├── pages/      # Páginas da aplicação
     └── types/      # Tipos TypeScript
 ```

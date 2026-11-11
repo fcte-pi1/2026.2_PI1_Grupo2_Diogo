@@ -2,9 +2,9 @@ import { TelemetryCard } from "./TelemetryCard";
 import GiroSvg from '../../../assets/giro.svg'
 
 interface GyroscopeCardProps {
-  x: number;
-  y: number;
-  z: number;
+  x: number | null;
+  y: number | null;
+  z: number | null;
 }
 
 export function GyroscopeCard({
@@ -24,7 +24,7 @@ export function GyroscopeCard({
             </span>
 
             <strong className="truncate text-base text-white sm:text-lg">
-              {x.toFixed(3)}
+              {x?.toFixed(3) ?? "—"}
             </strong>
           </div>
         </div>
@@ -36,7 +36,7 @@ export function GyroscopeCard({
             </span>
 
             <strong className="truncate text-base text-white sm:text-lg">
-              {y.toFixed(3)}
+              {y?.toFixed(3) ?? "—"}
             </strong>
           </div>
         </div>
@@ -48,7 +48,7 @@ export function GyroscopeCard({
             </span>
 
             <strong className="truncate text-base text-white sm:text-lg">
-              {z.toFixed(3)}
+              {z?.toFixed(3) ?? "—"}
             </strong>
           </div>
         </div>

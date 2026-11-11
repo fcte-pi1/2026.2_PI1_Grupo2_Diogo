@@ -1,11 +1,9 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
-from fastapi import HTTPException
-from app.core.config import settings
 
 from app.routes.telemetry import get_current_telemetry
-from app.services.telemetry_service import TelemetryService, telemetry_service
+from app.services.telemetry_service import TelemetryService
 
 class FakeResult:
     def __init__(self, sample):
@@ -24,12 +22,8 @@ class FakeDB:
         assert "FROM amostra_telemetria" in str(query)
         return FakeResult(self.sample)
 
-def test_current_telemetry_returns_last_database_sample(monkeypatch):
-    monkeypatch.setattr(telemetry_service, "get_connection_status", lambda: {
-        "connected": True,
-        "last_seen": datetime(2026, 10, 19, 12, 0),
-        "age_ms": 250.0,
-    })
+def test_current_telemetry_returns_last_database_sample(esp_service):
+    esp_service.mark_esp_packet_received()
     sample = {
         "telemetry_sample_id": 23,
         "execucao_id": 2,
@@ -44,7 +38,7 @@ def test_current_telemetry_returns_last_database_sample(monkeypatch):
         "giro_z_deg_s": 0.0,
         "pos_x": 3,
         "pos_y": 1,
-        "generated_at": datetime(2026, 10, 19, 12, 0, 1, 500000),
+        "generated_at": datetime.now(timezone.utc),
     }
 
     result = get_current_telemetry(db=FakeDB(sample))
@@ -55,13 +49,15 @@ def test_current_telemetry_returns_last_database_sample(monkeypatch):
     assert result["connected"] is True
     assert result["stale"] is False
 
-def test_current_telemetry_returns_503_when_database_is_empty():
-    with pytest.raises(HTTPException) as error:
-        get_current_telemetry(db=FakeDB(None))
+def test_empty_database_returns_connection_status_without_readings(esp_service):
+    esp_service.mark_esp_packet_received()
+    result = get_current_telemetry(db=FakeDB(None))
+    assert result["connected"] is True
+    assert result["has_data"] is False
+    assert result["metrics"] is None
+    assert result["stale"] is True
 
-    assert error.value.status_code == 503
-
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def esp_service(monkeypatch):
     service = TelemetryService()
     monkeypatch.setattr("app.routes.telemetry.telemetry_service", service)
