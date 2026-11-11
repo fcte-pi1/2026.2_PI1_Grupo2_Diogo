@@ -174,3 +174,52 @@ A correção vem **desligada por padrão**, porque os valores ainda não foram a
   - deriva menor que 1° em 60 s com o robô parado;
   - 10 giros para cada lado com a correção ligada, conferindo o ângulo com um gabarito externo (critério: erro final de até 1°);
   - ajustar as constantes `GIRO_CORRECAO_*`. Um giro de 1° corresponde a menos de 1 mm de curso na roda, então o atrito e a parada por inércia podem fazer a correção passar do ponto.
+
+## Partida conjunta das duas rodas
+
+Issue #152.
+
+### O que faz
+
+Os comandos das duas rodas já saíam juntos, mas a **ajuda de partida** era decidida por roda: quando uma roda ficava 140 ms sem pulsos, recebia sozinha um PWM mínimo (65) para vencer o atrito estático, e a ajuda acabava no primeiro pulso. Assim, uma roda saía antes da outra e o robô descompensava logo no começo do movimento.
+
+Agora, enquanto as duas rodas comandadas não tiverem contado 3 pulsos cada (`PARTIDA_PULSOS_MIN`), o controle está na **fase de partida conjunta**:
+
+1. **Ajuda nas duas.** Quando uma roda precisa da ajuda, a outra recebe também. A roda que já está mais de 1 mm à frente (`PARTIDA_ADIANTAMENTO_MAX_MM`) não recebe a ajuda da outra. Sem esse limite, uma roda presa fazia a solta disparar com o PWM da ajuda.
+2. **Rampa segurada.** A rampa de RPM sobe só até 18 RPM (`PARTIDA_RPM_PISO`) e fica parada até as duas rodas saírem. Quando uma já saiu e a outra não, só a que saiu fica segurada: a roda presa continua com a referência subindo para ganhar torque. O piso fica acima dos 12 RPM que a ajuda exige, para a roda presa ainda pedir ajuda.
+3. Quando as duas saem, a fase termina e o controle volta ao normal, com a ajuda decidida por roda (perto do alvo, uma roda que já chegou não pode receber ajuda da outra).
+
+A fase só vale quando as **duas rodas estão comandadas**. Movimentos com uma roda parada de propósito (posição com alvo zero numa roda, RPM com um lado zero, pausa de sincronismo do giro antigo) seguem como antes. O diagnóstico de roda travada (1,2 s sem pulsos) continua valendo.
+
+**Registro.** Em todo movimento, o firmware registra quanto tempo cada roda levou para sair e a diferença de percurso entre elas (E − D) enquanto o percurso médio estiver nos primeiros 50 mm (`PARTIDA_JANELA_MM`). O `/api/status` mostra `partidaEMs`, `partidaDMs`, `partidaAtrasoMs` (positivo quando a esquerda sai antes), `partidaDifMm` (diferença no fim da janela), `partidaDifMaxMm` (maior diferença dentro dela), `partidaJanelaCompleta` e `partidaConjunta` (fase ativa agora). Os campos também entram no CSV do painel. No giro com correção, o registro é o do giro principal, não o da correção.
+
+### Arquivos
+
+| Arquivo | Conteúdo |
+|---|---|
+| `partida_logic.h` | `rodaPartiu()`, `segurarRampaPartida()`, `ajudaPartidaConjunta()` e `RegistroPartida`, sem Arduino |
+| `motion_control.cpp` | Cálculo do PI separado do acionamento (`calcularRoda()` e `aplicarRoda()`), para decidir a ajuda olhando as duas rodas |
+| `web_telemetry.cpp` / `web_page.h` | Campos `partida*` no status, na aba de posição e no CSV |
+| `config.h` | `PARTIDA_PULSOS_MIN`, `PARTIDA_RPM_PISO`, `PARTIDA_ADIANTAMENTO_MAX_MM` e `PARTIDA_JANELA_MM` |
+
+### Testes
+
+- `test/test_partida_logic` (10 testes): saída da roda, rampa segurada, ajuda conjunta com o limite de adiantamento e registro da janela de 50 mm.
+- `tests/host/test_partida.cpp`: simulação com atrito estático diferente em cada roda. Confere a diferença nos primeiros 50 mm do reto, a roda travada caindo no diagnóstico (reto e RPM) e o movimento de posição com uma roda só.
+
+A simulação **não reproduz o problema visto na bancada**: no reto, com uma roda que precisa de até 60 de PWM para sair, o firmware anterior e o novo dão a mesma diferença (menos de 0,3 mm). A comparação com o firmware anterior, roda esquerda leve e direita mais presa:
+
+| Movimento | Direita precisa de | Antes | Agora |
+|---|---|---|---|
+| Reto 200 mm | 70 de PWM | 9,2 mm, chega | 5,2 mm, chega |
+| Reto 200 mm | 90 de PWM | 17 mm, para por dessincronia | 10 mm, para por dessincronia |
+| Giro 90° (encoder ou IMU) | 60 de PWM | para por dessincronia | 6 mm, conclui |
+| Correção curta de 1,5° | qualquer | igual | igual |
+| Posição, duas rodas | 70 / 90 de PWM | 7 / 21 mm | 10 / 14 mm |
+
+Quando uma roda precisa de mais PWM que a ajuda, o problema é a ajuda fraca demais para aquela roda, e não a partida conjunta.
+
+### Estado
+
+- **Implementado e testado no computador.**
+- **Falta a bancada:** 10 partidas no chão, conferindo `partidaDifMaxMm` (critério: até 2 mm nos primeiros 50 mm). Se uma roda precisar de mais PWM que a ajuda para sair, ajustar `PWM_AJUDA_PARTIDA` antes de mexer nas constantes `PARTIDA_*`.

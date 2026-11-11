@@ -35,6 +35,10 @@ Ligada por padrao desde a issue #154 (`TELEMETRIA_REMOTA_HABILITADA` em `config.
 
 Desde a issue #153, a calibracao da IMU usa 800 amostras, zona morta e ate 3 tentativas, e o yaw volta a valer ao ser zerado depois de um atraso do loop. O giro de 90 graus aceita `corrigir=1` (opcao "Correcao pelo giroscopio" no painel, desligada por padrao): depois de parar, o firmware mede o erro pelo yaw e faz ate 2 giros curtos pela IMU para ficar a ate 1 grau do alvo. Os detalhes estao no README principal do firmware, na secao do giroscopio.
 
+## Partida conjunta das rodas
+
+Desde a issue #152, enquanto as duas rodas nao tiverem saido, a ajuda de partida vale para as duas (a roda que ja esta mais de 1 mm a frente nao recebe a ajuda da outra) e a rampa fica segurada em 18 RPM. O `/api/status` e o CSV trazem a diferenca de percurso entre as rodas nos primeiros 50 mm (`partidaDifMm`, `partidaDifMaxMm`) e o atraso entre elas (`partidaAtrasoMs`). Os detalhes estao no README principal do firmware.
+
 ## Offset dos lasers
 
 Cada VL53L0X le um valor acima da distancia real. O `config.h` tem um offset por sensor (`LASER_OFFSET_U2_MM`, `LASER_OFFSET_U3_MM`, `LASER_OFFSET_U4_MM`: 20, 20 e 15 mm), subtraido da leitura antes do filtro e da deteccao de parede. No `/api/lasers/status` e na aba de lasers, `brutoMm` e `filtradoMm` ja vem corrigidos, e `semOffsetMm` mostra a leitura original. O CSV de captura ganhou a coluna `sem_offset_mm`. Para recalibrar, capture cada sensor contra uma distancia conhecida e ajuste o offset pela diferenca entre `sem_offset_mm` e a referencia. A conta fica em `lasers_logic.h`, testada em `test/test_lasers_logic`.
