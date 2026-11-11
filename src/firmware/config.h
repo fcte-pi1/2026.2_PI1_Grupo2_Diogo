@@ -122,6 +122,13 @@ constexpr uint8_t LASER_XSHUT_U4 = 23; // DIREITO
 constexpr uint8_t LASER_ADDR_U2 = 0x30;
 constexpr uint8_t LASER_ADDR_U3 = 0x31;
 constexpr uint8_t LASER_ADDR_U4 = 0x32;
+// Offset de calibracao por sensor, em mm: quanto a leitura fica ACIMA da
+// distancia real. E subtraido antes do filtro e da deteccao de parede.
+// Medidos na bancada com a nova eletronica (issue #151). O teste 3.2 do
+// docs/7.3 mostrou que o erro muda acima de 150 mm; repetir com gabarito.
+constexpr int LASER_OFFSET_U2_MM = 20; // ESQUERDO
+constexpr int LASER_OFFSET_U3_MM = 20; // FRONTAL
+constexpr int LASER_OFFSET_U4_MM = 15; // DIREITO
 constexpr uint16_t LASER_MIN_DIAGNOSTICO_MM = 20;   // abaixo disso: INVALIDO, nao obstaculo livre
 constexpr uint16_t LASER_MAX_DIAGNOSTICO_MM = 2000;
 constexpr uint32_t LASER_ORCAMENTO_MEDICAO_US = 50000;

@@ -8,6 +8,7 @@ namespace {
 const uint8_t XSHUT[3]={LASER_XSHUT_U2,LASER_XSHUT_U3,LASER_XSHUT_U4};
 const uint8_t ADDR[3]={LASER_ADDR_U2,LASER_ADDR_U3,LASER_ADDR_U4};
 const char* NOMES[3]={"U2","U3","U4"};
+const int OFFSET[3]={LASER_OFFSET_U2_MM,LASER_OFFSET_U3_MM,LASER_OFFSET_U4_MM};
 struct Sensor {
     Adafruit_VL53L0X hw;
     LeituraLaser dado;
@@ -18,7 +19,7 @@ struct Sensor {
 Sensor sensors[3];
 uint8_t proximoPoll=0;
 uint32_t ultimoPollGlobalMs=0;
-struct LinhaCaptura { uint32_t tempoMs; int bruto,filtrado; uint8_t vlStatus; };
+struct LinhaCaptura { uint32_t tempoMs; int bruto,filtrado; uint8_t vlStatus; int semOffset; };
 LinhaCaptura linhas[LASER_CAPTURE_MAX_AMOSTRAS];
 ResumoCapturaLaser captura;
 float m2=0;
@@ -27,7 +28,7 @@ String numeroOuNull(int n) { return n>=0?String(n):"null"; }
 void capturaEvento(uint8_t id, uint32_t agora, const LeituraLaser& d) {
     if(!captura.ativa || captura.indiceSensor!=id)return;
     if(captura.amostras >= captura.objetivo)return;
-    linhas[captura.amostras] = {agora-captura.inicioMs,d.brutoMm,d.filtradoMm,d.statusVL};
+    linhas[captura.amostras] = {agora-captura.inicioMs,d.brutoMm,d.filtradoMm,d.statusVL,d.semOffsetMm};
     ++captura.amostras;
     if(d.brutoMm>=0) {
         ++captura.validas;
@@ -45,6 +46,7 @@ void capturaEvento(uint8_t id, uint32_t agora, const LeituraLaser& d) {
 void invalidar(uint8_t i,int codigo,uint8_t status,uint32_t agora,bool contaEvento) {
     auto& s=sensors[i];
     auto& d=s.dado;
+    d.semOffsetMm=codigo;
     d.brutoMm=codigo;
     d.filtradoMm=s.filtro.atualizar(codigo);
     d.parede=s.detector.atualizar(codigo);
@@ -114,7 +116,11 @@ void atualizarLasers(bool somenteFrontal) {
         uint16_t mm=s.hw.readRangeResult();
         uint8_t status=s.hw.readRangeStatus();
         bool erro=s.hw.Status!=VL53L0X_ERROR_NONE;
-        int bruto=classificarLeitura(erro,status,mm,LASER_MIN_DIAGNOSTICO_MM,LASER_MAX_DIAGNOSTICO_MM);
+        // A faixa valida vale para a leitura do sensor; o offset entra depois,
+        // antes do filtro e da deteccao de parede.
+        const int lido=classificarLeitura(erro,status,mm,LASER_MIN_DIAGNOSTICO_MM,LASER_MAX_DIAGNOSTICO_MM);
+        const int bruto=aplicarOffsetLaser(lido,OFFSET[i]);
+        d.semOffsetMm=lido;
         if(d.total>0)d.intervaloRealMs=agora-d.ultimoEventoMs;
         d.ultimoEventoMs=agora;
         d.brutoMm=bruto;
@@ -160,6 +166,8 @@ String jsonLasers() {
         char hx[3];snprintf(hx,sizeof(hx),"%02X",ADDR[i]);r+=hx;
         r+="\",\"inicializado\":"+String(d.inicializado?"true":"false");
         r+=",\"valido\":"+String(fresco?"true":"false");
+        r+=",\"offsetMm\":"+String(OFFSET[i]);
+        r+=",\"semOffsetMm\":"+numeroOuNull(d.semOffsetMm);
         r+=",\"brutoMm\":"+numeroOuNull(d.brutoMm);
         r+=",\"filtradoMm\":"+numeroOuNull(d.filtradoMm);
         r+=",\"codigo\":"+String(d.brutoMm);
@@ -184,11 +192,11 @@ String jsonLasers() {
     return r;
 }
 String csvCapturaLaser() {
-    String r="sensor;referencia_mm;indice;tempo_ms;bruto_mm;filtrado_mm;range_status;valida\r\n";
+    String r="sensor;referencia_mm;indice;tempo_ms;bruto_mm;filtrado_mm;range_status;valida;sem_offset_mm\r\n";
     for(uint16_t i=0;i<captura.amostras;++i) {
         const auto& v=linhas[i];
         r+=String(NOMES[captura.indiceSensor])+";"+String(captura.referenciaMm)+";"+String(i+1)+";"+String(v.tempoMs)+";";
-        r+=String(v.bruto)+";"+String(v.filtrado)+";"+String(v.vlStatus)+";"+String(v.bruto>=0?1:0)+"\r\n";
+        r+=String(v.bruto)+";"+String(v.filtrado)+";"+String(v.vlStatus)+";"+String(v.bruto>=0?1:0)+";"+String(v.semOffset)+"\r\n";
     }
     return r;
 }

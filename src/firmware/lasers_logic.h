@@ -19,6 +19,13 @@ inline int classificarLeitura(bool erroComunicacao, uint8_t rangeStatus,
     if (distanciaMm > maxMm) return LASER_FORA_ESCALA;
     return (int)distanciaMm;
 }
+// Offset de calibracao: quanto a leitura do sensor fica ACIMA da distancia real.
+// Codigos de erro (negativos) passam direto; o resultado nunca fica abaixo de zero.
+inline int aplicarOffsetLaser(int leituraMm, int offsetMm) {
+    if (leituraMm < 0) return leituraMm;
+    const int corrigida = leituraMm - offsetMm;
+    return corrigida < 0 ? 0 : corrigida;
+}
 inline uint16_t periodoMedicaoMs(uint32_t us, uint16_t margem) {
     return (uint16_t)((us+999u)/1000u + margem);
 }
