@@ -182,11 +182,10 @@ constexpr uint32_t I_SOBRECORRENTE_TEMPO_MS = 500;
 constexpr float BAT_V_CORTE_MAX_ENSAIO = 9.0f;
 constexpr float I_SOBRECORRENTE_MIN_ENSAIO_MA = 50.0f;
 
-// Envio remoto via HTTP. Desabilitado por padrao ate informar IP do PC.
-constexpr bool TELEMETRIA_REMOTA_HABILITADA = false;
-// Desconhecido ate validar bateria real; configure 2 (2S), 3 (3S) etc.
-// Sem esta configuracao, nenhum POST e enviado, para nao exibir 0% falso.
-constexpr uint8_t TELEMETRIA_BATERIA_CELULAS_LIPO = 0;
+// Envio remoto via HTTP para o backend. So ha tentativa de envio com algum
+// aparelho conectado na rede do robo. O percentual de bateria usa BAT_CELULAS;
+// sem leitura do INA219 nenhum POST e enviado, para nao exibir 0% falso.
+constexpr bool TELEMETRIA_REMOTA_HABILITADA = true;
 constexpr char TELEMETRIA_HOST[] = "192.168.4.2"; // computador conectado ao AP
 constexpr uint16_t TELEMETRIA_PORTA = 8000;
 constexpr char TELEMETRIA_CAMINHO[] = "/api/telemetry";

@@ -15,6 +15,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include "telemetry_remote.h"
+#include "speed.h"
 #include "maze_state.h"
 
 extern WebServer server;
@@ -165,6 +166,14 @@ static void handleStatus() {
     json += ",\"cprD\":" + numeroOuNull(cprD);
     json += ",\"rpmE\":" + (cprE > 0 ? numeroOuNull(d.cpsEsq * 60.0f / cprE) : String("null"));
     json += ",\"rpmD\":" + (cprD > 0 ? numeroOuNull(d.cpsDir * 60.0f / cprD) : String("null"));
+    const DadosVelocidade vel = lerVelocidade();
+    json += ",\"velocidadeCmS\":" + (vel.valida ? numeroOuNull(vel.instantaneaCmS) : String("null"));
+    json += ",\"velMediaTrechoCmS\":" + (vel.valida ? numeroOuNull(vel.mediaTrechoCmS) : String("null"));
+    json += ",\"distTrechoMm\":" + numeroOuNull(vel.distanciaTrechoMm, 1);
+    json += ",\"tempoTrechoMs\":" + String(vel.tempoTrechoMs);
+    json += ",\"velMediaTotalCmS\":" + (vel.valida ? numeroOuNull(vel.mediaTotalCmS) : String("null"));
+    json += ",\"distTotalMm\":" + numeroOuNull(vel.distanciaTotalMm, 1);
+    json += ",\"tempoTotalMs\":" + String(vel.tempoTotalMs);
     json += ",\"pwmE\":" + String(emControle ? ctrl.pwmE : pwmE);
     json += ",\"pwmD\":" + String(emControle ? ctrl.pwmD : pwmD);
     json += ",\"frenteE\":" + String(frenteE ? "true" : "false");
@@ -723,6 +732,7 @@ void setupTelemetry() {
 }
 
 void loopTelemetry() {
+    atualizarVelocidade(cprE, cprD, modoMotorizado());
     atualizarMedicaoFreio();
     if (!modoMotorizado()) return;
     uint32_t agora = millis();

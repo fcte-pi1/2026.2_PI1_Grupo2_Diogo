@@ -28,7 +28,11 @@ Conecte ao AP existente `Xaropinho-WiFi`, abra `http://192.168.4.1`. Abas: Encod
 
 ## Telemetria externa
 
-Por padrao **DESATIVADA** para evitar tentativas de rede sem backend. Edite `TELEMETRIA_REMOTA_HABILITADA` e `TELEMETRIA_HOST` em `config.h` e configure `TELEMETRIA_BATERIA_CELULAS_LIPO` conforme a bateria real. Sem celulas e leitura de tensao validas, o POST nao sera enviado. O computador roda o FastAPI em `0.0.0.0:8000` e pode se conectar ao AP da ESP32. Em cada POST `/api/telemetry` sao enviados campos planos aceitos pelo `EspTelemetryInput` da branch da equipe: `bateria`, `velocidade`, `rpm_motor`, `connected`. Metadados extras sao diagnosticos, podem nao ser persistidos pelo backend. O percentual, quando habilitado, e somente uma **estimativa por tensao de LiPo** e nao SOC preciso; valide a curva com o pacote real antes de usar no site. `posicao_estimada:null` e `mapa_disponivel:false` enquanto algoritmo de navegacao nao existir.
+Ligada por padrao desde a issue #154 (`TELEMETRIA_REMOTA_HABILITADA` em `config.h`). So ha tentativa de envio com algum aparelho conectado na rede do robo; o destino e `TELEMETRIA_HOST`. O percentual de bateria usa `BAT_CELULAS` (2S). Sem leitura de tensao valida, o POST nao sera enviado. O computador roda o FastAPI em `0.0.0.0:8000` e pode se conectar ao AP da ESP32. Em cada POST `/api/telemetry` sao enviados campos planos aceitos pelo `EspTelemetryInput` da branch da equipe: `bateria`, `velocidade`, `rpm_motor`, `connected`. A `velocidade` (cm/s) vem dos encoders e exige o CPR salvo no painel. Metadados extras sao diagnosticos, podem nao ser persistidos pelo backend; entre eles vao `velocidade_media` (cm/s) e `distancia_mm`, que o backend ainda nao le. O percentual, quando habilitado, e somente uma **estimativa por tensao de LiPo** e nao SOC preciso; valide a curva com o pacote real antes de usar no site. `posicao_estimada:null` e `mapa_disponivel:false` enquanto algoritmo de navegacao nao existir.
+
+## Velocidade media
+
+`speed.cpp` calcula a velocidade pelos encoders: a instantanea e a media (distancia do centro do robo dividida pelo tempo com motor ligado). O `/api/status` e o painel mostram a media do ultimo teste (`velMediaTrechoCmS`, com `distTrechoMm` e `tempoTrechoMs`) e a media de todos os testes desde que o robo foi ligado (`velMediaTotalCmS`). Para conferir, rode um reto de distancia conhecida, cronometre e compare distancia real / tempo com o valor do painel. As contas ficam em `speed_logic.h`, testadas em `test/test_speed_logic`.
 
 ## Mapa
 
