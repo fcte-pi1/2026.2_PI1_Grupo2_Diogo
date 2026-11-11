@@ -21,6 +21,11 @@ Evite incluir:
 
 Firmware do ESP32 DevKit, feito com PlatformIO e o framework Arduino. Este documento registra o que foi implementado, como funciona, os problemas encontrados e o estado de cada parte.
 
+> [!IMPORTANT]
+> **Estado atual (integração da V4.7):** o firmware compilado hoje é a versão 4.7 de bancada, descrita em [README_V47.md](README_V47.md), com o roteiro de validação em [VALIDACAO_INTEGRACAO.md](VALIDACAO_INTEGRACAO.md). Ela ainda não foi testada na placa.
+>
+> As seções abaixo descrevem o firmware anterior. Os módulos `power.cpp`, `telemetry.cpp` e `i2c_check.cpp` continuam na pasta, mas estão fora da compilação (`build_src_filter` no `platformio.ini`), porque a V4.7 traz os seus equivalentes (`battery.cpp`, `telemetry_remote.cpp` e `i2c_diagnostics.cpp`). A proteção de bateria do `power_logic.h` ainda precisa ser religada.
+
 ## Como compilar e testar
 
 | Ação | Comando |

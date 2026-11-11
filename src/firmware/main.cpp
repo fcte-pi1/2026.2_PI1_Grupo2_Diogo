@@ -1,111 +1,73 @@
 #include <Arduino.h>
 #include <Wire.h>
-#include <WebServer.h> // Adicionado para controlo via rede
+#include <WebServer.h>
 #include "config.h"
 #include "motors.h"
+#include "encoders.h"
+#include "battery.h"
 #include "imu.h"
+#include "i2c_diagnostics.h"
 #include "lasers.h"
-#include "power.h"
-#include "i2c_check.h"
 #include "ota_manager.h"
-#include "telemetry.h"
+#include "web_telemetry.h"
+#include "telemetry_remote.h"
+#include "maze_state.h"
 
-unsigned long tempoAnterior = 0;
-const unsigned long INTERVALO_MS = 100;
-
-WebServer server(80); // Servidor HTTP na porta padrão 80
-
-static void girar(bool paraDireita) {
-  girar90Graus(paraDireita);
-  tempoAnterior = millis();
-}
+WebServer server(80);
 
 void setup() {
-  Serial.begin(115200);
-  Wire.begin(21, 22);
-  Wire.setClock(400000);
-
-  initMotors();
-  initIMU();
-  initLasers();
-  initPower();
-  verificarI2C();
-  initOTA();
-  initTelemetry();
-
-  // Configuração dos endpoints de comando via Wi-Fi
-  server.on("/direita", []() {
-    server.send(200, "text/plain", "Girando 90 graus a DIREITA");
-    girar(true);
-  });
-
-  server.on("/esquerda", []() {
-    server.send(200, "text/plain", "Girando 90 graus a ESQUERDA");
-    girar(false);
-  });
-
-  server.on("/parar", []() {
-    stopMotors();
-    server.send(200, "text/plain", "Motores parados");
-  });
-
-  server.begin();
-  Serial.println("[HTTP] Servidor Web ativo em http://192.168.4.1");
-
-  Serial.println("\n--- Robô Inicializado com Sucesso ---");
-  tempoAnterior = millis();
+    Serial.begin(115200);
+    delay(300);
+    Serial.println("\n=== MICROMOUSE | BANCADA DE CALIBRACAO ===");
+    setupMotors(); // mantém motores parados desde a inicialização
+    mazeReset(); // mapa com todas as paredes desconhecidas; sem pose ficticia
+    if (!motorHardwareReady()) {
+        Serial.println("FALHA FATAL NO PWM. Desabilitando drivers.");
+        while (true) { delay(1000); }
+    }
+    // Todos os VL53L0X em XSHUT LOW antes de inicializar/reenderecar.
+    // GPIOs definidos em config.h (U2=18, U3=19, U4=23).
+    const uint8_t xshut[] = {LASER_XSHUT_U2, LASER_XSHUT_U3, LASER_XSHUT_U4};
+    for (uint8_t gpio : xshut) {
+        digitalWrite(gpio, LOW);
+        pinMode(gpio, OUTPUT);
+    }
+    Wire.begin(PIN_SDA, PIN_SCL);
+    // Diagnostico: 100 kHz e mais tolerante a cabos/capacitancia.
+    // Subir para 400 kHz apenas apos validar o barramento fisico.
+    Wire.setClock(100000);
+    delay(150); // aguarda a alimentacao do modulo estabilizar
+    imprimirDiagnosticoI2C();
+    initBattery();
+    iniciarIMU();
+    initLasers(); // inicializacao sequencial U2/U3/U4, enderecos 0x30..0x32
+    Serial.println("[LASER] I2C apos ativacao U2/U3/U4:");
+    Serial.println(diagnosticoI2CJson().c_str());
+    bool ok = iniciarEncoders();
+    if (!ok) {
+        Serial.println("FALHA FATAL NO PCNT. Reinicie após conferir os pinos.");
+        while (true) { frearMotoresTudo(); delay(1000); }
+    }
+    initOTA();
+    setupTelemetry(); // TODAS as rotas antes do begin()
+    server.begin();
+    iniciarTelemetriaRemota();
+    Serial.println("Painel: http://192.168.4.1/");
+    Serial.println("Serial: digite 's' para frear imediatamente.");
 }
 
 void loop() {
-  handleOTA(); // Escuta requisições de gravação sem fio
-  server.handleClient(); // Processa pedidos recebidos por Wi-Fi
-
-  // Mantém a escuta por cabo USB ativa em paralelo
-  if (Serial.available() > 0) {
-    char comando = Serial.read();
-    if (comando == 'd' || comando == 'D') girar(true);
-    if (comando == 'e' || comando == 'E') girar(false);
-    if (comando == 's' || comando == 'S') stopMotors();
-  }
-
-  unsigned long agora = millis();
-  unsigned long delta = agora - tempoAnterior;
-
-  if (delta >= INTERVALO_MS) {
-    float dt = delta / 1000.0f;
-    tempoAnterior = agora;
-
-    // Atualiza odometria e sensores
-    updateIMU(dt);
-
-    float rpsA = 0, rpsB = 0;
-    getEncoderSpeeds(dt, rpsA, rpsB);
-
-    int dEsq = -1, dFte = -1, dDir = -1;
-    readLasers(dEsq, dFte, dDir);
-
-    updatePower();
-    if (bateriaCritica()) stopMotors(); // Protege a LiPo contra descarga profunda
-    updateTelemetryBattery(obter_tensao_bateria(), obter_corrente_mA(), obter_bateria_pct());
-
-    float gx = 0.0f, gy = 0.0f, gz = 0.0f;
-    getGyroRates(gx, gy, gz);
-
-    // Alimenta o subsistema de telemetria
-    updateTelemetryData(
-        rpsA, rpsB,
-        getYawAngle(), getYawRate(), gx, gy, gz,
-        dEsq, dFte, dDir
-    );
-
-    // Telemetria no Serial para depuração local
-    Serial.printf("[MOTORES]     A: %5.2f RPS | B: %5.2f RPS\n", rpsA, rpsB);
-    Serial.printf("[IMU]         Yaw: %6.1f deg | Taxa: %5.2f deg/s\n", getYawAngle(), getYawRate());
-    Serial.printf("[LASER]       Esq: %4d mm | Frente: %4d mm | Dir: %4d mm\n", dEsq, dFte, dDir);
-    Serial.printf("[ENERGIA]     %5.2f V | %7.1f mA | %7.1f mW | %5.1f %%\n", obter_tensao_bateria(), obter_corrente_mA(), obter_potencia_mW(), obter_bateria_pct());
-    Serial.printf("[TELEMETRIA]  RTT: %3u ms | Enviados: %4u | Falhas: %2u | Conectado: %s\n",
-                  getTelemetryLatency(), getTelemetryPacketsSent(), getTelemetryPacketsLost(),
-                  isTelemetryConnected() ? "SIM" : "NAO");
-    Serial.println("--------------------------------------------------");
-  }
+    atualizarIMU();
+    atualizarEncoders();
+    if (!testeMotorAtivo()) atualizarLasers();
+    else if (frenteEmMonitoramento()) atualizarLaserFrontal();
+    updateBattery();
+    loopTelemetry();   // deadlines de PWM e watchdog não bloqueantes
+    atualizarSnapshotRemoto(); // copia dados; HTTP roda em outra task
+    server.handleClient();
+    handleOTA();
+    while (Serial.available()) {
+        char c = static_cast<char>(Serial.read());
+        if (c == 's' || c == 'S') pararTesteDeEmergencia("parado_por_usb");
+    }
 }

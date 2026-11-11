@@ -1,160 +1,160 @@
-#include <Arduino.h>
-#include "config.h"
 #include "motors.h"
-#include "imu.h"
-#include "power.h"
+#include "config.h"
+#include <esp_arduino_version.h>
 
-static volatile long countA = 0;
-static volatile long countB = 0;
+// NOVA ESTRUTURA: canal A -> motor ESQUERDO (AO1/AO2);
+//                 canal B -> motor DIREITO (BO1/BO2).
+// As saidas AO1/AO2/BO1/BO2 NAO sao GPIOs da ESP32.
+// Frente para cada motor e configuravel por ESQ_FRENTE_IN1_ALTO
+// e DIR_FRENTE_IN1_ALTO; confirmar fisicamente com as rodas suspensas.
 
-static void IRAM_ATTR isrA() {
-  if (digitalRead(ENC_A_C2) == HIGH) countA++;
-  else countA--;
+static bool pwmConfigurado = false;
+static bool standbyHabilitado = false;
+
+#if ESP_ARDUINO_VERSION_MAJOR < 3
+constexpr uint8_t CANAL_A_LEDC = 0;
+constexpr uint8_t CANAL_B_LEDC = 1;
+#endif
+
+static void pwmCanalA(uint8_t duty) {
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+    ledcWrite(PIN_PWMA, duty);
+#else
+    ledcWrite(CANAL_A_LEDC, duty);
+#endif
 }
 
-static void IRAM_ATTR isrB() {
-  if (digitalRead(ENC_B_C2) == HIGH) countB++;
-  else countB--;
+static void pwmCanalB(uint8_t duty) {
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+    ledcWrite(PIN_PWMB, duty);
+#else
+    ledcWrite(CANAL_B_LEDC, duty);
+#endif
 }
 
-void initMotors() {
-  pinMode(PIN_STBY, OUTPUT);
-  pinMode(PIN_AIN1, OUTPUT);
-  pinMode(PIN_AIN2, OUTPUT);
-  pinMode(PIN_BIN1, OUTPUT);
-  pinMode(PIN_BIN2, OUTPUT);
+void setupMotors() {
+    pinMode(PIN_STBY, OUTPUT);
+    digitalWrite(PIN_STBY, LOW);
+    standbyHabilitado = false;
 
-  // API do core 3 (plataforma pioarduino no platformio.ini). No core 2 seria ledcSetup + ledcAttachPin
-  ledcAttach(PIN_PWMA, 10000, 8);
-  ledcAttach(PIN_PWMB, 10000, 8);
-  digitalWrite(PIN_STBY, HIGH);
+    pinMode(PIN_AIN1, OUTPUT);
+    pinMode(PIN_AIN2, OUTPUT);
+    pinMode(PIN_BIN1, OUTPUT);
+    pinMode(PIN_BIN2, OUTPUT);
 
-  pinMode(ENC_A_C1, INPUT_PULLUP);
-  pinMode(ENC_A_C2, INPUT_PULLUP);
-  pinMode(ENC_B_C1, INPUT_PULLUP);
-  pinMode(ENC_B_C2, INPUT_PULLUP);
-
-  attachInterrupt(digitalPinToInterrupt(ENC_A_C1), isrA, RISING);
-  attachInterrupt(digitalPinToInterrupt(ENC_B_C1), isrB, RISING);
-}
-
-void stopMotors() {
-  ledcWrite(PIN_PWMA, 0);
-  ledcWrite(PIN_PWMB, 0);
-}
-
-void setMotorSpeed(int pwmA, int pwmB) {
-  // Motor A
-  if (pwmA >= 0) {
-    digitalWrite(PIN_AIN1, HIGH);
-    digitalWrite(PIN_AIN2, LOW);
-  } else {
     digitalWrite(PIN_AIN1, LOW);
-    digitalWrite(PIN_AIN2, HIGH);
-  }
-  ledcWrite(PIN_PWMA, constrain(abs(pwmA), 0, 255));
-
-  // Motor B
-  if (pwmB >= 0) {
-    digitalWrite(PIN_BIN1, HIGH);
-    digitalWrite(PIN_BIN2, LOW);
-  } else {
+    digitalWrite(PIN_AIN2, LOW);
     digitalWrite(PIN_BIN1, LOW);
-    digitalWrite(PIN_BIN2, HIGH);
-  }
-  ledcWrite(PIN_PWMB, constrain(abs(pwmB), 0, 255));
-}
+    digitalWrite(PIN_BIN2, LOW);
 
-void setTurnEffort(int esforco) {
-  esforco = constrain(esforco, -255, 255);
-  int pwm = abs(esforco);
-  if (pwm > 0 && pwm < 45) pwm = 45; // Vence atrito estático
-
-  if (esforco > 0) {
-    // Giro anti-horário (A recua, B avança)
-    setMotorSpeed(-pwm, pwm);
-  } else if (esforco < 0) {
-    // Giro horário (A avança, B recua)
-    setMotorSpeed(pwm, -pwm);
-  } else {
-    stopMotors();
-  }
-}
-
-void getEncoderSpeeds(float dt, float &rpsA, float &rpsB) {
-  if (dt <= 0.0f) return;
-  noInterrupts();
-  long pA = countA;
-  long pB = countB;
-  countA = 0;
-  countB = 0;
-  interrupts();
-
-  rpsA = (pA / PULSOS_POR_VOLTA) / dt;
-  rpsB = (pB / PULSOS_POR_VOLTA) / dt;
-}
-
-void girar90Graus(bool paraDireita) {
-    // 1. Zera acumuladores de pulsos existentes no ficheiro
-    countA = 0;
-    countB = 0;
-
-    const float targetTicks = PULSOS_90_GRAUS;
-    const int pwmBase = 90;      // Potência suficiente para vencer o atrito estático
-    const int pwmMin = 45;       // Limite inferior para não travar o motor
-    const float kP = 0.4f;       // Ganho proporcional para desaceleração suave
-
-    bool concluido = false;
-    unsigned long timeout = millis() + 2000; // Timeout de segurança (2 segundos)
-    unsigned long ultimaLeitura = millis();
-
-    while (!concluido && millis() < timeout) {
-        // O giro bloqueia o loop principal, então a IMU e a bateria são lidas aqui
-        unsigned long agora = millis();
-        updateIMU((agora - ultimaLeitura) / 1000.0f);
-        ultimaLeitura = agora;
-
-        updatePower();
-        if (bateriaCritica()) break;
-
-        // Média dos pulsos absolutos percorridos pelas rodas
-        long pulsoEsq = abs(countA);
-        long pulsoDir = abs(countB);
-        float mediaPulsos = (pulsoEsq + pulsoDir) / 2.0f;
-
-        float erro = targetTicks - mediaPulsos;
-
-        if (erro <= 2.0f) { // Tolerância de paragem (2 pulsos)
-            concluido = true;
-            break;
-        }
-
-        // Calcula velocidade decrescente suave
-        int esforco = (int)(erro * kP);
-        if (esforco > pwmBase) esforco = pwmBase;
-        if (esforco < pwmMin)  esforco = pwmMin;
-
-        // Sentido de rotação no próprio eixo:
-        if (paraDireita) {
-            setMotorSpeed(esforco, -esforco);
-        } else {
-            setMotorSpeed(-esforco, esforco);
-        }
-
-        delay(5); // Ciclo de amostragem (200 Hz)
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+    bool okA = ledcAttach(PIN_PWMA, PWM_FREQUENCIA_HZ, PWM_RESOLUCAO_BITS);
+    bool okB = ledcAttach(PIN_PWMB, PWM_FREQUENCIA_HZ, PWM_RESOLUCAO_BITS);
+    pwmConfigurado = okA && okB;
+    if (!pwmConfigurado) {
+        Serial.println("ERRO: falha ao configurar PWM LEDC.");
     }
+#else
+    double freqA = ledcSetup(CANAL_A_LEDC, PWM_FREQUENCIA_HZ, PWM_RESOLUCAO_BITS);
+    double freqB = ledcSetup(CANAL_B_LEDC, PWM_FREQUENCIA_HZ, PWM_RESOLUCAO_BITS);
+    pwmConfigurado = freqA > 0 && freqB > 0;
+    ledcAttachPin(PIN_PWMA, CANAL_A_LEDC);
+    ledcAttachPin(PIN_PWMB, CANAL_B_LEDC);
+#endif
 
-    // Trava ativa das rodas para travar a inércia
-    stopMotors();
-    unsigned long inicioFreio = millis();
-    while (millis() - inicioFreio < 100) { // Continua integrando a IMU enquanto o robô para
-        unsigned long agora = millis();
-        updateIMU((agora - ultimaLeitura) / 1000.0f);
-        ultimaLeitura = agora;
-        delay(5);
+    pwmCanalA(0);
+    pwmCanalB(0);
+    // Mantem ponte H DESABILITADA ate um comando explicito de movimento.
+    pararMotores();
+}
+
+bool motorHardwareReady() { return pwmConfigurado; }
+bool ponteHabilitada() { return standbyHabilitado; }
+
+// Para iniciar PWM/RPM/posicao/giro: apenas habilita o driver com sinais ZERO.
+// O controlador decide o PWM no loop seguinte. Jamais usar duty=255 para parar.
+void prepararMotoresControle() {
+    if (!pwmConfigurado) return;
+    digitalWrite(PIN_STBY, LOW);
+    standbyHabilitado = false;
+    pwmCanalA(0);
+    pwmCanalB(0);
+    digitalWrite(PIN_AIN1, LOW);
+    digitalWrite(PIN_AIN2, LOW);
+    digitalWrite(PIN_BIN1, LOW);
+    digitalWrite(PIN_BIN2, LOW);
+    digitalWrite(PIN_STBY, HIGH);
+    standbyHabilitado = true;
+}
+
+// V4.4.1 - DIAGNOSTICO DE PARADA SEGURA
+// Esta variante NAO usa PWM=255 ao "frear".
+// Para evitar movimento indevido em uma placa ainda nao validada,
+// a parada global zera os PWMs e coloca STBY em LOW.
+// ATENCAO: isso e modo COAST/STANDBY, NAO short-brake ativo!
+
+// Motor esquerdo LOGICO -> canal A (AO1/AO2).
+void setMotorEsq(int pwm, bool frente) {
+    if (!pwmConfigurado) return;
+    pwm = constrain(pwm, 0, PWM_LIMITE_TESTE);
+    pwmCanalA(0);
+    if (pwm == 0) {
+        digitalWrite(PIN_AIN1, LOW);
+        digitalWrite(PIN_AIN2, LOW);
+        return; // nao reabilita o driver por um comando 0
     }
+    const bool in1 = frente ? ESQ_FRENTE_IN1_ALTO : !ESQ_FRENTE_IN1_ALTO;
+    digitalWrite(PIN_AIN1, in1 ? HIGH : LOW);
+    digitalWrite(PIN_AIN2, in1 ? LOW : HIGH);
+    pwmCanalA(static_cast<uint8_t>(pwm));
+    digitalWrite(PIN_STBY, HIGH); // so habilita apos configurar as entradas
+    standbyHabilitado = true;
+}
 
-    float anguloMedidoIMU = getYawAngle();
-    Serial.printf("[GIRO 90] Concluido! Pulsos A: %ld | B: %ld | Angulo IMU: %.2f deg\n", 
-                  countA, countB, anguloMedidoIMU);
+// Motor direito LOGICO -> canal B (BO1/BO2).
+void setMotorDir(int pwm, bool frente) {
+    if (!pwmConfigurado) return;
+    pwm = constrain(pwm, 0, PWM_LIMITE_TESTE);
+    pwmCanalB(0);
+    if (pwm == 0) {
+        digitalWrite(PIN_BIN1, LOW);
+        digitalWrite(PIN_BIN2, LOW);
+        return;
+    }
+    const bool in1 = frente ? DIR_FRENTE_IN1_ALTO : !DIR_FRENTE_IN1_ALTO;
+    digitalWrite(PIN_BIN1, in1 ? HIGH : LOW);
+    digitalWrite(PIN_BIN2, in1 ? LOW : HIGH);
+    pwmCanalB(static_cast<uint8_t>(pwm));
+    digitalWrite(PIN_STBY, HIGH);
+    standbyHabilitado = true;
+}
+
+void pararMotores() {
+    // Prioridade: inibir fisicamente ambos canais antes de qualquer outra escrita.
+    digitalWrite(PIN_STBY, LOW);
+    standbyHabilitado = false;
+    pwmCanalA(0);
+    pwmCanalB(0);
+    digitalWrite(PIN_AIN1, LOW);
+    digitalWrite(PIN_AIN2, LOW);
+    digitalWrite(PIN_BIN1, LOW);
+    digitalWrite(PIN_BIN2, LOW);
+}
+
+// Nas paradas individuais do controle PI, nao impor PWM maximo.
+// O outro motor pode continuar girando; STBY e compartilhado.
+void frearMotorEsq() {
+    pwmCanalA(0);
+    digitalWrite(PIN_AIN1, LOW);
+    digitalWrite(PIN_AIN2, LOW);
+}
+
+void frearMotorDir() {
+    pwmCanalB(0);
+    digitalWrite(PIN_BIN1, LOW);
+    digitalWrite(PIN_BIN2, LOW);
+}
+
+void frearMotoresTudo() {
+    pararMotores(); // modo seguro STBY, sem freio eletrico ativo
 }

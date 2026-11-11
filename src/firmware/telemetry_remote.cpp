@@ -1,0 +1,113 @@
+#include "telemetry_remote.h"
+#include "config.h"
+#include "encoders.h"
+#include "motion_control.h"
+#include "battery.h"
+#include "imu.h"
+#include "lasers.h"
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <math.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
+namespace {
+struct Snapshot {
+ float tensao=NAN,corrente=NAN, velCmS=0,yaw=NAN;
+ int rpmMedio=0,rpmE=0,rpmD=0;
+ int esq=-1,frente=-1,dir=-1;
+ uint32_t ms=0, enviados=0, falhos=0, latencia=0;
+ int http=0;
+ bool ativo=false;
+};
+portMUX_TYPE mux=portMUX_INITIALIZER_UNLOCKED;
+Snapshot dados;
+TaskHandle_t tarefa=nullptr;
+uint32_t ultimoSnapshot=0;
+const char* enderecoServidor() {return TELEMETRIA_HOST;}
+float percentualLipoAproximado(float tensaoPack,uint8_t celulas){
+    // Estimativa grosseira por tensao sem carga, NAO leitura precisa do SOC.
+    const float V[]={3.30f,3.61f,3.69f,3.73f,3.77f,3.80f,3.84f,3.87f,3.95f,4.02f,4.11f,4.20f};
+    const float P[]={0,5,10,20,30,40,50,60,70,80,90,100};
+    if(celulas<1 || celulas>6 || !isfinite(tensaoPack))return NAN;
+    const float v=tensaoPack/celulas;
+    if(v<=V[0])return 0;
+    for(int i=1;i<12;++i){
+      if(v<V[i])return P[i-1]+(P[i]-P[i-1])*(v-V[i-1])/(V[i]-V[i-1]);
+    }
+    return 100;
+}
+void tarefaRede(void*) {
+    const String url=String("http://")+enderecoServidor()+":"+String(TELEMETRIA_PORTA)+TELEMETRIA_CAMINHO;
+    WiFiClient client;
+    while(true){
+        vTaskDelay(pdMS_TO_TICKS(TELEMETRIA_PERIODO_MS));
+        const bool disponivel=(WiFi.status()==WL_CONNECTED || WiFi.softAPgetStationNum()>0);
+        if(!disponivel) continue;
+        Snapshot copia;
+        portENTER_CRITICAL(&mux);copia=dados;portEXIT_CRITICAL(&mux);
+        const float pct=percentualLipoAproximado(copia.tensao,TELEMETRIA_BATERIA_CELULAS_LIPO);
+        if(!isfinite(pct)) continue; // evita informar carga 0% ficticia ao site
+        // Campos planos exigidos pelo backend FastAPI. Nao reportar pose inexistente.
+        // Estimativa grosseira por tensao, nao SOC exato; validar com bateria real.
+        String corpo;corpo.reserve(600);
+        corpo="{\"bateria\":"+String(pct,1)+",\"velocidade\":"+String(fabsf(copia.velCmS),2)+
+          ",\"rpm_motor\":"+String(copia.rpmMedio)+",\"connected\":true";
+        corpo+=",\"tempo_relativo_ms\":"+String(copia.ms);
+        corpo+=",\"energia\":{\"tensao_v\":"+(isfinite(copia.tensao)?String(copia.tensao,3):String("null"))+
+         ",\"consumo_ma\":"+(isfinite(copia.corrente)?String(copia.corrente,1):String("null"))+"}";
+        corpo+=",\"motores\":{\"rpm_esq\":"+String(copia.rpmE)+",\"rpm_dir\":"+String(copia.rpmD)+"}";
+        corpo+=",\"imu\":{\"yaw_deg\":"+(isfinite(copia.yaw)?String(copia.yaw,2):String("null"))+"}";
+        corpo+=",\"sensores_distancia_mm\":{\"esq\":"+String(copia.esq)+",\"frente\":"+String(copia.frente)+",\"dir\":"+String(copia.dir)+"}";
+        corpo+=",\"posicao_estimada\":null,\"mapa_disponivel\":false,\"status_missao\":\"calibracao\"}";
+        const uint32_t t=millis();
+        HTTPClient http;
+        http.setTimeout(TELEMETRIA_TIMEOUT_MS);
+        int codigo=-1;
+        if(http.begin(client,url)) {
+           http.addHeader("Content-Type","application/json");
+           codigo=http.POST((uint8_t*)corpo.c_str(),corpo.length());
+           http.end();
+        }
+        const uint32_t duracao=millis()-t;
+        portENTER_CRITICAL(&mux);
+        dados.http=codigo;dados.latencia=duracao;
+        if(codigo>=200 && codigo<300)++dados.enviados;
+        else ++dados.falhos;
+        portEXIT_CRITICAL(&mux);
+    }
+}
+}
+void iniciarTelemetriaRemota(){
+  if(!TELEMETRIA_REMOTA_HABILITADA)return;
+  const BaseType_t ok=xTaskCreatePinnedToCore(tarefaRede,"telemetria_http",6144,nullptr,1,&tarefa,0);
+  if(ok!=pdPASS)Serial.println("[TELEMETRIA] Erro ao iniciar task HTTP");
+}
+void atualizarSnapshotRemoto(){
+  if(!TELEMETRIA_REMOTA_HABILITADA || millis()-ultimoSnapshot<100)return;
+  ultimoSnapshot=millis();
+  ControleInfo c=lerControleMovimento();
+  DadosIMU im=lerIMU();
+  LeituraLaser l=lerLaser(LASER_U2),f=lerLaser(LASER_U3),r=lerLaser(LASER_U4);
+  // Preferir velocidade medida. CPRs validos pertencem ao painel de calibração;
+  // enquanto nao estiverem disponiveis, nao estimar velocidade por pulsos.
+  float rpmE=(c.tipo==TipoControle::INATIVO)?0.0f:c.realE;
+  float rpmD=(c.tipo==TipoControle::INATIVO)?0.0f:c.realD;
+  float vel=(rpmE+rpmD)*3.14159265358979323846f*DIAMETRO_RODA_MM/600.0f;
+  portENTER_CRITICAL(&mux);
+  dados.tensao=getVoltage();dados.corrente=getCurrent();
+  dados.velCmS=vel;dados.rpmE=(int)lroundf(rpmE);dados.rpmD=(int)lroundf(rpmD);
+  dados.rpmMedio=(abs(dados.rpmE)+abs(dados.rpmD))/2;
+  dados.yaw=im.confiavel?im.yawDireitaGraus:NAN;
+  dados.esq=l.brutoMm;dados.frente=f.brutoMm;dados.dir=r.brutoMm;
+  dados.ms=millis();dados.ativo=true;
+  portEXIT_CRITICAL(&mux);
+}
+String remotoDiagnosticoJson(){
+ Snapshot s;portENTER_CRITICAL(&mux);s=dados;portEXIT_CRITICAL(&mux);
+ return String("{\"habilitada\":")+(TELEMETRIA_REMOTA_HABILITADA?"true":"false")+
+  ",\"celulasConfiguradas\":"+String(TELEMETRIA_BATERIA_CELULAS_LIPO)+
+  ",\"taskCriada\":"+(tarefa?"true":"false")+
+  ",\"enviados\":"+String(s.enviados)+",\"falhos\":"+String(s.falhos)+
+  ",\"ultimoHttp\":"+String(s.http)+",\"latenciaMs\":"+String(s.latencia)+"}";
+}
