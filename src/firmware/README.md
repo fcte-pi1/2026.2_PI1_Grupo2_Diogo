@@ -24,7 +24,7 @@ Firmware do ESP32 DevKit, feito com PlatformIO e o framework Arduino. Este docum
 > [!IMPORTANT]
 > **Estado atual (integração da V4.7):** o firmware compilado hoje é a versão 4.7 de bancada, descrita em [README_V47.md](README_V47.md), com o roteiro de validação em [VALIDACAO_INTEGRACAO.md](VALIDACAO_INTEGRACAO.md). Ela ainda não foi testada na placa.
 >
-> As seções abaixo descrevem o firmware anterior. Os módulos `power.cpp`, `telemetry.cpp` e `i2c_check.cpp` continuam na pasta, mas estão fora da compilação (`build_src_filter` no `platformio.ini`), porque a V4.7 traz os seus equivalentes (`battery.cpp`, `telemetry_remote.cpp` e `i2c_diagnostics.cpp`). A proteção de bateria do `power_logic.h` ainda precisa ser religada.
+> As seções abaixo descrevem o firmware anterior, exceto a de energia, que já vale para a V4.7. Os módulos `telemetry.cpp` e `i2c_check.cpp` continuam na pasta, mas estão fora da compilação (`build_src_filter` no `platformio.ini`), porque a V4.7 traz os seus equivalentes (`telemetry_remote.cpp` e `i2c_diagnostics.cpp`).
 
 ## Como compilar e testar
 
@@ -61,7 +61,7 @@ As regras de cada módulo que não dependem do hardware (contas, filtros e máqu
 
 ## Energia: INA219 e proteção da bateria
 
-Issue #121 (parte do INA219), PR #123.
+Issue #121 (parte do INA219), PR #123. Religada no firmware integrado (V4.7) na issue #150.
 
 ### O que faz
 
@@ -70,7 +70,7 @@ O INA219 (endereço 0x40) fica na entrada da bateria LiPo 2S e mede a tensão e 
 - calcula a **tensão da bateria** como tensão do barramento + queda no shunt, que é a tensão nos terminais da bateria;
 - suaviza tensão, corrente e potência com uma **média móvel exponencial** (α = 0,2);
 - estima o **percentual de carga** por uma tabela de tensão por célula (3,30 V = 0% a 4,20 V = 100%), com interpolação entre os pontos;
-- **corta os motores** se a tensão ficar abaixo de 6,6 V por 2 s seguidos, para proteger a LiPo contra descarga profunda;
+- **corta os motores** se a tensão ficar abaixo de 6,6 V por 2 s seguidos, para proteger a LiPo contra descarga profunda. O corte vale em qualquer teste com motor e bloqueia o início de novos testes;
 - avisa **bateria baixa** abaixo de 7,0 V e **sobrecorrente** acima de 2 A por 500 ms.
 
 O corte fica **travado**: depois de acionado, não volta mesmo que a tensão suba quando os motores param. A exigência de 2 s evita cortes falsos pelas quedas rápidas de tensão na partida dos motores.
@@ -81,16 +81,28 @@ No `setup()`, a função `verificarI2C()` confere se os cinco dispositivos do ba
 
 | Arquivo | Conteúdo |
 |---|---|
-| `power.h` / `power.cpp` | Leitura do INA219, filtro e funções `obter_tensao_bateria()`, `obter_corrente_mA()`, `obter_potencia_mW()`, `obter_bateria_pct()`, `bateriaCritica()` e `sobrecorrente()` |
-| `power_logic.h` | Percentual de carga e máquina de estados da bateria (`MonitorBateria`), sem Arduino |
-| `i2c_check.h` / `i2c_check.cpp` | Verificação dos dispositivos I2C no boot |
+| `battery.h` / `battery.cpp` | Leitura do INA219, filtro e funções `getVoltage()`, `getCurrent()`, `getPowerMilliwatt()`, `getBatteryPercent()`, `bateriaCritica()`, `bateriaBaixa()` e `sobrecorrente()` |
+| `power_logic.h` | Percentual de carga, máquina de estados da bateria (`MonitorBateria`) e regras dos limites de ensaio, sem Arduino |
+| `i2c_check.h` / `i2c_check.cpp` | Verificação dos dispositivos I2C no boot (firmware anterior, fora da compilação) |
 | `config.h` | Endereço do INA219 e limites: `BAT_V_ALERTA`, `BAT_V_CORTE`, `BAT_TEMPO_CONFIRMACAO_MS`, `I_SOBRECORRENTE_MA`, `I_SOBRECORRENTE_TEMPO_MS` |
 
-No `main.cpp`, o loop chama `updatePower()` e, se `bateriaCritica()` for verdadeiro, `stopMotors()`. A serial mostra a linha `[ENERGIA]` com tensão, corrente, potência e percentual, e os mesmos valores vão para a telemetria.
+No `main.cpp`, o loop chama `updateBattery()`. O `web_telemetry.cpp` para o teste em andamento quando `bateriaCritica()` fica verdadeiro e recusa novos testes com motor. A serial avisa com a linha `[ENERGIA]` quando o estado muda. O `/api/status` traz `bateriaEstado` (`NORMAL`, `BAIXA`, `CRITICA` ou `SEM_LEITURA`), `bateriaPct`, `sobrecorrente` e os limites em uso, e o painel mostra o estado no topo da página.
+
+### Limites de ensaio
+
+Para testar o corte e o aviso de sobrecorrente sem descarregar a bateria, os limites podem ser trocados com o robô parado:
+
+| Ação | Comando (conectado na rede do robô) |
+|---|---|
+| Subir o corte para 8,0 V | `curl -X POST -d "corte=8.0" http://192.168.4.1/api/bateria/limites` |
+| Baixar o aviso de sobrecorrente para 100 mA | `curl -X POST -d "sobrecorrente=100" http://192.168.4.1/api/bateria/limites` |
+| Voltar aos limites padrão | `curl -X POST http://192.168.4.1/api/bateria/limites` |
+
+Os limites de ensaio só deixam a proteção mais sensível: o corte aceita de 6,6 a 9,0 V e a sobrecorrente, de 50 a 2000 mA. Trocar os limites libera o corte travado, mas só se a tensão em repouso estiver em 7,0 V ou mais. Abaixo disso a bateria está descarregada de verdade, e o corte só sai depois da recarga e de reiniciar o robô.
 
 ### Testes
 
-Nove testes no computador (`test/test_power_logic`): percentual nos limites, interpolação e monotonicidade da tabela; queda curta que não corta; subtensão sustentada que corta; corte travado; alerta antes do corte; sobrecorrente só depois do tempo limite; e corte funcionando quando o `millis()` estoura.
+Doze testes no computador (`test/test_power_logic`): percentual nos limites, interpolação e monotonicidade da tabela; queda curta que não corta; subtensão sustentada que corta; corte travado; alerta antes do corte; sobrecorrente só depois do tempo limite; corte funcionando quando o `millis()` estoura; limites de ensaio que só deixam a proteção mais sensível; e corte real que não é liberado com a bateria descarregada.
 
 ### Problemas e soluções
 
@@ -105,7 +117,7 @@ Nove testes no computador (`test/test_power_logic`): percentual nos limites, int
 ### Estado
 
 - **Implementado e testes passando.**
-- **Falta a bancada teste de bancada**
+- **Falta a bancada:** repetir na placa, com o firmware integrado, os testes 2.7, 2.8 e 2.9 do docs/7.2.
 
 ## Giroscópio: calibração de bias e zona morta
 
