@@ -17,6 +17,15 @@ bool escrever(uint8_t reg, uint8_t valor) {
     Wire.write(reg); Wire.write(valor);
     return Wire.endTransmission() == 0;
 }
+// Zera a coleta do bias; usada na primeira tentativa e nas repeticoes.
+void iniciarColetaBias() {
+    d.calibrada = false; d.confiavel = false;
+    d.calibrando = true; d.amostrasBias = 0;
+    d.yawDireitaGraus = 0; d.taxaDireitaDps = 0;
+    estatisticaGiro = EstatisticaGiro{};
+    falhasSeguidas = 0;
+    ultimoUs = micros();
+}
 bool lerGiroZ(int16_t &valor) {
     Wire.beginTransmission(endereco);
     Wire.write(0x47);  // GYRO_ZOUT_H
@@ -96,12 +105,8 @@ void iniciarIMU() {
 }
 bool iniciarCalibracaoIMU() {
     if (!d.presente) return false;
-    d.calibrada = false; d.confiavel = false;
-    d.calibrando = true; d.amostrasBias = 0;
-    d.yawDireitaGraus = 0; d.taxaDireitaDps = 0;
-    estatisticaGiro = EstatisticaGiro{};
-    falhasSeguidas = 0;
-    ultimoUs = micros();
+    d.tentativaCalibracao = 1;
+    iniciarColetaBias();
     return true;
 }
 void atualizarIMU() {
@@ -111,6 +116,8 @@ void atualizarIMU() {
     if (intervalo < IMU_INTERVALO_US) return;
     ultimoUs = agora;
     // Pulando intervalos longos: nao integrar uma amostra antiga como nova.
+    // O angulo perde a continuidade, mas o bias continua valido: o yaw volta
+    // a valer no proximo zerarYawIMU().
     if (intervalo > 100000UL) {
         d.confiavel = false;
     }
@@ -133,24 +140,40 @@ void atualizarIMU() {
             // cancelamento numerico de soma(x^2) - soma(x)^2.
             d.biasDps = estatisticaGiro.media();
             d.ruidoDps = estatisticaGiro.desvio();
-            d.calibrando = false;
-            d.calibrada = d.ruidoDps <= IMU_RUIDO_MAX_DPS;
-            d.confiavel = d.calibrada;
-            if (!d.calibrada) Serial.println("IMU: calibracao recusada, vibracao/movimento detectado.");
-            else Serial.printf("IMU: bias=%.3f dps; ruido=%.3f dps.\n", d.biasDps, d.ruidoDps);
+            if (calibracaoValida(estatisticaGiro, IMU_RUIDO_MAX_DPS, IMU_AMOSTRAS_BIAS)) {
+                d.calibrando = false;
+                d.calibrada = true;
+                d.confiavel = true;
+                Serial.printf("IMU: bias=%.3f dps; ruido=%.3f dps (tentativa %u).\n",
+                              d.biasDps, d.ruidoDps, d.tentativaCalibracao);
+            } else if (d.tentativaCalibracao < IMU_TENTATIVAS_CALIBRACAO) {
+                // Robo mexido durante a coleta: o bias sairia errado. Repete sozinha.
+                Serial.printf("IMU: movimento na calibracao (ruido=%.3f dps), repetindo (%u/%u).\n",
+                              d.ruidoDps, d.tentativaCalibracao + 1, IMU_TENTATIVAS_CALIBRACAO);
+                ++d.tentativaCalibracao;
+                iniciarColetaBias();
+            } else {
+                d.calibrando = false;
+                Serial.printf("IMU: calibracao recusada apos %u tentativas; calibre pelo painel com o robo parado.\n",
+                              IMU_TENTATIVAS_CALIBRACAO);
+            }
         }
         return;
     }
     d.taxaDireitaDps = IMU_SINAL_DIREITA * (taxaRaw - d.biasDps);
     if (d.calibrada && d.confiavel && intervalo <= 100000UL) {
-        d.yawDireitaGraus += d.taxaDireitaDps * (intervalo * 1e-6f);
+        // Zona morta: o ruido com o robo parado nao se acumula no angulo.
+        d.yawDireitaGraus += aplicarZonaMorta(d.taxaDireitaDps, IMU_ZONA_MORTA_DPS) * (intervalo * 1e-6f);
     }
 }
 bool zerarYawIMU() {
-    if (!d.presente || !d.calibrada || !d.confiavel ||
-        millis() - d.ultimaLeituraMs > IMU_MAX_IDADE_MS ||
-        fabsf(d.taxaDireitaDps) > IMU_TAXA_PARADO_MAX_DPS) return false;
+    if (!d.presente || d.calibrando || falhasSeguidas > 0 ||
+        !yawPodeSerZerado(d.calibrada, millis() - d.ultimaLeituraMs, IMU_MAX_IDADE_MS,
+                          d.taxaDireitaDps, IMU_TAXA_PARADO_MAX_DPS)) return false;
     d.yawDireitaGraus = 0;
+    // Nova referencia de angulo: recupera a IMU depois de um atraso do loop
+    // ou de falhas de I2C, sem precisar recalibrar o bias.
+    d.confiavel = true;
     ultimoUs = micros();
     return true;
 }

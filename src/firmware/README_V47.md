@@ -23,12 +23,17 @@ Conecte ao AP existente `Xaropinho-WiFi`, abra `http://192.168.4.1`. Abas: Encod
 - `GET /api/maze`: mapa RAM 16x16, inicialmente paredes desconhecidas e pose `null`.
 - `GET /api/telemetria/remota`: estatisticas HTTP.
 - `POST /api/reto/start`: teste curto, `distancia`, `rpm`, `duracao`, `sync` e opcional `frontal=1`, `limiar`.
+- `POST /api/giro/start`: giro de 90 graus; `tipo`, `lado`, `rpm`, `duracao`, `syncGiro` e opcional `corrigir=1`.
 - `POST /api/pwm/stop`: parada segura.
 - `POST /api/bateria/limites`: limites temporarios de corte e sobrecorrente para ensaio, `corte` (V) e `sobrecorrente` (mA); sem parametros volta ao padrao.
 
 ## Telemetria externa
 
 Ligada por padrao desde a issue #154 (`TELEMETRIA_REMOTA_HABILITADA` em `config.h`). So ha tentativa de envio com algum aparelho conectado na rede do robo; o destino e `TELEMETRIA_HOST`. O percentual de bateria usa `BAT_CELULAS` (2S). Sem leitura de tensao valida, o POST nao sera enviado. O computador roda o FastAPI em `0.0.0.0:8000` e pode se conectar ao AP da ESP32. Em cada POST `/api/telemetry` sao enviados campos planos aceitos pelo `EspTelemetryInput` da branch da equipe: `bateria`, `velocidade`, `rpm_motor`, `connected`. A `velocidade` (cm/s) vem dos encoders e exige o CPR salvo no painel. Metadados extras sao diagnosticos, podem nao ser persistidos pelo backend; entre eles vao `velocidade_media` (cm/s) e `distancia_mm`, que o backend ainda nao le. O percentual, quando habilitado, e somente uma **estimativa por tensao de LiPo** e nao SOC preciso; valide a curva com o pacote real antes de usar no site. `posicao_estimada:null` e `mapa_disponivel:false` enquanto algoritmo de navegacao nao existir.
+
+## Giro com correcao pelo giroscopio
+
+Desde a issue #153, a calibracao da IMU usa 800 amostras, zona morta e ate 3 tentativas, e o yaw volta a valer ao ser zerado depois de um atraso do loop. O giro de 90 graus aceita `corrigir=1` (opcao "Correcao pelo giroscopio" no painel, desligada por padrao): depois de parar, o firmware mede o erro pelo yaw e faz ate 2 giros curtos pela IMU para ficar a ate 1 grau do alvo. Os detalhes estao no README principal do firmware, na secao do giroscopio.
 
 ## Offset dos lasers
 

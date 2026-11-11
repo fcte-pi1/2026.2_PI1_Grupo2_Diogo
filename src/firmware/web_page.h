@@ -67,9 +67,9 @@ main{max-width:1090px;margin:auto}h1{font-size:clamp(1.35rem,3vw,2.3rem);margin:
 <div class="metrics"><div><span class="label">IMU MPU-6050 / 6515</span><span class="metric" style="font-size:1rem" id="imuStatus">—</span></div><div><span class="label">Yaw relativo (direita positivo)</span><span class="metric" id="imuYaw">—</span>°</div><div><span class="label">Velocidade angular</span><span class="metric" id="imuTaxa">—</span> °/s</div><div><span class="label">Descompasso rodas</span><span class="metric" id="syncErro">—</span> mm</div></div>
 <p class="notice">IMU ausente? <a href="/diagnostico-i2c" target="_blank" rel="noopener">Abrir diagnostico do barramento I2C</a> (GPIO21/22, 100 kHz, WHO_AM_I).</p>
 <p id="imuCalib" class="notice">Deixe o robô IMÓVEL ao inicializar para calibrar o bias. Teste a deriva com Yaw zerado por 10 segundos.</p>
-<div class="actions"><button class="secondary" onclick="calibrarIMU()">Calibrar MPU parado (~2 s)</button><button class="secondary" onclick="zerarIMU()">Zerar Yaw</button></div>
+<div class="actions"><button class="secondary" onclick="calibrarIMU()">Calibrar MPU parado (~4 s)</button><button class="secondary" onclick="zerarIMU()">Zerar Yaw</button></div>
 <p class="hint"><strong>V4.3:</strong> modo <b>Suave</b> evita frear uma roda sozinha durante o giro. O valor X/Y por odometria NAO detecta derrapagem.</p>
-<div class="row"><div class="field"><label>Sincronismo</label><select id="syncGiro"><option value="suave" selected>Suave (novo)</option><option value="legado">Antigo (pausa roda)</option></select></div></div>
+<div class="row"><div class="field"><label>Sincronismo</label><select id="syncGiro"><option value="suave" selected>Suave (novo)</option><option value="legado">Antigo (pausa roda)</option></select></div><div class="field"><label>Correção pelo giroscópio</label><select id="corrigirGiro"><option value="0" selected>Desligada</option><option value="1">Ligada (confere parado e corrige)</option></select></div></div>
 <div class="row"><div class="field"><label>Algoritmo</label><select id="tipoGiro"><option value="encoder">Encoders (IMU só mede)</option><option value="imu">IMU (alvo angular + sincronismo)</option></select></div><div class="field"><label>Direção do giro</label><select id="ladoGiro"><option value="direita">Direita (+90°)</option><option value="esquerda">Esquerda (−90°)</option></select></div><div class="field"><label>RPM máximo</label><input id="rpmGiro" type="number" min="20" max="60" value="35"></div><div class="field"><label>Timeout (ms)</label><input id="tempoGiro" type="number" min="1000" max="10000" value="6000"></div></div>
 <div class="actions"><button class="green" onclick="iniciarGiro()">Iniciar giro 90°</button><button class="danger" onclick="parar()">FREAR</button></div>
 <div class="output" id="saidaGiro">Nenhum giro ainda.</div>
@@ -159,12 +159,12 @@ function presetDistanciaMm(mm){
 }
 
 function iniciarRpm(){if(!confirm('Teste de RPM: valide PRIMEIRO suspenso; no chão use área livre, supervise e mantenha corte físico acessível.'))return;return post('/api/rpm/start',{rpmE:$('rpmAlvoE').value,rpmD:$('rpmAlvoD').value,duracao:$('tempoRpm').value})}
-function calibrarIMU(){if(!confirm('Robo totalmente IMOVEL por pelo menos 2,5 segundos?'))return;return post('/api/imu/calibrar')}
+function calibrarIMU(){if(!confirm('Robo totalmente IMOVEL por pelo menos 4 segundos?'))return;return post('/api/imu/calibrar')}
 function zerarIMU(){return post('/api/imu/zero')}
 function iniciarGiro(){
  const tipo=$('tipoGiro').value;
  if(!confirm(tipo==='imu' ? 'GIRO IMU: chassi DEVE estar no chão (não funciona suspenso), eixo Z vertical, yaw positivo à direita já conferido, área livre e chave física acessível. Continuar?' : 'GIRO ENCODERS: primeiro teste com RODAS SUSPENSAS; no chão só depois, em área livre e com chave física acessível. Continuar?'))return;
- return post('/api/giro/start',{tipo:tipo,lado:$('ladoGiro').value,rpm:$('rpmGiro').value,duracao:$('tempoGiro').value,syncGiro:$('syncGiro').value});
+ return post('/api/giro/start',{tipo:tipo,lado:$('ladoGiro').value,rpm:$('rpmGiro').value,duracao:$('tempoGiro').value,syncGiro:$('syncGiro').value,corrigir:$('corrigirGiro').value});
 }
 function presetReto(mm){$('retoDist').value=mm}
 function iniciarReto(){
@@ -232,12 +232,12 @@ async function atualizar(){
   $('cpsE').textContent=fmt(d.cpsE);$('cpsD').textContent=fmt(d.cpsD);
   $('rpmE').textContent=fmt(d.rpmE);$('rpmD').textContent=fmt(d.rpmD);
   $('pwmE').textContent=d.pwmE;$('pwmD').textContent=d.pwmD;
-  $('imuStatus').textContent=d.imuCalibrando?'Calibrando…':(d.imuOk?'Pronta':(d.imuPresente?'Recalibrar':'Ausente'));
+  $('imuStatus').textContent=d.imuCalibrando?('Calibrando… (tentativa '+d.imuTentativa+')'):(d.imuOk?'Pronta':(d.imuCalibrada?'Zerar Yaw':(d.imuPresente?'Recalibrar':'Ausente')));
   $('imuYaw').textContent=fmt(d.imuYaw,2);
   $('imuTaxa').textContent=fmt(d.imuTaxa,2);
   $('syncErro').textContent=fmt(d.syncErroMm,2);
   $('imuCalib').textContent='Bias Z: '+fmt(d.imuBias,3)+' °/s | Ruído parado: '+fmt(d.imuRuido,3)+' °/s | I2C falhas: '+d.imuFalhasI2C+' | amostras calibração: '+d.imuAmostrasBias+' | orientação: yaw positivo = direita (conferir manualmente).';
-  $('saidaGiro').textContent='Tipo: '+d.giroTipo+' | Estado: '+d.modo+' | motivo: '+d.motivo+'\nYaw alvo: '+fmt(d.giroAlvoYaw)+'°; Yaw relativo: '+fmt(d.giroYawRelativo,2)+'°; erro: '+fmt(d.giroErroYaw,2)+'°\nProgresso (mm) E='+fmt(d.syncDistE,2)+' D='+fmt(d.syncDistD,2)+' | Δ='+fmt(d.syncErroMm,2)+' mm | pior Δ='+fmt(d.syncErroMaxMm,2)+' mm\nYaw após freio='+fmt(d.giroYawDepoisFreio,2)+'°; erro='+fmt(d.giroErroDepoisFreio,2)+'°\nSincronismo: '+(d.syncSuave?'SUAVE':'LEGADO')+' | Odometria teórica do eixo X='+fmt(d.odomXmm,2)+' mm, Y='+fmt(d.odomYmm,2)+' mm (NÃO mede derrapagem)'+'\nCorreção RPM: '+fmt(d.syncCorrecaoRpm,2)+' | Roda pausada E='+d.syncPausaE+' D='+d.syncPausaD+'\nContagens E='+d.progressoE+' / '+d.alvoE+'; D='+d.progressoD+' / '+d.alvoD;
+  $('saidaGiro').textContent='Tipo: '+d.giroTipo+' | Estado: '+d.modo+' | motivo: '+d.motivo+'\nYaw alvo: '+fmt(d.giroAlvoYaw)+'°; Yaw relativo: '+fmt(d.giroYawRelativo,2)+'°; erro: '+fmt(d.giroErroYaw,2)+'°\nProgresso (mm) E='+fmt(d.syncDistE,2)+' D='+fmt(d.syncDistD,2)+' | Δ='+fmt(d.syncErroMm,2)+' mm | pior Δ='+fmt(d.syncErroMaxMm,2)+' mm\nYaw após freio='+fmt(d.giroYawDepoisFreio,2)+'°; erro='+fmt(d.giroErroDepoisFreio,2)+'°\nSincronismo: '+(d.syncSuave?'SUAVE':'LEGADO')+' | Odometria teórica do eixo X='+fmt(d.odomXmm,2)+' mm, Y='+fmt(d.odomYmm,2)+' mm (NÃO mede derrapagem)'+'\nCorreção RPM: '+fmt(d.syncCorrecaoRpm,2)+' | Roda pausada E='+d.syncPausaE+' D='+d.syncPausaD+'\nContagens E='+d.progressoE+' / '+d.alvoE+'; D='+d.progressoD+' / '+d.alvoD+'\nCorreção pelo giroscópio: '+(d.giroCorrecaoPedida?('fase '+d.giroFase+' | correções feitas: '+d.giroCorrecoes+' | erro antes='+fmt(d.giroErroAntesCorrecao,2)+'°; última medição='+fmt(d.giroErroMedido,2)+'°'):'desligada')+' | erro total agora='+fmt(d.giroErroTotal,2)+'°';
   historicoGiro.push({yaw:Number(d.imuYaw)||0,alvo:d.modo==='GIRO'?Number(d.giroAlvoYaw)||0:0});
   if(historicoGiro.length>limiteHistorico)historicoGiro.shift();
   desenharV3('graficoGiro',historicoGiro,[{key:'yaw',color:'#4ce2a7'},{key:'alvo',color:'#60b7ff',dash:true}]);
@@ -262,7 +262,7 @@ async function atualizar(){
 }
 function baixarCSV(){
  if(!amostras.length){msg('Ainda sem dados para exportar',true);return}
- const chaves=['hora','ms','modo','contE','contD','cpsE','cpsD','rpmE','rpmD','pwmE','pwmD','alvoE','alvoD','progressoE','progressoD','referenciaRpmE','referenciaRpmD','rampaRpmE','rampaRpmD','ajudaPartidaE','ajudaPartidaD','semPulsosMsE','semPulsosMsD','realControleRpmE','realControleRpmD','freioValido','freio300Pronto','freio1000Pronto','freioDelta300E','freioDelta300D','freioDelta1000E','freioDelta1000D','tensao','corrente','velocidadeCmS','velMediaTrechoCmS','distTrechoMm','tempoTrechoMs','velMediaTotalCmS','distTotalMm','tempoTotalMs','motivo','cprE','cprD','giroTipo','giroAlvoYaw','giroYawRelativo','giroErroYaw','imuPresente','imuCalibrada','imuCalibrando','imuOk','imuEndereco','imuWhoAmI','imuFalhaInit','imuYaw','imuTaxa','imuBias','imuRuido','imuFalhasI2C','syncErroMm','syncErroMaxMm','syncSuave','odomXmm','odomYmm','odomYawGraus','giroYawDepoisFreio','giroErroDepoisFreio','syncDistE','syncDistD','syncCorrecaoRpm','syncPausaE','syncPausaD'];
+ const chaves=['hora','ms','modo','contE','contD','cpsE','cpsD','rpmE','rpmD','pwmE','pwmD','alvoE','alvoD','progressoE','progressoD','referenciaRpmE','referenciaRpmD','rampaRpmE','rampaRpmD','ajudaPartidaE','ajudaPartidaD','semPulsosMsE','semPulsosMsD','realControleRpmE','realControleRpmD','freioValido','freio300Pronto','freio1000Pronto','freioDelta300E','freioDelta300D','freioDelta1000E','freioDelta1000D','tensao','corrente','velocidadeCmS','velMediaTrechoCmS','distTrechoMm','tempoTrechoMs','velMediaTotalCmS','distTotalMm','tempoTotalMs','motivo','cprE','cprD','giroTipo','giroAlvoYaw','giroYawRelativo','giroErroYaw','giroCorrecaoPedida','giroFase','giroCorrecoes','giroErroAntesCorrecao','giroErroMedido','giroErroTotal','imuPresente','imuCalibrada','imuCalibrando','imuOk','imuEndereco','imuWhoAmI','imuFalhaInit','imuYaw','imuTaxa','imuBias','imuRuido','imuFalhasI2C','syncErroMm','syncErroMaxMm','syncSuave','odomXmm','odomYmm','odomYawGraus','giroYawDepoisFreio','giroErroDepoisFreio','syncDistE','syncDistD','syncCorrecaoRpm','syncPausaE','syncPausaD'];
  const linhas=[chaves.join(';'),...amostras.map(a=>chaves.map(k=>String(a[k]??'').replaceAll(';',',')).join(';'))];
  const blob=new Blob(['\ufeff'+linhas.join('\r\n')],{type:'text/csv;charset=utf-8'});
  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='micromouse_telemetria_'+Date.now()+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);

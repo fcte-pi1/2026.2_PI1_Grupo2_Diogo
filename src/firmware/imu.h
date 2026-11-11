@@ -16,9 +16,10 @@ struct DadosIMU {
     uint8_t falhaInit = 0; // 0 ok; 1 sem ACK; 2 WHO nao lido; 3 WHO inesperado; 4 configuracao falhou
 
     int amostrasBias = 0;
+    uint8_t tentativaCalibracao = 0; // 1..IMU_TENTATIVAS_CALIBRACAO
 };
 void iniciarIMU();
 void atualizarIMU();
 bool iniciarCalibracaoIMU(); // somente com o robo imovel e motores parados
-bool zerarYawIMU();        // zerar a referencia imediatamente antes do giro
+bool zerarYawIMU();        // zerar a referencia imediatamente antes do giro; tambem recupera o yaw apos atraso do loop
 DadosIMU lerIMU();

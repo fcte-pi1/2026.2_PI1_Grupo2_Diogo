@@ -85,8 +85,10 @@ constexpr char OTA_PASSWORD[] = "DEFINA_SENHA_OTA_AQUI";
 constexpr int IMU_SINAL_DIREITA = -1;
 constexpr uint32_t IMU_INTERVALO_US = 5000;  // ~200 Hz
 constexpr uint32_t IMU_MAX_IDADE_MS = 100;
-constexpr int IMU_AMOSTRAS_BIAS = 400;     // ~2 s, com o robo IMOVEL
+constexpr int IMU_AMOSTRAS_BIAS = 800;     // ~4 s a 200 Hz, com o robo IMOVEL
+constexpr int IMU_TENTATIVAS_CALIBRACAO = 3; // repete sozinha se o robo se mexer
 constexpr float IMU_RUIDO_MAX_DPS = 1.4f;
+constexpr float IMU_ZONA_MORTA_DPS = 0.25f; // taxa abaixo disso nao entra no yaw
 constexpr float IMU_TAXA_PARADO_MAX_DPS = 4.0f;
 constexpr float IMU_TOLERANCIA_ANGULO_GRAUS = 1.5f;
 constexpr float IMU_ACEL_ANGULAR_DESACEL_DPS2 = 270.0f;
@@ -99,6 +101,26 @@ constexpr float GIRO_SYNC_RETOMADA_MM = 1.6f;
 constexpr float GIRO_SYNC_FALHA_MM = 13.0f;
 constexpr uint32_t GIRO_SYNC_FALHA_MS = 600;
 constexpr float GIRO_LIMITE_DESLOCAMENTO_REL = 1.28f; // IMU nao pode girar indefinidamente
+// Giro de angulo qualquer (correcao depois do giro de 90 graus).
+constexpr float GIRO_ANGULO_MIN_GRAUS = 0.5f;
+constexpr float GIRO_ANGULO_MAX_GRAUS = 180.0f;
+// Em angulos pequenos o limite relativo de curso ficaria menor que a folga do
+// proprio controle; vale o maior entre o relativo e alvo + esta margem.
+constexpr float GIRO_MARGEM_CURSO_MIN_MM = 6.0f;
+
+// ===== Correcao do angulo pelo giroscopio depois do giro (issue #153) =====
+// Depois do giro de 90 graus, espera o robo parar, mede o erro pelo yaw e,
+// se passar da tolerancia, faz um giro curto pela IMU. Valores iniciais:
+// ajustar na bancada com gabarito externo.
+constexpr float GIRO_CORRECAO_TOLERANCIA_GRAUS = 1.0f; // erro aceito sem corrigir
+constexpr float GIRO_CORRECAO_ERRO_MAX_GRAUS = 15.0f;  // acima disso nao tenta corrigir
+constexpr uint8_t GIRO_CORRECAO_MAX_TENTATIVAS = 2;
+constexpr float GIRO_CORRECAO_RPM = 20.0f;
+constexpr float GIRO_CORRECAO_PARADA_GRAUS = 0.4f;     // corta o PWM faltando isso para o alvo
+constexpr float GIRO_CORRECAO_PARADO_DPS = 1.0f;       // robo parado: taxa abaixo disso...
+constexpr uint32_t GIRO_CORRECAO_PARADO_MS = 100;      // ...por este tempo seguido
+constexpr uint32_t GIRO_CORRECAO_ESPERA_MIN_MS = 300;  // espera minima depois de cortar o PWM
+constexpr uint32_t GIRO_CORRECAO_ESPERA_MAX_MS = 1500; // se nao parar ate aqui, termina sem corrigir
 
 // ===== V4.3 - GIRO COM SINCRONIZACAO SUAVE =====
 // Correcao proporcional limitada; nao freia individualmente uma roda.

@@ -24,6 +24,8 @@ EstadoPI estadoE, estadoD;
 int sentidoGiro = 1;  // +1 direita; E frente D tras
 uint32_t syncForaDesde = 0;
 float alvoFisicoMm = 0;
+float limiteCursoGiroMm = 0;  // curso maximo de cada roda no giro por IMU
+float paradaGiroGraus = 0;    // falta para o alvo quando o PWM e cortado (IMU)
 float erroSyncFiltrado = 0;
 float correcaoSyncAtual = 0;
 float viagemAnteriorE = 0, viagemAnteriorD = 0;
@@ -156,17 +158,33 @@ bool iniciarControlePosicao(int32_t alvoE, int32_t alvoD,
 
 bool iniciarControleGiro(bool direita, bool usaImu, float limiteRpm,
                          float cprE, float cprD, bool sincronismoSuave) {
+    return iniciarControleGiroAngulo(direita ? 90.0f : -90.0f, usaImu, limiteRpm, cprE, cprD,
+                                     sincronismoSuave, usaImu, IMU_TOLERANCIA_ANGULO_GRAUS);
+}
+
+bool iniciarControleGiroAngulo(float anguloGraus, bool usaImu, float limiteRpm,
+                               float cprE, float cprD, bool sincronismoSuave,
+                               bool zerarYaw, float paradaGraus) {
     if (info.tipo != TipoControle::INATIVO || cprE <= 0 || cprD <= 0 ||
-        limiteRpm < 20 || limiteRpm > GIRO_RPM_MAX) return false;
-    if (usaImu && !zerarYawIMU()) return false;
+        limiteRpm < 20 || limiteRpm > GIRO_RPM_MAX ||
+        !isfinite(anguloGraus) || !isfinite(paradaGraus) || paradaGraus < 0 ||
+        fabsf(anguloGraus) < GIRO_ANGULO_MIN_GRAUS ||
+        fabsf(anguloGraus) > GIRO_ANGULO_MAX_GRAUS) return false;
+    if (zerarYaw && !zerarYawIMU()) return false;
+    if (usaImu && !lerIMU().confiavel) return false;
     inicializarBase(cprE, cprD);
+    const bool direita = anguloGraus > 0;
     sentidoGiro = direita ? +1 : -1;
-    const float distancia = 3.14159265358979323846f * ENTRE_RODAS_MM * 0.25f;
+    // Arco de cada roda para o robo girar o angulo pedido sobre o proprio eixo.
+    const float distancia = 3.14159265358979323846f * ENTRE_RODAS_MM * fabsf(anguloGraus) / 360.0f;
     alvoFisicoMm = distancia;
+    limiteCursoGiroMm = fmaxf(distancia * GIRO_LIMITE_DESLOCAMENTO_REL,
+                              distancia + GIRO_MARGEM_CURSO_MIN_MM);
+    paradaGiroGraus = paradaGraus;
     info.tipo = usaImu ? TipoControle::GIRO_IMU : TipoControle::GIRO_ENCODER;
     info.usandoIMU = usaImu;
     info.sincronismoSuave = sincronismoSuave;
-    info.alvoYawGraus = direita ? 90.0f : -90.0f;
+    info.alvoYawGraus = anguloGraus;
     // No encoder puro, o IMU NAO interfere: le apenas para o CSV.
     DadosIMU g = lerIMU();
     info.yawNoInicio = g.confiavel ? g.yawDireitaGraus : 0;
@@ -357,16 +375,17 @@ const char* atualizarControleMovimento() {
             }
         } else {
             if (!imu.confiavel) return "imu_indisponivel_ou_atrasada";
-            if (viagemE > alvoFisicoMm * GIRO_LIMITE_DESLOCAMENTO_REL ||
-                viagemD > alvoFisicoMm * GIRO_LIMITE_DESLOCAMENTO_REL) return "imu_limite_encoder_excedido";
+            if (viagemE > limiteCursoGiroMm || viagemD > limiteCursoGiroMm)
+                return "imu_limite_encoder_excedido";
             const float progressoYaw = (float)sentidoGiro * info.yawMedido;
             if (fmaxf(viagemE, viagemD) > 8.0f && progressoYaw < -3.0f)
                 return "imu_sentido_inverso_conferir_montagem";
-            if (progressoYaw > 112.0f) return "imu_angulo_limite_excedido";
-            float falta = 90.0f - progressoYaw;
+            const float alvoAbs = fabsf(info.alvoYawGraus);
+            if (progressoYaw > alvoAbs + 22.0f) return "imu_angulo_limite_excedido";
+            float falta = alvoAbs - progressoYaw;
             // Freia ao atingir o angulo dentro da tolerancia, sem trocar
             // de sentido; resultado final e conferido depois do freio.
-            if (falta <= IMU_TOLERANCIA_ANGULO_GRAUS) {
+            if (falta <= paradaGiroGraus) {
                 if (fabsf(info.syncErroMm) > GIRO_SYNC_PAUSA_MM)
                     return "imu_alvo_com_dessincronia";
                 return "giro_imu_concluido";
@@ -412,7 +431,7 @@ const char* atualizarControleMovimento() {
         }
         // Não deixa o encoder ultrapassar o limite de curso no modo IMU.
         if (giroI) {
-            const float limite = alvoFisicoMm * GIRO_LIMITE_DESLOCAMENTO_REL - 2.0f;
+            const float limite = limiteCursoGiroMm - 2.0f;
             if (info.sincronismoSuave && (viagemE > limite || viagemD > limite)) {
                 // No modo suave, protege o chassi FREANDO AS DUAS juntas,
                 // em vez de ancorar um lado e deixar o outro puxar o robo.
