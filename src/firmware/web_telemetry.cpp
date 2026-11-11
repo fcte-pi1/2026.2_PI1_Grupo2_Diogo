@@ -53,6 +53,8 @@ static float giroErroAntes = NAN;      // erro medido parado, antes de qualquer 
 static float giroErroMedido = NAN;     // erro na ultima medicao parado
 static uint32_t giroAssentandoDesde = 0;
 static DetectorParado giroParado(GIRO_CORRECAO_PARADO_DPS, GIRO_CORRECAO_PARADO_MS);
+// A correcao do giro nao sobrescreve a partida do giro principal.
+static DadosPartida partidaUltima;
 static const char* nomeFaseGiro() { switch (faseGiro) { case FaseGiro::ASSENTANDO: return "ASSENTANDO"; case FaseGiro::CORRIGINDO: return "CORRIGINDO"; default: return "PRINCIPAL"; } }
 
 // Medição MANUAL: operador conta as voltas físicas e encerra pelo site.
@@ -235,6 +237,13 @@ static void handleStatus() {
     json += ",\"ajudaPartidaD\":" + String(ctrl.ajudaPartidaD ? "true" : "false");
     json += ",\"semPulsosMsE\":" + String(ctrl.semPulsosMsE);
     json += ",\"semPulsosMsD\":" + String(ctrl.semPulsosMsD);
+    json += ",\"partidaConjunta\":" + String(ctrl.partidaConjunta ? "true" : "false");
+    json += ",\"partidaEMs\":" + (partidaUltima.partidaEMs >= 0 ? String(partidaUltima.partidaEMs) : String("null"));
+    json += ",\"partidaDMs\":" + (partidaUltima.partidaDMs >= 0 ? String(partidaUltima.partidaDMs) : String("null"));
+    json += ",\"partidaAtrasoMs\":" + (partidaUltima.duasPartiram() ? String(partidaUltima.atrasoMs()) : String("null"));
+    json += ",\"partidaDifMm\":" + numeroOuNull(partidaUltima.diferencaMm, 2);
+    json += ",\"partidaDifMaxMm\":" + numeroOuNull(partidaUltima.diferencaMaxMm, 2);
+    json += ",\"partidaJanelaCompleta\":" + String(partidaUltima.janelaCompleta ? "true" : "false");
     json += ",\"referenciaRpmD\":" + numeroOuNull(ctrl.desejadoD);
     json += ",\"realControleRpmE\":" + numeroOuNull(ctrl.realE);
     json += ",\"realControleRpmD\":" + numeroOuNull(ctrl.realD);
@@ -871,6 +880,8 @@ void loopTelemetry() {
         atualizarAssentamentoGiro(agora);
     } else if (modo == Modo::RPM || modo == Modo::POSICAO || modo == Modo::GIRO || modo == Modo::RETO) {
         const char* motivo = atualizarControleMovimento();
+        if (!(modo == Modo::GIRO && faseGiro == FaseGiro::CORRIGINDO))
+            partidaUltima = lerControleMovimento().partida;
         if (motivo != nullptr) {
             // Giro terminou sem falha e a correcao foi pedida: confere o angulo parado.
             if (modo == Modo::GIRO && giroCorrigir && giroTerminouBem(motivo)) iniciarAssentamentoGiro(agora);
