@@ -108,6 +108,20 @@ constexpr float GIRO_ANGULO_MAX_GRAUS = 180.0f;
 // proprio controle; vale o maior entre o relativo e alvo + esta margem.
 constexpr float GIRO_MARGEM_CURSO_MIN_MM = 6.0f;
 
+// ===== Correcao do angulo pelo giroscopio depois do giro (issue #153) =====
+// Depois do giro de 90 graus, espera o robo parar, mede o erro pelo yaw e,
+// se passar da tolerancia, faz um giro curto pela IMU. Valores iniciais:
+// ajustar na bancada com gabarito externo.
+constexpr float GIRO_CORRECAO_TOLERANCIA_GRAUS = 1.0f; // erro aceito sem corrigir
+constexpr float GIRO_CORRECAO_ERRO_MAX_GRAUS = 15.0f;  // acima disso nao tenta corrigir
+constexpr uint8_t GIRO_CORRECAO_MAX_TENTATIVAS = 2;
+constexpr float GIRO_CORRECAO_RPM = 20.0f;
+constexpr float GIRO_CORRECAO_PARADA_GRAUS = 0.4f;     // corta o PWM faltando isso para o alvo
+constexpr float GIRO_CORRECAO_PARADO_DPS = 1.0f;       // robo parado: taxa abaixo disso...
+constexpr uint32_t GIRO_CORRECAO_PARADO_MS = 100;      // ...por este tempo seguido
+constexpr uint32_t GIRO_CORRECAO_ESPERA_MIN_MS = 300;  // espera minima depois de cortar o PWM
+constexpr uint32_t GIRO_CORRECAO_ESPERA_MAX_MS = 1500; // se nao parar ate aqui, termina sem corrigir
+
 // ===== V4.3 - GIRO COM SINCRONIZACAO SUAVE =====
 // Correcao proporcional limitada; nao freia individualmente uma roda.
 // Valores conservadores para testes com o centro do eixo marcado no chao.

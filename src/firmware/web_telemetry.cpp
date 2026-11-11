@@ -16,6 +16,8 @@
 #include <stdlib.h>
 #include "telemetry_remote.h"
 #include "speed.h"
+#include "giro_logic.h"
+#include <string.h>
 #include "maze_state.h"
 
 extern WebServer server;
@@ -36,6 +38,22 @@ static float frenteLimiarDinamicoMm = NAN;
 static int frenteUltimaBrutaMm = LASER_SEM_LEITURA;
 static uint32_t frenteUltimaIdadeMs = 0;
 static bool frenteParouPorLaser = false;
+
+// Correcao do angulo depois do giro de 90 graus (issue #153). O modo continua
+// GIRO durante todas as fases, entao heartbeat, limite de tempo e corte de
+// bateria seguem valendo.
+enum class FaseGiro { PRINCIPAL, ASSENTANDO, CORRIGINDO };
+static FaseGiro faseGiro = FaseGiro::PRINCIPAL;
+static bool giroCorrigir = false;      // pedido no inicio do giro
+static bool giroSyncSuave = true;
+static float giroAlvoGraus = 0;        // +90 ou -90; 0 = nenhum giro ainda
+static float giroYawRef = 0;           // yaw no inicio do giro
+static uint8_t giroCorrecoes = 0;
+static float giroErroAntes = NAN;      // erro medido parado, antes de qualquer correcao
+static float giroErroMedido = NAN;     // erro na ultima medicao parado
+static uint32_t giroAssentandoDesde = 0;
+static DetectorParado giroParado(GIRO_CORRECAO_PARADO_DPS, GIRO_CORRECAO_PARADO_MS);
+static const char* nomeFaseGiro() { switch (faseGiro) { case FaseGiro::ASSENTANDO: return "ASSENTANDO"; case FaseGiro::CORRIGINDO: return "CORRIGINDO"; default: return "PRINCIPAL"; } }
 
 // Medição MANUAL: operador conta as voltas físicas e encerra pelo site.
 static String ladoManual = "ambos";
@@ -128,6 +146,7 @@ static void encerrarTeste(const char* motivo) {
     desativarControleMovimento();
     pwmE = pwmD = 0;
     modo = Modo::PARADO;
+    faseGiro = FaseGiro::PRINCIPAL;
     frenteProtegida = false;
     if (estavaMotorizado || ultimoMotivo == "pronto") ultimoMotivo = motivo;
     if (estavaMotorizado) Serial.printf("PARADA: %s\n", motivo);
@@ -264,6 +283,13 @@ static void handleStatus() {
     json += ",\"giroYawDepoisFreio\":" + numeroOuNull((ctrl.alvoYawGraus != 0 && imu.confiavel) ? imu.yawDireitaGraus - ctrl.yawNoInicio : NAN);
     json += ",\"giroErroDepoisFreio\":" + numeroOuNull((ctrl.alvoYawGraus != 0 && imu.confiavel) ? ctrl.alvoYawGraus - (imu.yawDireitaGraus - ctrl.yawNoInicio) : NAN);
     json += ",\"syncCorrecaoRpm\":" + numeroOuNull(ctrl.syncCorrecaoRpm, 2);
+    // Correcao pelo giroscopio: erro em relacao ao alvo TOTAL do giro (+-90).
+    json += ",\"giroCorrecaoPedida\":" + String(giroCorrigir ? "true" : "false");
+    json += ",\"giroFase\":\"" + String(nomeFaseGiro()) + "\"";
+    json += ",\"giroCorrecoes\":" + String(giroCorrecoes);
+    json += ",\"giroErroAntesCorrecao\":" + numeroOuNull(giroErroAntes);
+    json += ",\"giroErroMedido\":" + numeroOuNull(giroErroMedido);
+    json += ",\"giroErroTotal\":" + numeroOuNull((giroAlvoGraus != 0 && imu.confiavel) ? giroAlvoGraus - (imu.yawDireitaGraus - giroYawRef) : NAN);
     json += ",\"syncPausaE\":" + String(ctrl.pausaSyncE ? "true" : "false");
     json += ",\"syncPausaD\":" + String(ctrl.pausaSyncD ? "true" : "false");
     // V4.5: odometria e erro do movimento reto. Se ja freou por 1 s,
@@ -585,6 +611,7 @@ static void handleGiroStart() {
     const String modoGiro = server.arg("tipo");
     const String lado = server.arg("lado");
     const String syncGiro = server.arg("syncGiro");
+    const bool corrigir = server.arg("corrigir") == "1";
     if ((syncGiro != "suave" && syncGiro != "legado") ||
         (modoGiro != "encoder" && modoGiro != "imu") ||
         (lado != "direita" && lado != "esquerda") ||
@@ -598,8 +625,17 @@ static void handleGiroStart() {
     // tambem recupera o angulo depois de um atraso do loop. No modo IMU o
     // proprio controlador zera o yaw e recusa o giro se nao conseguir.
     if (modoGiro == "encoder") zerarYawIMU();
+    if (corrigir && modoGiro == "encoder" && !lerIMU().confiavel)
+        return respostaErro(409, "A correcao pelo giroscopio exige a IMU calibrada e o robo parado");
     if (!iniciarControleGiro(lado == "direita", modoGiro == "imu", rpm, cprE, cprD, syncGiro == "suave"))
         return respostaErro(409, "Controlador nao iniciou: cheque IMU, orientacao e CPR");
+    giroCorrigir = corrigir;
+    giroSyncSuave = syncGiro == "suave";
+    giroAlvoGraus = lado == "direita" ? 90.0f : -90.0f;
+    giroYawRef = lerControleMovimento().yawNoInicio;
+    giroCorrecoes = 0;
+    giroErroAntes = giroErroMedido = NAN;
+    faseGiro = FaseGiro::PRINCIPAL;
     iniciarRelogioMotorizado(duracao, Modo::GIRO);
     ultimoMotivo = modoGiro == "imu" ? "giro_imu_iniciado" : "giro_encoder_iniciado";
     respostaOk(modoGiro == "imu" ? "Giro por IMU iniciado, sincronismo por encoder ativo" : "Giro por encoders iniciado, IMU apenas observadora");
@@ -737,6 +773,61 @@ void setupTelemetry() {
     server.onNotFound([]() { respostaErro(404, "Rota nao encontrada"); });
 }
 
+static bool giroTerminouBem(const char* motivo) {
+    return strcmp(motivo, "giro_encoder_concluido") == 0 || strcmp(motivo, "giro_imu_concluido") == 0;
+}
+
+// Corta os motores e espera o robo terminar de girar por inercia.
+static void iniciarAssentamentoGiro(uint32_t agora) {
+    pararMotores();
+    desativarControleMovimento();
+    faseGiro = FaseGiro::ASSENTANDO;
+    giroAssentandoDesde = agora;
+    giroParado.reiniciar();
+}
+
+// Com o robo parado, mede o erro em relacao ao alvo total e decide a correcao.
+static void atualizarAssentamentoGiro(uint32_t agora) {
+    const DadosIMU imu = lerIMU();
+    if (!imu.confiavel) {
+        encerrarTeste("giro_sem_correcao_imu_indisponivel");
+        return;
+    }
+    const bool parado = giroParado.atualizar(imu.taxaDireitaDps, agora);
+    const uint32_t decorrido = agora - giroAssentandoDesde;
+    if (decorrido < GIRO_CORRECAO_ESPERA_MIN_MS) return;
+    if (!parado) {
+        if (decorrido > GIRO_CORRECAO_ESPERA_MAX_MS) encerrarTeste("giro_sem_correcao_robo_nao_parou");
+        return;
+    }
+    const float erro = giroAlvoGraus - (imu.yawDireitaGraus - giroYawRef);
+    giroErroMedido = erro;
+    if (giroCorrecoes == 0) giroErroAntes = erro;
+    switch (decidirCorrecaoGiro(erro, GIRO_CORRECAO_TOLERANCIA_GRAUS, GIRO_CORRECAO_ERRO_MAX_GRAUS,
+                                giroCorrecoes, GIRO_CORRECAO_MAX_TENTATIVAS)) {
+        case DecisaoCorrecao::DENTRO_DA_TOLERANCIA:
+            encerrarTeste(giroCorrecoes ? "giro_corrigido_dentro_da_tolerancia" : "giro_dentro_da_tolerancia");
+            return;
+        case DecisaoCorrecao::ERRO_GRANDE_DEMAIS:
+            encerrarTeste("giro_erro_grande_demais_para_corrigir");
+            return;
+        case DecisaoCorrecao::TENTATIVAS_ESGOTADAS:
+            encerrarTeste("giro_correcoes_esgotadas");
+            return;
+        case DecisaoCorrecao::CORRIGIR:
+            break;
+    }
+    // Giro curto pela IMU, sem zerar o yaw: a referencia do giro de 90 continua valendo.
+    if (!iniciarControleGiroAngulo(erro, true, GIRO_CORRECAO_RPM, cprE, cprD, giroSyncSuave,
+                                   false, GIRO_CORRECAO_PARADA_GRAUS)) {
+        encerrarTeste("giro_correcao_nao_iniciou");
+        return;
+    }
+    ++giroCorrecoes;
+    faseGiro = FaseGiro::CORRIGINDO;
+    prepararMotoresControle();
+}
+
 void loopTelemetry() {
     atualizarVelocidade(cprE, cprD, modoMotorizado());
     atualizarMedicaoFreio();
@@ -776,8 +867,14 @@ void loopTelemetry() {
         encerrarTeste("watchdog_conexao_perdida");
     } else if (agora - testeInicio >= duracaoTeste) {
         encerrarTeste("limite_de_tempo");
+    } else if (modo == Modo::GIRO && faseGiro == FaseGiro::ASSENTANDO) {
+        atualizarAssentamentoGiro(agora);
     } else if (modo == Modo::RPM || modo == Modo::POSICAO || modo == Modo::GIRO || modo == Modo::RETO) {
         const char* motivo = atualizarControleMovimento();
-        if (motivo != nullptr) encerrarTeste(motivo);
+        if (motivo != nullptr) {
+            // Giro terminou sem falha e a correcao foi pedida: confere o angulo parado.
+            if (modo == Modo::GIRO && giroCorrigir && giroTerminouBem(motivo)) iniciarAssentamentoGiro(agora);
+            else encerrarTeste(motivo);
+        }
     }
 }

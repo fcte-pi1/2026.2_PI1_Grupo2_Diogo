@@ -5,6 +5,7 @@
 #include "encoders.h"
 #include "imu.h"
 #include "config.h"
+#include "giro_logic.h"
 #include <iostream>
 #include <cmath>
 #include <string>
@@ -73,6 +74,24 @@ int main(){
  iniciarControleGiroAngulo(-5.0f,true,20,CPR_E,CPR_D,true,false,0.4f);rodar();
  std::cout<<"ida "<<acumulado<<" volta "<<yawSim()<<"\n";
  confere(std::fabs(yawSim())<=1.5f,"ida e volta sem zerar o yaw retorna perto de zero");
+ // Sequencia completa: giro que para curto, medicao do erro e correcoes ate a tolerancia.
+ const float giros[]={86.0f,-84.5f,93.0f};
+ for(float feito:giros){
+  const float alvo=feito>0?90.0f:-90.0f;
+  zerarYawIMU();
+  iniciarControleGiroAngulo(feito,false,35,CPR_E,CPR_D,true,false,0.0f);rodar();
+  int correcoes=0;
+  for(;;){
+   const float erro=alvo-yawSim();
+   if(decidirCorrecaoGiro(erro,GIRO_CORRECAO_TOLERANCIA_GRAUS,GIRO_CORRECAO_ERRO_MAX_GRAUS,
+                          correcoes,GIRO_CORRECAO_MAX_TENTATIVAS)!=DecisaoCorrecao::CORRIGIR)break;
+   if(!iniciarControleGiroAngulo(erro,true,GIRO_CORRECAO_RPM,CPR_E,CPR_D,true,false,GIRO_CORRECAO_PARADA_GRAUS))break;
+   rodar();++correcoes;
+  }
+  std::cout<<"giro de "<<feito<<" para alvo "<<alvo<<": "<<correcoes<<" correcao(oes), yaw final="<<yawSim()<<"\n";
+  confere(correcoes>=1,"giro fora da tolerancia dispara a correcao");
+  confere(std::fabs(alvo-yawSim())<=GIRO_CORRECAO_TOLERANCIA_GRAUS,"depois da correcao o erro fica dentro da tolerancia");
+ }
  // Recusas.
  confere(!iniciarControleGiroAngulo(0.2f,true,20,CPR_E,CPR_D,true,false,0.4f),"recusa angulo menor que o minimo");
  confere(!iniciarControleGiroAngulo(200.0f,true,20,CPR_E,CPR_D,true,false,0.4f),"recusa angulo maior que 180");
