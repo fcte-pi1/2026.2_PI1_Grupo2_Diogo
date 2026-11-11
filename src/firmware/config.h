@@ -101,6 +101,12 @@ constexpr float GIRO_SYNC_RETOMADA_MM = 1.6f;
 constexpr float GIRO_SYNC_FALHA_MM = 13.0f;
 constexpr uint32_t GIRO_SYNC_FALHA_MS = 600;
 constexpr float GIRO_LIMITE_DESLOCAMENTO_REL = 1.28f; // IMU nao pode girar indefinidamente
+// Giro de angulo qualquer (correcao depois do giro de 90 graus).
+constexpr float GIRO_ANGULO_MIN_GRAUS = 0.5f;
+constexpr float GIRO_ANGULO_MAX_GRAUS = 180.0f;
+// Em angulos pequenos o limite relativo de curso ficaria menor que a folga do
+// proprio controle; vale o maior entre o relativo e alvo + esta margem.
+constexpr float GIRO_MARGEM_CURSO_MIN_MM = 6.0f;
 
 // ===== V4.3 - GIRO COM SINCRONIZACAO SUAVE =====
 // Correcao proporcional limitada; nao freia individualmente uma roda.

@@ -62,3 +62,9 @@ ControleInfo lerControleMovimento();
 // Giro positivo = direita, negativo = esquerda; angulo fixo +/-90 deg.
 bool iniciarControleGiro(bool direita, bool usaImu, float limiteRpm,
                          float cprE, float cprD, bool sincronismoSuave);
+// Giro de angulo qualquer, em graus (positivo = direita). zerarYaw=false mantem
+// a referencia de yaw atual. paradaGraus: no modo IMU, o PWM e cortado quando
+// falta esse angulo para o alvo (o robo termina de chegar por inercia).
+bool iniciarControleGiroAngulo(float anguloGraus, bool usaImu, float limiteRpm,
+                               float cprE, float cprD, bool sincronismoSuave,
+                               bool zerarYaw, float paradaGraus);
