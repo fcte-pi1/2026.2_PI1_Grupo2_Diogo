@@ -198,6 +198,18 @@ constexpr uint32_t RETO_SYNC_FALHA_MS = 300;
 constexpr float RETO_SYNC_LIMITE_CHEGADA_MM = 2.5f;
 constexpr float RETO_MARGEM_CURSO_MM = 12.0f;
 
+// Centralização no corredor (#155). Medir na bancada com o robô centrado.
+constexpr float CENTRO_ASSIMETRIA_MM = 0.0f;   // leitura E - leitura D centrado
+constexpr float CENTRO_REF_FIXA_MM = -1.0f;    // leitura de um lado centrado; -1 = só a aprendida com duas paredes
+constexpr int CENTRO_PAREDE_MAX_MM = LASER_PAREDE_PRESENTE_MM;
+constexpr uint32_t CENTRO_IDADE_MAX_MS = 150;
+constexpr float CENTRO_SALTO_MAX_MM = 15.0f;
+constexpr float CENTRO_KP = 0.4f;
+constexpr float CENTRO_KI_POR_MM = 0.004f;
+constexpr float CENTRO_INTEGRAL_MAX_MM = 8.0f;
+constexpr float CENTRO_ALVO_MAX_MM = 12.0f;
+constexpr float CENTRO_TAXA_MM_S = 20.0f;
+
 
 // Integracao 4.7: protecao frontal ainda NAO homologada na nova posicao.
 // O firmware nao deve considerar leitura invalida como caminho livre.
