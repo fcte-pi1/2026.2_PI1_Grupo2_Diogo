@@ -470,6 +470,7 @@ static void handlePWMStart() {
     testeInicioE = antes.esq;
     testeInicioD = antes.dir;
     ultimoTesteDeltaE = ultimoTesteDeltaD = 0;
+    partidaUltima = DadosPartida{};  // o teste PWM nao tem registro de partida
     duracaoTeste = static_cast<uint32_t>(duracao);
     testeInicio = millis();
     ultimoHeartbeat = testeInicio;
