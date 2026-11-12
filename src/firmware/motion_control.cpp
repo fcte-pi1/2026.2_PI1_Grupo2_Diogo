@@ -22,6 +22,21 @@ struct EstadoPI {
 };
 EstadoPI estadoE, estadoD;
 RegistroPartida registroPartida(PARTIDA_JANELA_MM);
+ParametrosCentro parametrosCentro() {
+    ParametrosCentro p;
+    p.assimetriaMm = CENTRO_ASSIMETRIA_MM;
+    p.refFixaMm = CENTRO_REF_FIXA_MM;
+    p.kp = CENTRO_KP;
+    p.kiPorMm = CENTRO_KI_POR_MM;
+    p.integralMaxMm = CENTRO_INTEGRAL_MAX_MM;
+    p.alvoMaxMm = CENTRO_ALVO_MAX_MM;
+    p.taxaMmPorS = CENTRO_TAXA_MM_S;
+    return p;
+}
+Centralizador centralizador(parametrosCentro());
+LateralLida lateralE, lateralD;
+float retoCursoAnterior = 0;
+bool primeiroCiclo = true;  // inclui a resposta HTTP do start
 int sentidoGiro = 1;  // +1 direita; E frente D tras
 uint32_t syncForaDesde = 0;
 float alvoFisicoMm = 0;
@@ -56,6 +71,7 @@ void inicializarBase(float cprE, float cprD) {
     estadoD = EstadoPI{};
     estadoE.ultimoPulsoMs = estadoD.ultimoPulsoMs = anteriorMs;
     registroPartida.reiniciar(anteriorMs);
+    primeiroCiclo = true;
     syncForaDesde = 0;
     erroSyncFiltrado = correcaoSyncAtual = 0;
     viagemAnteriorE = viagemAnteriorD = odomYawRad = 0;
@@ -214,8 +230,9 @@ bool iniciarControleGiroAngulo(float anguloGraus, bool usaImu, float limiteRpm,
 }
 
 bool iniciarControleReto(float distanciaMm, float limiteRpm, float cprE, float cprD,
-                         bool sincronismoSuave) {
+                         bool sincronismoSuave, bool centralizar) {
     if (info.tipo != TipoControle::INATIVO ||
+        (centralizar && (!sincronismoSuave || distanciaMm < 0)) ||
         !isfinite(distanciaMm) || !isfinite(limiteRpm) ||
         !isfinite(cprE) || !isfinite(cprD) || cprE <= 0 || cprD <= 0 ||
         fabsf(distanciaMm) < RETO_DISTANCIA_MIN_MM ||
@@ -232,7 +249,16 @@ bool iniciarControleReto(float distanciaMm, float limiteRpm, float cprE, float c
     info.alvoD = (int32_t)lroundf(distanciaMm * cprD / circ);
     DadosIMU imu = lerIMU();
     info.retoYawInicio = imu.confiavel ? imu.yawDireitaGraus : NAN;
+    info.centroAtivo = centralizar;
+    centralizador.reiniciar();
+    lateralE = lateralD = LateralLida{};
+    retoCursoAnterior = 0;
     return true;
+}
+
+void informarLateraisReto(LateralLida esquerda, LateralLida direita) {
+    lateralE = esquerda;
+    lateralD = direita;
 }
 
 const char* atualizarControleMovimento() {
@@ -240,6 +266,8 @@ const char* atualizarControleMovimento() {
     uint32_t agora = millis();
     if (agora - anteriorMs < PERIODO_CONTROLE_MS) return nullptr;
     float dt = (agora - anteriorMs) * 0.001f;
+    if (!primeiroCiclo && agora - anteriorMs > info.periodoMaxMs) info.periodoMaxMs = agora - anteriorMs;
+    primeiroCiclo = false;
     anteriorMs = agora;
     if (dt <= 0.0f || dt > 0.2f) return "atraso_loop_controle";
 
@@ -268,7 +296,23 @@ const char* atualizarControleMovimento() {
         const float progressoAssinado = 0.5f * (deslocE + deslocD);
         const float cursoE = sentidoReto * deslocE;
         const float cursoD = sentidoReto * deslocD;
-        const float sync = cursoE - cursoD;
+        const float syncBruto = cursoE - cursoD;
+        if (info.centroAtivo) {
+            const float curso = sentidoReto * progressoAssinado;
+            // So corrige depois da partida conjunta.
+            const bool usar = !info.partidaConjunta;
+            info.centroAlvoMm = centralizador.atualizar(usar ? lateralE : LateralLida{},
+                                                        usar ? lateralD : LateralLida{},
+                                                        curso - retoCursoAnterior, dt);
+            retoCursoAnterior = curso;
+            info.centroModo = centralizador.modo();
+            info.centroErroMm = centralizador.erro();
+            info.centroRefMm = centralizador.referencia();
+            info.centroLidoEMm = lateralE.valida ? lateralE.mm : NAN;
+            info.centroLidoDMm = lateralD.valida ? lateralD.mm : NAN;
+        }
+        // Sem centralizacao o alvo e zero e o sincronismo fica como antes.
+        const float sync = syncBruto - info.centroAlvoMm;
         const float restante = fabsf(info.retoAlvoMm) - sentidoReto * progressoAssinado;
         info.retoDistEMm = deslocE;
         info.retoDistDMm = deslocD;

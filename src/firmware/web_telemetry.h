@@ -7,3 +7,4 @@ void pararTesteDeEmergencia(const char* motivo);
 bool testeMotorAtivo();
 // Protecao U3 em ensaio reto, ainda nao homologada.
 bool frenteEmMonitoramento();
+bool lateraisEmMonitoramento();

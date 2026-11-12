@@ -98,7 +98,7 @@ void initLasers() {
     ultimoPollGlobalMs=millis();
 }
 
-void atualizarLasers(bool somenteFrontal) {
+void atualizarLasersMascara(uint8_t mascara) {
     const uint32_t agora=millis();
     if(captura.ativa && (uint32_t)(agora-captura.inicioMs)>LASER_CAPTURE_TIMEOUT_MS) {
         captura.ativa=false;captura.pronta=true;captura.motivo="TIMEOUT_CAPTURA";
@@ -108,8 +108,10 @@ void atualizarLasers(bool somenteFrontal) {
     // Poll ONE device at a time to reduce I2C load and keep the 200 Hz IMU service responsive.
     if((uint32_t)(agora-ultimoPollGlobalMs)<5)return;
     ultimoPollGlobalMs=agora;
-    const uint8_t i=somenteFrontal?(uint8_t)LASER_U3:proximoPoll;
-    if(!somenteFrontal)proximoPoll=(proximoPoll+1)%3;
+    if(!(mascara&0x07))return;
+    while(!(mascara&(1u<<proximoPoll)))proximoPoll=(proximoPoll+1)%3;
+    const uint8_t i=proximoPoll;
+    proximoPoll=(proximoPoll+1)%3;
     auto& s=sensors[i]; auto& d=s.dado;
     if(!d.inicializado)return;
     if(s.hw.isRangeComplete()) {
@@ -137,8 +139,11 @@ void atualizarLasers(bool somenteFrontal) {
     }
 }
 
-void atualizarLasers(){ atualizarLasers(false); }
-void atualizarLaserFrontal(){ atualizarLasers(true); }
+void atualizarLasers(){ atualizarLasersMascara(0x07); }
+void atualizarLaserFrontal(){ atualizarLasersMascara(1u<<LASER_U3); }
+void atualizarLasersMovimento(bool frontal){
+    atualizarLasersMascara((1u<<LASER_U2)|(1u<<LASER_U4)|(frontal?(1u<<LASER_U3):0u));
+}
 
 LeituraLaser lerLaser(uint8_t i) { return i<3?sensors[i].dado:LeituraLaser(); }
 bool iniciarCapturaLaser(uint8_t indice,int distancia,uint16_t quantidade) {

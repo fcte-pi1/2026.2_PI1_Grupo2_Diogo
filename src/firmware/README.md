@@ -223,3 +223,75 @@ Quando uma roda precisa de mais PWM que a ajuda, o problema é a ajuda fraca dem
 
 - **Implementado e testado no computador.**
 - **Falta a bancada:** 10 partidas no chão, conferindo `partidaDifMaxMm` (critério: até 2 mm nos primeiros 50 mm). Se uma roda precisar de mais PWM que a ajuda para sair, ajustar `PWM_AJUDA_PARTIDA` antes de mexer nas constantes `PARTIDA_*`.
+
+## Centralização no corredor
+
+Issue #155.
+
+### O que faz
+
+No reto, o sincronismo garante que as duas rodas andem o mesmo tanto, mas não que o robô siga no meio do corredor. Se ele sai torto ou uma roda é um pouco maior, vai se aproximando de uma parede sem que os encoders percebam.
+
+Com a opção **"Centralização"** ligada na aba do reto (`centralizar=1` em `POST /api/reto/start`), os lasers laterais (U2 esquerdo, U4 direito) passam a ser lidos durante o movimento e corrigem a trajetória:
+
+1. **Leitura das paredes.** Um lado só conta se o laser vê parede (`parede` presente e leitura até 120 mm), com leitura de no máximo 150 ms. Cada amostra nova do sensor é avaliada uma vez, e uma leitura só vale depois de duas seguidas sem salto de mais de 15 mm e sem pausa do sensor. Assim, a borda de uma parede e um pico isolado não puxam o robô.
+2. **Erro lateral.** Com duas paredes, é a metade da diferença entre as leituras. Com uma parede, é a leitura menos a referência do centro, aprendida enquanto havia duas paredes (a média das duas leituras). Sem parede, ou sem referência ainda, não há erro.
+3. **Correção.** O erro vira um **alvo de diferença de percurso entre as rodas**, que o sincronismo do reto passa a seguir no lugar de zero. Assim o sincronismo, que já estava ajustado, faz a curva, e as proteções de dessincronia continuam pegando roda presa. O alvo tem uma parte proporcional e uma integral lenta, que tira o desvio que sobra quando o robô sai torto ou uma roda é maior. O alvo é limitado a 12 mm e varia no máximo 20 mm/s.
+4. **Sem parede**, a parte proporcional volta a zero aos poucos e a integral fica congelada: o robô segue pelos encoders na direção que já tinha.
+
+A opção vem **desligada por padrão**. Desligada, o reto se comporta exatamente como antes. Ligada, exige sincronismo suave, distância para a frente e no máximo 35 RPM, e o painel aceita até 2000 mm com timeout automático.
+
+**Proteção frontal obrigatória.** Com a centralização, o laser frontal (U3) fica sempre ligado. O robô para no que vier primeiro: a distância pedida ou a parede da frente a 5 cm (`FRENTE_LIMIAR_CENTRO_MM`, contados na leitura do U3). O firmware soma ao limite uma margem que cresce com a velocidade (a 35 RPM, cerca de 25 mm), para o robô terminar de frear perto dos 5 cm. O movimento não começa se a parede da frente já estiver a menos de 85 mm.
+
+**Corredor longo.** O VL53L0X não lê distâncias longas, então num corredor sem parede ao alcance ele responde "sem alvo". O firmware separa isso de falha do sensor (`frente_logic.h`):
+
+- **Sem alvo** (fora da faixa ou fase inválida): o robô segue. Se ele já tinha visto uma parede, a distância dela é descontada pelo percurso dos encoders, e o robô para quando essa estimativa chega ao limite, mesmo sem nova leitura.
+- **Falha** (perto demais, timeout, erro de I2C, status de leitura 1 a 3, ou nenhuma amostra nova em 150 ms): o robô freia.
+- **Partida:** exige leitura válida acima de 85 mm ou 3 leituras "sem alvo" seguidas. Uma parede vista a menos de 85 mm nos últimos 500 ms também bloqueia a partida.
+
+O painel mostra o código da leitura do U3 (`frenteCodigo`), a decisão (`frenteDecisao`), a parede estimada pelo percurso e a contagem de "sem alvo"; os campos também vão para o CSV. A proteção frontal sem centralização continua como antes. A correção só começa depois da partida conjunta (#152), que termina com poucos pulsos; dentro dos primeiros 50 mm ela já age. Por isso, o ensaio do #152 (`partidaDifMaxMm`) deve ser feito com a centralização desligada.
+
+O `/api/status`, a aba do reto e o CSV mostram o modo (`centroModo`: `DUAS`, `ESQUERDA`, `DIREITA` ou `NENHUMA`), o erro lateral, o alvo, a referência, as leituras usadas e o maior período do controle (`controlePeriodoMaxMs`, sem o primeiro ciclo, que inclui a resposta HTTP do início). Para saber se o I2C dos lasers atrasa o controle, comparar esse valor e `imuFalhasI2C` em retos com a centralização ligada e desligada. Com a centralização ligada, o descompasso (`retoSyncErroMm` e `retoSyncMaxMm`) é medido em relação ao alvo, não a zero.
+
+### Posição dos lasers
+
+- **Com duas paredes,** o recuo dos lasers não importa se os dois estiverem à mesma distância do centro do robô. Se não estiverem, colocar a diferença em `CENTRO_ASSIMETRIA_MM`: é a leitura esquerda menos a direita com o robô centrado no corredor.
+- **Com uma parede,** o firmware usa a referência aprendida no trecho com duas paredes. Para usar uma parede logo na partida, preencher `CENTRO_REF_FIXA_MM` com a leitura de um lado com o robô centrado; com -1, o modo de uma parede espera a primeira leitura com duas.
+
+### Arquivos
+
+| Arquivo | Conteúdo |
+|---|---|
+| `centralizacao_logic.h` | `Centralizador` (modo, erro, referência e alvo) e `LeitorLateral`, sem Arduino |
+| `frente_logic.h` | `ProtecaoFrontal`: decide seguir, parar por parede ou parar por falha, separando "sem alvo" de falha do sensor |
+| `motion_control.cpp` | Alvo do sincronismo no reto, `informarLateraisReto()` e período máximo do controle |
+| `lasers.cpp` / `main.cpp` | Leitura dos laterais (e do frontal, se armado) durante o reto com centralização |
+| `web_telemetry.cpp` / `web_page.h` | Opção no painel, validação das leituras e campos `centro*` |
+| `config.h` | Constantes `CENTRO_*` |
+
+### Testes
+
+- `test/test_centralizacao_logic` (17 testes): sinais do erro, assimetria, referência aprendida e fixa, volta a zero sem parede, integral congelada, limite do alvo e validação das leituras (amostra nova, borda de parede, pico isolado, leitura velha).
+- `test/test_frente_logic` (11 testes): corredor aberto com parede surgindo, parede vista que vira "sem alvo", leitura piscando, falhas, sensor parado e regras da partida.
+- `tests/host/test_centralizacao.cpp`: corredor de 168 mm simulado, com posição lateral e ângulo calculados das rodas e lasers a cada 60 ms com ruído e o mesmo filtro do firmware. Em 900 mm:
+
+| Caso | Desligada | Ligada |
+|---|---|---|
+| Saída torta 3° | 47 mm do centro (encosta) | 1 mm no fim, 6 mm no máximo |
+| Roda direita 1% maior | 41 mm (encosta) | 2 mm no fim, 4 mm no máximo |
+| Saída 15 mm deslocada | — | volta a 3 mm |
+| Sem parede direita por 2 células | — | 1 mm no fim |
+| Sem paredes por 1 célula, torto 2° | — | 4 mm no máximo |
+
+  Também confere borda de parede gradual e pico isolado (desvio abaixo de 4 mm), paredes sumindo nos últimos 15 mm (chega sem dessincronia), laser travado (segue só pelos encoders), roda presa (para por dessincronia) e a recusa de ré e de sincronismo desligado. A simulação usa a mesma validação de leituras do firmware. Com a opção desligada, as simulações de reto, giro e partida dão os mesmos números de antes.
+
+### Estado
+
+- **Implementado e testado no computador.**
+- **Falta a bancada:**
+  - **primeiro, conferir o sinal com as rodas suspensas:** com anteparos dos dois lados e o direito mais perto, `centroErroMm` deve ser positivo e a roda esquerda deve girar mais devagar. Se estiver ao contrário, o robô vira para a parede;
+  - comparar `controlePeriodoMaxMs` e `imuFalhasI2C` com a centralização ligada e desligada;
+  - **conferir o que o U3 responde com o corredor livre:** apontar para mais de 1,5 m sem obstáculo e ver `frenteCodigo` e `frenteStatusVL`. Se der -2 (fora da faixa) ou -4 (fase inválida), o corredor longo funciona; se der -1 (status 1 a 3), o robô continua freando e é preciso separar esse status no `lasers_logic.h`;
+  - medir com régua onde o robô para em relação à parede da frente e ajustar `FRENTE_LIMIAR_CENTRO_MM` ou a margem de frenagem (`FRENTE_REACAO_S`, `FRENTE_DESACEL_ESTIMADA_MM_S2`);
+  - medir `CENTRO_ASSIMETRIA_MM` com o robô centrado;
+  - percorrer várias células em linha reta sem encostar nas paredes (critério do card) e ajustar `CENTRO_KP` e `CENTRO_KI_POR_MM`. A simulação não tem o atraso real dos lasers, então ganhos maiores podem fazer o robô oscilar.
