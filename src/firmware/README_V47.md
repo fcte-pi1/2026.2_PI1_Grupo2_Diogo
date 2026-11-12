@@ -39,6 +39,10 @@ Desde a issue #153, a calibracao da IMU usa 800 amostras, zona morta e ate 3 ten
 
 Desde a issue #152, enquanto as duas rodas nao tiverem saido, a ajuda de partida vale para as duas (a roda que ja esta mais de 1 mm a frente nao recebe a ajuda da outra) e a rampa fica segurada em 18 RPM. O `/api/status` e o CSV trazem a diferenca de percurso entre as rodas nos primeiros 50 mm (`partidaDifMm`, `partidaDifMaxMm`) e o atraso entre elas (`partidaAtrasoMs`). Os detalhes estao no README principal do firmware.
 
+## Centralizacao no corredor
+
+Desde a issue #155, o reto aceita `centralizar=1` (opcao "Centralizacao" na aba do reto, desligada por padrao). Os lasers laterais sao lidos durante o movimento e o erro lateral vira um alvo de diferenca entre as rodas para o sincronismo suave. Sem parede, segue pelos encoders. Os detalhes estao no README principal do firmware.
+
 ## Offset dos lasers
 
 Cada VL53L0X le um valor acima da distancia real. O `config.h` tem um offset por sensor (`LASER_OFFSET_U2_MM`, `LASER_OFFSET_U3_MM`, `LASER_OFFSET_U4_MM`: 20, 20 e 15 mm), subtraido da leitura antes do filtro e da deteccao de parede. No `/api/lasers/status` e na aba de lasers, `brutoMm` e `filtradoMm` ja vem corrigidos, e `semOffsetMm` mostra a leitura original. O CSV de captura ganhou a coluna `sem_offset_mm`. Para recalibrar, capture cada sensor contra uma distancia conhecida e ajuste o offset pela diferenca entre `sem_offset_mm` e a referencia. A conta fica em `lasers_logic.h`, testada em `test/test_lasers_logic`.
@@ -55,7 +59,7 @@ Cada VL53L0X le um valor acima da distancia real. O `config.h` tem um offset por
 
 - Medir distancia janela U3 -> frente fisica do chassi; testar distancia de parada com coast.
 - Repetir o teste 3.2 do docs/7.3 com gabarito (50, 100, 150 e 200 mm) para conferir os offsets da issue #151 e rever os limiares de parede (120 e 160 mm).
-- Validar feedback e CPU/heap com Wi-Fi durante marcha. A leitura de lasers durante movimento so acontece com U3 frontal explicitamente armado.
+- Validar feedback e CPU/heap com Wi-Fi durante marcha. A leitura de lasers durante movimento so acontece com U3 frontal armado ou com a centralizacao ligada.
 - Testar corrente com o shunt/circuito concreto. A protecao de bateria (corte travado em 6,6 V) foi religada na issue #150; falta repetir na placa os testes 2.7, 2.8 e 2.9 do docs/7.2.
 - Separar missao autonoma de testes com heartbeat, integrar controlador de missao/maze feito pela equipe, definir checkpoints em flash.
 - Executar compilacao PlatformIO e ensaios no ESP32; nao declarar sistema homologado sem isso.
