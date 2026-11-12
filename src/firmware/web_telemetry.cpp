@@ -55,6 +55,16 @@ static uint32_t giroAssentandoDesde = 0;
 static DetectorParado giroParado(GIRO_CORRECAO_PARADO_DPS, GIRO_CORRECAO_PARADO_MS);
 // A correcao do giro nao sobrescreve a partida do giro principal.
 static DadosPartida partidaUltima;
+static bool retoCentralizar = false;
+static LeitorLateral leitorE(CENTRO_PAREDE_MAX_MM, CENTRO_IDADE_MAX_MS, CENTRO_SALTO_MAX_MM);
+static LeitorLateral leitorD(CENTRO_PAREDE_MAX_MM, CENTRO_IDADE_MAX_MS, CENTRO_SALTO_MAX_MM);
+
+static LateralLida lateralCentro(uint8_t sensor, LeitorLateral& leitor, uint32_t agora) {
+    const LeituraLaser d = lerLaser(sensor);
+    const bool ok = d.inicializado && d.brutoMm >= 0;
+    const uint32_t idade = d.ultimaValidaMs ? agora - d.ultimaValidaMs : UINT32_MAX;
+    return leitor.atualizar(d.total, ok ? d.filtradoMm : -1, d.parede == PAREDE_PRESENTE, idade);
+}
 static const char* nomeFaseGiro() { switch (faseGiro) { case FaseGiro::ASSENTANDO: return "ASSENTANDO"; case FaseGiro::CORRIGINDO: return "CORRIGINDO"; default: return "PRINCIPAL"; } }
 
 // Medição MANUAL: operador conta as voltas físicas e encerra pelo site.
@@ -327,6 +337,14 @@ static void handleStatus() {
     json += ",\"retoSyncErroMm\":" + numeroOuNull(ctrl.retoSyncErroMm, 3);
     json += ",\"retoSyncMaxMm\":" + numeroOuNull(ctrl.retoSyncMaxMm, 3);
     json += ",\"retoSyncCorrecaoRpm\":" + numeroOuNull(ctrl.retoSyncCorrecaoRpm, 2);
+    json += ",\"centroAtivo\":" + String(ctrl.centroAtivo ? "true" : "false");
+    json += ",\"centroModo\":\"" + String(textoModoCentro(ctrl.centroModo)) + "\"";
+    json += ",\"centroErroMm\":" + numeroOuNull(ctrl.centroErroMm, 2);
+    json += ",\"centroAlvoMm\":" + numeroOuNull(ctrl.centroAlvoMm, 2);
+    json += ",\"centroRefMm\":" + numeroOuNull(ctrl.centroRefMm >= 0 ? ctrl.centroRefMm : NAN, 1);
+    json += ",\"centroLidoEMm\":" + numeroOuNull(ctrl.centroLidoEMm, 0);
+    json += ",\"centroLidoDMm\":" + numeroOuNull(ctrl.centroLidoDMm, 0);
+    json += ",\"controlePeriodoMaxMs\":" + String(ctrl.periodoMaxMs);
     json += ",\"retoSyncAtivo\":" + String(ctrl.retoSyncAtivo ? "true" : "false");
     json += ",\"retoYawImu\":" + numeroOuNull(ctrl.retoYawRelativo, 2);
     json += ",\"retoYawEncoder\":" + numeroOuNull(ctrl.retoYawEncoder, 2);
@@ -566,6 +584,7 @@ static void handleRetoStart() {
     const String sinc = server.arg("sync");
     const bool longo = server.arg("longo") == "1";
     const bool usarFrente = server.arg("frontal") == "1";
+    const bool centralizar = server.arg("centralizar") == "1";
     const float maxDist = longo ? RETO_DISTANCIA_MAX_MM : RETO_LIMITE_ENSAIO_CURTO_MM;
     if ((sinc != "suave" && sinc != "desligado") ||
         !floatValido("distancia", distancia) ||
@@ -575,6 +594,8 @@ static void handleRetoStart() {
     if (longo) duracao = (int)prazoAutomaticoReto(distancia, rpm);
     else if (!inteiroEmFaixa("duracao", 1000, TESTE_DURACAO_MAX_MS, duracao))
         return respostaErro(400, "Timeout curto 1000..10000 ms");
+    if (centralizar && (distancia < 0 || sinc != "suave"))
+        return respostaErro(400, "Centralizacao so para frente e com sincronismo suave");
     if (usarFrente && distancia < 0)
         return respostaErro(400, "Sensor frontal nao protege ao andar de re; desmarque a opcao e use area livre");
     int limiar = (int)FRENTE_LIMIAR_PADRAO_MM;
@@ -596,9 +617,12 @@ static void handleRetoStart() {
     }
     // No reto a IMU so mede; se o angulo perdeu a continuidade, cria nova referencia.
     if (!lerIMU().confiavel) zerarYawIMU();
-    if (!iniciarControleReto(distancia, rpm, cprE, cprD, sinc == "suave"))
+    if (!iniciarControleReto(distancia, rpm, cprE, cprD, sinc == "suave", centralizar))
         return respostaErro(409, "Controlador de movimento reto nao iniciou");
     frenteProtegida = usarFrente;
+    retoCentralizar = centralizar;
+    leitorE.reiniciar();
+    leitorD.reiniciar();
     frenteLimiarMm = (uint16_t)limiar;
     frenteLimiarDinamicoMm = usarFrente ? (float)limiar : NAN;
     frenteUltimaBrutaMm=lerLaser(LASER_U3).brutoMm;
@@ -697,6 +721,7 @@ static void handleBateriaLimites() {
 
 bool testeMotorAtivo() { return modoMotorizado(); }
 bool frenteEmMonitoramento(){ return modo == Modo::RETO && frenteProtegida; }
+bool lateraisEmMonitoramento(){ return modo == Modo::RETO && retoCentralizar; }
 
 // V4.4 - Laser bench endpoints: no motor commands are called here.
 static bool bancadaParada() {
@@ -879,6 +904,8 @@ void loopTelemetry() {
     } else if (modo == Modo::GIRO && faseGiro == FaseGiro::ASSENTANDO) {
         atualizarAssentamentoGiro(agora);
     } else if (modo == Modo::RPM || modo == Modo::POSICAO || modo == Modo::GIRO || modo == Modo::RETO) {
+        if (lateraisEmMonitoramento())
+            informarLateraisReto(lateralCentro(LASER_U2, leitorE, agora), lateralCentro(LASER_U4, leitorD, agora));
         const char* motivo = atualizarControleMovimento();
         if (!(modo == Modo::GIRO && faseGiro == FaseGiro::CORRIGINDO))
             partidaUltima = lerControleMovimento().partida;

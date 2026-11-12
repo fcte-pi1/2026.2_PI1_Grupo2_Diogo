@@ -60,6 +60,7 @@ void loop() {
     atualizarIMU();
     atualizarEncoders();
     if (!testeMotorAtivo()) atualizarLasers();
+    else if (lateraisEmMonitoramento()) atualizarLasersMovimento(frenteEmMonitoramento());
     else if (frenteEmMonitoramento()) atualizarLaserFrontal();
     updateBattery();
     loopTelemetry();   // deadlines de PWM e watchdog não bloqueantes
