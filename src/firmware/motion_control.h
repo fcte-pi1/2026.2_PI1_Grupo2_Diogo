@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <math.h>
 #include "partida_logic.h"
+#include "centralizacao_logic.h"
 
 enum class TipoControle { INATIVO, RPM, POSICAO, GIRO_ENCODER, GIRO_IMU, RETO };
 
@@ -43,6 +44,13 @@ struct ControleInfo {
     float retoYawRelativo = NAN; // diagnostico IMU; nao controla a direcao
     float retoYawEncoder = 0;
     float retoOdomXmm = 0, retoOdomYmm = 0;
+    bool centroAtivo = false;
+    ModoCentro centroModo = ModoCentro::NENHUMA;
+    float centroErroMm = NAN;
+    float centroAlvoMm = 0;    // alvo de E - D seguido pelo sincronismo
+    float centroRefMm = -1;
+    float centroLidoEMm = NAN, centroLidoDMm = NAN;
+    uint32_t periodoMaxMs = 0;
     // Estimativas somente por encoder; NAO medem escorregamento lateral.
     float odomXmm = 0, odomYmm = 0;
     float odomYawGraus = 0;
@@ -55,8 +63,11 @@ bool iniciarControlePosicao(int32_t alvoE, int32_t alvoD,
 // V4.5: signed mm; positivo = frente, negativo = re. Ambos os motores
 // executam o movimento, e o sync suave e opcional para comparar A/B.
 // IMU e lasers sao APENAS diagnostico: nao entram na malha.
+// centralizar exige sincronismo suave e distancia positiva.
 bool iniciarControleReto(float distanciaMm, float limiteRpm, float cprE,
-                         float cprD, bool sincronismoSuave);
+                         float cprD, bool sincronismoSuave, bool centralizar = false);
+// Lasers laterais ja validados; chamar antes de atualizarControleMovimento().
+void informarLateraisReto(LateralLida esquerda, LateralLida direita);
 // Retorno: nullptr se normal; string de motivo se deve interromper/frear.
 const char* atualizarControleMovimento();
 void desativarControleMovimento();
