@@ -184,6 +184,9 @@ constexpr uint32_t FRENTE_IDADE_MAX_MS = 150;
 constexpr float FRENTE_RPM_MAX_TESTE = 35.0f;
 // Com centralizacao a protecao frontal e obrigatoria e para a 5 cm da parede (leitura do U3).
 constexpr uint16_t FRENTE_LIMIAR_CENTRO_MM = 50;
+// Corredor sem parede ao alcance do U3: partir exige essas leituras "sem alvo" seguidas.
+constexpr uint8_t FRENTE_SEM_ALVO_PARTIDA = 3;
+constexpr uint32_t FRENTE_MEMORIA_PARTIDA_MS = 500;
 // 250 ms de reacao + desaceleracao aproximada: apenas margem EXPERIMENTAL.
 // Esta previsao nao comprova distancia de frenagem; medir com regua.
 constexpr float FRENTE_REACAO_S = 0.25f;
