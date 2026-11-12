@@ -87,7 +87,7 @@ main{max-width:1090px;margin:auto}h1{font-size:clamp(1.35rem,3vw,2.3rem);margin:
 <div id="abaReto" class="aba-pagina" hidden>
 <section class="card"><h2>Movimento reto V4.5 — sincronismo por encoders</h2>
 <div class="notice warn"><strong>EM VALIDAÇÃO:</strong> nesta etapa o controle nao corrige paredes. Sem a protecao frontal ativada, nao ha anticolisao. Primeiros testes com rodas suspensas e pista livre, com chave fisica acessivel. O sensor frontal foi reposicionado; sua distancia ate a frente do chassi precisa ser medida.</div>
-<div class="row"><div class="field"><label>Distancia assinada (mm, -250 a +250; até 2000 com centralização)</label><input id="retoDist" type="number" min="-250" max="2000" value="50"></div><div class="field"><label>RPM (20–60)</label><input id="retoRpm" type="number" min="20" max="60" value="25"></div><div class="field"><label>Timeout (ms)</label><input id="retoTempo" type="number" min="1000" max="10000" value="7000"></div><div class="field"><label>Sincronismo</label><select id="retoSync"><option value="suave">Suave</option><option value="desligado">Desligado</option></select></div><div class="field"><label>Centralização (lasers laterais)</label><select id="retoCentro"><option value="0" selected>Desligada</option><option value="1">Ligada (até 2000 mm, timeout automático)</option></select></div></div>
+<div class="row"><div class="field"><label>Distancia assinada (mm, -250 a +250; até 2000 com centralização)</label><input id="retoDist" type="number" min="-250" max="2000" value="50"></div><div class="field"><label>RPM (20–60)</label><input id="retoRpm" type="number" min="20" max="60" value="25"></div><div class="field"><label>Timeout (ms)</label><input id="retoTempo" type="number" min="1000" max="10000" value="7000"></div><div class="field"><label>Sincronismo</label><select id="retoSync"><option value="suave">Suave</option><option value="desligado">Desligado</option></select></div><div class="field"><label>Centralização (lasers laterais)</label><select id="retoCentro"><option value="0" selected>Desligada</option><option value="1">Ligada (até 2000 mm, para a 5 cm da parede)</option></select></div></div>
 <div class="actions"><button class="secondary" onclick="presetReto(50)">50 mm</button><button class="secondary" onclick="presetReto(100)">100 mm</button><button class="secondary" onclick="presetReto(150)">150 mm</button><button class="secondary" onclick="presetReto(-50)">Ré 50 mm</button><button class="green" onclick="iniciarReto()">Iniciar reto</button><button class="danger" onclick="parar()">PARAR</button></div>
 <pre class="output" id="saidaReto">Aguardando telemetria...</pre>
 </section>
@@ -171,8 +171,8 @@ function iniciarReto(){
  const dist=Number($('retoDist').value),rpm=Number($('retoRpm').value),tempo=Number($('retoTempo').value);
  const centro=$('retoCentro').value==='1';
  if(centro){
-  if(!Number.isFinite(dist)||dist<30||dist>2000||!Number.isFinite(rpm)||rpm<20||rpm>60||$('retoSync').value!=='suave'){msg('Centralizacao: 30..2000 mm para frente, RPM 20..60 e sincronismo suave.',true);return}
-  if(!confirm('RETO com centralizacao: no corredor, sem anti-colisao. Continuar?'))return;
+  if(!Number.isFinite(dist)||dist<30||dist>2000||!Number.isFinite(rpm)||rpm<20||rpm>35||$('retoSync').value!=='suave'){msg('Centralizacao: 30..2000 mm para frente, RPM 20..35 e sincronismo suave.',true);return}
+  if(!confirm('RETO com centralizacao: para na distancia pedida ou a 5 cm da parede da frente; leitura frontal invalida tambem freia. Continuar?'))return;
   return post('/api/reto/start',{distancia:String(dist),rpm:String(rpm),sync:'suave',centralizar:'1',longo:'1'});
  }
  if(!Number.isFinite(dist)||Math.abs(dist)<30||Math.abs(dist)>250||!Number.isFinite(rpm)||rpm<20||rpm>60||!Number.isFinite(tempo)||tempo<1000||tempo>10000){msg('Reto: 30..250 mm, RPM 20..60 e timeout 1000..10000 ms.',true);return}

@@ -584,8 +584,8 @@ static void handleRetoStart() {
     int duracao = 0;
     const String sinc = server.arg("sync");
     const bool longo = server.arg("longo") == "1";
-    const bool usarFrente = server.arg("frontal") == "1";
     const bool centralizar = server.arg("centralizar") == "1";
+    const bool usarFrente = server.arg("frontal") == "1" || centralizar;
     const float maxDist = longo ? RETO_DISTANCIA_MAX_MM : RETO_LIMITE_ENSAIO_CURTO_MM;
     if ((sinc != "suave" && sinc != "desligado") ||
         !floatValido("distancia", distancia) ||
@@ -603,7 +603,8 @@ static void handleRetoStart() {
     if (usarFrente) {
         if (rpm > FRENTE_RPM_MAX_TESTE)
             return respostaErro(400, "No teste frontal use no maximo 35 RPM");
-        if (!inteiroEmFaixa("limiar", FRENTE_LIMIAR_MIN_MM, FRENTE_LIMIAR_MAX_MM, limiar))
+        if (centralizar) limiar = FRENTE_LIMIAR_CENTRO_MM;
+        else if (!inteiroEmFaixa("limiar", FRENTE_LIMIAR_MIN_MM, FRENTE_LIMIAR_MAX_MM, limiar))
             return respostaErro(400, "Limiar frontal bruto deve estar entre 200 e 1000 mm");
         // Para ativar, um EVENTO atual e valido e obrigatorio. A leitura ja
         // tem o offset de calibracao do sensor, mas continua contada desde a
@@ -630,7 +631,7 @@ static void handleRetoStart() {
     frenteUltimaIdadeMs=0;
     frenteParouPorLaser=false;
     iniciarRelogioMotorizado(duracao, Modo::RETO);
-    ultimoMotivo = usarFrente ? "reto_protecao_frontal_experimental" : (longo?"reto_longo_sem_laser":"reto_iniciado");
+    ultimoMotivo = centralizar ? "reto_centralizado_com_protecao_frontal" : usarFrente ? "reto_protecao_frontal_experimental" : (longo?"reto_longo_sem_laser":"reto_iniciado");
     respostaOk(usarFrente ? "Movimento com U3: leituras invalidas freiam; mantenha area livre e botao fisico acessivel" :
                  "Movimento por encoders SEM anti-colisao; mantenha area totalmente desobstruida");
 }
