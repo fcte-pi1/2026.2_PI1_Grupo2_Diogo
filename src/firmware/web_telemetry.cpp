@@ -17,6 +17,7 @@
 #include "telemetry_remote.h"
 #include "speed.h"
 #include "giro_logic.h"
+#include "frente_logic.h"
 #include <string.h>
 #include "maze_state.h"
 
@@ -38,6 +39,8 @@ static float frenteLimiarDinamicoMm = NAN;
 static int frenteUltimaBrutaMm = LASER_SEM_LEITURA;
 static uint32_t frenteUltimaIdadeMs = 0;
 static bool frenteParouPorLaser = false;
+static ProtecaoFrontal protecaoFrontal(FRENTE_IDADE_MAX_MS, FRENTE_SEM_ALVO_PARTIDA, FRENTE_MEMORIA_PARTIDA_MS);
+static DecisaoFrente frenteDecisao = DecisaoFrente::INVALIDA;
 
 // Correcao do angulo depois do giro de 90 graus (issue #153). O modo continua
 // GIRO durante todas as fases, entao heartbeat, limite de tempo e corte de
@@ -363,6 +366,11 @@ static void handleStatus() {
     json += ",\"frenteStatusVL\":" + String(laserF.statusVL);
     json += ",\"frenteIdadeMs\":" + (laserF.ultimaValidaMs?String(agora-laserF.ultimaValidaMs):"null");
     json += ",\"frenteParouPorLaser\":" + String(frenteParouPorLaser?"true":"false");
+    const float paredeEstimada = protecaoFrontal.paredeEstimadaMm(modo == Modo::RETO ? ctrl.retoProgressoMm : 0.0f);
+    json += ",\"frenteCodigo\":" + String(laserF.brutoMm);
+    json += ",\"frenteDecisao\":\"" + String(textoDecisaoFrente(frenteDecisao)) + "\"";
+    json += ",\"frenteParedeEstimadaMm\":" + numeroOuNull(paredeEstimada >= 0 ? paredeEstimada : NAN, 1);
+    json += ",\"frenteSemAlvoSeguidas\":" + String(protecaoFrontal.semAlvoSeguidasAgora());
     json += ",\"meta90E\":" + (cprE > 0 ? numeroOuNull(ENTRE_RODAS_MM * cprE / (4 * DIAMETRO_RODA_MM)) : String("null"));
     json += ",\"meta90D\":" + (cprD > 0 ? numeroOuNull(ENTRE_RODAS_MM * cprD / (4 * DIAMETRO_RODA_MM)) : String("null"));
     json += "}";
@@ -611,17 +619,25 @@ static void handleRetoStart() {
         // janela optica: a distancia ate a frente do chassi ainda nao foi medida.
         const LeituraLaser dado = lerLaser(LASER_U3);
         const uint32_t agora=millis();
-        if (!dado.inicializado || dado.brutoMm<0 || dado.ultimaValidaMs==0 ||
-            (uint32_t)(agora-dado.ultimaValidaMs)>FRENTE_IDADE_MAX_MS)
-            return respostaErro(409, "U3 sem leitura valida e recente: teste frontal bloqueado");
-        if (dado.brutoMm <= limiar + 35)
-            return respostaErro(409, "Obstaculo proximo: afaste o robo ate U3 superar limiar + 35 mm");
+        if (centralizar) {
+            // Corredor longo: "sem alvo" seguido tambem permite partir.
+            if (!dado.inicializado || !protecaoFrontal.podePartir(dado.brutoMm, limiar + 35, agora))
+                return respostaErro(409, "U3 sem leitura confiavel ou parede a menos de 85 mm: reto bloqueado");
+            protecaoFrontal.iniciarMovimento(agora);
+        } else {
+            if (!dado.inicializado || dado.brutoMm<0 || dado.ultimaValidaMs==0 ||
+                (uint32_t)(agora-dado.ultimaValidaMs)>FRENTE_IDADE_MAX_MS)
+                return respostaErro(409, "U3 sem leitura valida e recente: teste frontal bloqueado");
+            if (dado.brutoMm <= limiar + 35)
+                return respostaErro(409, "Obstaculo proximo: afaste o robo ate U3 superar limiar + 35 mm");
+        }
     }
     // No reto a IMU so mede; se o angulo perdeu a continuidade, cria nova referencia.
     if (!lerIMU().confiavel) zerarYawIMU();
     if (!iniciarControleReto(distancia, rpm, cprE, cprD, sinc == "suave", centralizar))
         return respostaErro(409, "Controlador de movimento reto nao iniciou");
     frenteProtegida = usarFrente;
+    frenteDecisao = DecisaoFrente::SEGUIR;
     retoCentralizar = centralizar;
     leitorE.reiniciar();
     leitorD.reiniciar();
@@ -867,6 +883,14 @@ static void atualizarAssentamentoGiro(uint32_t agora) {
 void loopTelemetry() {
     atualizarVelocidade(cprE, cprD, modoMotorizado());
     atualizarMedicaoFreio();
+    {
+        const LeituraLaser f = lerLaser(LASER_U3);
+        if (modo == Modo::RETO || modo == Modo::PARADO)
+            protecaoFrontal.observar(f.total, f.inicializado ? f.brutoMm : LASER_SEM_LEITURA, millis(),
+                                     modo == Modo::RETO ? lerControleMovimento().retoProgressoMm : 0.0f);
+        else
+            protecaoFrontal.esquecerParede();
+    }
     if (!modoMotorizado()) return;
     uint32_t agora = millis();
     // Segurança vem antes do cálculo de controle.
@@ -881,19 +905,29 @@ void loopTelemetry() {
         LeituraLaser dado=lerLaser(LASER_U3);
         frenteUltimaBrutaMm=dado.brutoMm;
         frenteUltimaIdadeMs=dado.ultimaValidaMs ? agora-dado.ultimaValidaMs : UINT32_MAX;
-        if (!dado.inicializado || dado.brutoMm<0 ||
-            frenteUltimaIdadeMs>FRENTE_IDADE_MAX_MS) {
-            frenteParouPorLaser=true;
-            encerrarTeste("frontal_U3_leitura_invalida_ou_antiga");
-            return;
-        }
         const ControleInfo ctl=lerControleMovimento();
         const float velRpm=fmaxf(0.0f,0.5f*(ctl.realE+ctl.realD));
         const float vMmS=velRpm*3.14159265358979323846f*DIAMETRO_RODA_MM/60.0f;
         const float extra=vMmS*FRENTE_REACAO_S+
              (vMmS*vMmS)/(2.0f*FRENTE_DESACEL_ESTIMADA_MM_S2);
         frenteLimiarDinamicoMm=(float)frenteLimiarMm+extra;
-        if (dado.brutoMm<=frenteLimiarDinamicoMm) {
+        if (retoCentralizar) {
+            frenteDecisao = dado.inicializado
+                ? protecaoFrontal.decidir(dado.brutoMm, frenteLimiarDinamicoMm, agora, ctl.retoProgressoMm)
+                : DecisaoFrente::INVALIDA;
+            if (frenteDecisao != DecisaoFrente::SEGUIR) {
+                frenteParouPorLaser=true;
+                encerrarTeste(frenteDecisao == DecisaoFrente::INVALIDA ? "frontal_U3_leitura_invalida_ou_antiga" :
+                              dado.brutoMm >= 0 ? "frontal_U3_obstaculo_detectado" : "frontal_U3_parede_estimada_pelo_percurso");
+                return;
+            }
+        } else if (!dado.inicializado || dado.brutoMm<0 ||
+            frenteUltimaIdadeMs>FRENTE_IDADE_MAX_MS) {
+            frenteParouPorLaser=true;
+            encerrarTeste("frontal_U3_leitura_invalida_ou_antiga");
+            return;
+        }
+        if (dado.brutoMm>=0 && dado.brutoMm<=frenteLimiarDinamicoMm) {
             frenteParouPorLaser=true;
             encerrarTeste("frontal_U3_obstaculo_detectado");
             return;

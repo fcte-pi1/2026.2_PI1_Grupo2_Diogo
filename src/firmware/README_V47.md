@@ -41,7 +41,7 @@ Desde a issue #152, enquanto as duas rodas nao tiverem saido, a ajuda de partida
 
 ## Centralizacao no corredor
 
-Desde a issue #155, o reto aceita `centralizar=1` (opcao "Centralizacao" na aba do reto, desligada por padrao). Os lasers laterais sao lidos durante o movimento e o erro lateral vira um alvo de diferenca entre as rodas para o sincronismo suave. Sem parede, segue pelos encoders. Com ela ligada, a protecao frontal fica obrigatoria e o robo para a 5 cm da parede da frente (ou na distancia pedida, o que vier primeiro), a no maximo 35 RPM. Os detalhes estao no README principal do firmware.
+Desde a issue #155, o reto aceita `centralizar=1` (opcao "Centralizacao" na aba do reto, desligada por padrao). Os lasers laterais sao lidos durante o movimento e o erro lateral vira um alvo de diferenca entre as rodas para o sincronismo suave. Sem parede, segue pelos encoders. Com ela ligada, a protecao frontal fica obrigatoria e o robo para a 5 cm da parede da frente (ou na distancia pedida, o que vier primeiro), a no maximo 35 RPM. Leitura frontal "sem alvo" (corredor longo) nao freia; falha do sensor freia. Os detalhes estao no README principal do firmware.
 
 ## Offset dos lasers
 
