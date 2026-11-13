@@ -14,6 +14,9 @@ def history_row():
         "status": "concluido",
         "resultado": "sucesso",
         "velocidade_media_cm_s": 18.0,
+        "algoritmo": "Flood Fill",
+        "rpm": 120.0,
+        "bateria_consumida_pct": 5.0,
         "quantidade_celulas_visitadas": 7,
     }
 

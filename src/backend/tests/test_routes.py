@@ -116,6 +116,7 @@ def test_finish_execution_returns_200_and_result(unit_client, status, outcome):
         "resultado": outcome,
         "finalizada_em": "2026-10-25T10:00:42",
         "tempo_total_ms": 42000,
+        "esp_notified": False,
     }
     assert db.execute.call_args.args[1] == {
         "id": 847,
@@ -123,6 +124,29 @@ def test_finish_execution_returns_200_and_result(unit_client, status, outcome):
         "resultado": outcome,
     }
     db.commit.assert_called_once()
+
+
+def test_execution_commands_reach_the_connected_esp(unit_client, active_execution):
+    client, db = unit_client
+    result = db.execute.return_value
+    result.scalar_one_or_none.return_value = None
+    result.scalar_one.return_value = 1
+    result.mappings.return_value.one.return_value = active_execution
+    with client.websocket_connect("/ws/telemetry") as socket:
+        started = client.post("/api/sessions", json={"tipo": "4x4"})
+        assert started.json()["esp_notified"] is True
+        assert socket.receive_json() == {
+            "type": "execution_started", "execution_active": True, "execution_id": "847",
+        }
+        result.mappings.return_value.first.return_value = {
+            "id": 847, "status": "concluido", "resultado": "sucesso",
+            "finalizada_em": datetime(2026, 10, 25, 10, 0, 42), "tempo_total_ms": 42000,
+        }
+        finished = client.post("/api/sessions/847/finish", json={"status": "concluido", "resultado": "sucesso"})
+        assert finished.json()["esp_notified"] is True
+        assert socket.receive_json() == {
+            "type": "execution_stopped", "execution_active": False, "execution_id": "847",
+        }
 
 @pytest.mark.parametrize("payload", [
     {"status": "em_execucao"},

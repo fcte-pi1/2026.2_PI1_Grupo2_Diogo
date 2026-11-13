@@ -5,6 +5,8 @@ import { TelemetryPage } from './TelemetryPage'
 import { api } from '../services/api'
 import { toast } from 'sonner'
 import '../test/setup'
+import { TelemetryProvider } from '../contexts/TelemetryProvider'
+import type { TelemetrySnapshot } from '../types/index'
 
 vi.mock('../services/api', () => ({
   api: { get: vi.fn(), post: vi.fn() },
@@ -24,16 +26,25 @@ class MockWebSocket {
   onerror: (() => void) | null = null
   close = vi.fn(() => this.onclose?.())
 
-  constructor(public url: string) {
+  url: string
+  constructor(url: string) {
+    this.url = url
     MockWebSocket.instances.push(this)
   }
 
-  send(data: unknown) {
-    this.onmessage?.({ data: JSON.stringify(data) } as MessageEvent)
+  send(data: Partial<TelemetrySnapshot>) {
+    this.onmessage?.({ data: JSON.stringify({
+      has_data: true, connected: true, stale: false,
+      generated_at: new Date().toISOString(), age_ms: 0, connection_age_ms: 0,
+      connection_timeout_ms: 5000, stale_after_ms: 1250, execucao_id: null,
+      metrics: activeRun.metrics, movement: activeRun.movement, position: activeRun.position,
+      ...data,
+    }) } as MessageEvent)
   }
 }
 
 const activeRun = {
+  id: '42',
   connected: true,
   execucao_id: 42,
   algorithm: 'BFS',
@@ -45,18 +56,22 @@ const activeRun = {
   movement: { giro_x_deg_s: 1, giro_y_deg_s: 2, giro_z_deg_s: 3 },
 }
 
-async function connectEsp() {
+function renderPage() {
+  return render(<TelemetryProvider><TelemetryPage /></TelemetryProvider>)
+}
+
+async function connectEsp(data: Partial<TelemetrySnapshot> = { connected: true }) {
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
   })
   const socket = MockWebSocket.instances.at(-1)!
-  act(() => socket.send({ connected: true }))
+  act(() => socket.send(data))
   return socket
 }
 
 async function renderReady(active: typeof activeRun | null = null) {
-  mockApi.get.mockResolvedValue({ data: active })
-  render(<TelemetryPage />)
+  mockApi.get.mockResolvedValue({ data: active ? { ...active, iniciada_em: new Date().toISOString() } : null })
+  renderPage()
   await screen.findByText(active ? 'Em execução' : 'Aguardando início')
   const socket = await connectEsp()
   await screen.findByRole('button', { name: active ? 'Execução iniciada' : 'Iniciar' })
@@ -66,6 +81,8 @@ async function renderReady(active: typeof activeRun | null = null) {
 describe('TelemetryPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockApi.get.mockReset()
+    mockApi.post.mockReset()
     MockWebSocket.instances = []
     vi.stubGlobal('WebSocket', MockWebSocket)
   })
@@ -80,7 +97,7 @@ describe('TelemetryPage', () => {
 
     expect(screen.getByRole('heading', { name: 'Telemetria' })).toBeInTheDocument()
     expect(screen.getByText('Bateria')).toBeInTheDocument()
-    expect(screen.getByText('Velocidade média')).toBeInTheDocument()
+    expect(screen.getByText('Velocidade instantânea')).toBeInTheDocument()
     expect(screen.getByText('Configurar execução')).toBeInTheDocument()
     expect(screen.getByText('Percurso')).toBeInTheDocument()
     expect(screen.getByText('Execução atual')).toBeInTheDocument()
@@ -99,7 +116,7 @@ describe('TelemetryPage', () => {
 
   test('shows backend unavailable notification when loading fails', async () => {
     mockApi.get.mockRejectedValue(new Error('offline'))
-    render(<TelemetryPage />)
+    renderPage()
 
     await waitFor(() => expect(mockToast.error).toHaveBeenCalledWith(
       'Backend indisponível. Verifique se o servidor está ativo.',
@@ -158,11 +175,11 @@ describe('TelemetryPage', () => {
   test('stops an active run and clears its summary', async () => {
     await renderReady(activeRun)
     mockApi.post.mockResolvedValueOnce({ data: {} })
-    const stopButton = screen.getAllByRole('button')[1]
+    const stopButton = screen.getByRole('button', { name: 'Finalizar execução' })
     fireEvent.click(stopButton)
 
     await waitFor(() => expect(mockApi.post).toHaveBeenCalledWith('/api/sessions/42/finish', {
-      status: 'interrompido', resultado: 'falha',
+      status: 'concluido', resultado: 'sucesso',
     }))
     expect(await screen.findByText('Aguardando início')).toBeInTheDocument()
     expect(mockToast).toHaveBeenCalledWith('Execução Parada')
@@ -171,7 +188,7 @@ describe('TelemetryPage', () => {
   test('reports backend failure when stopping a run', async () => {
     await renderReady(activeRun)
     mockApi.post.mockRejectedValueOnce(new axios.AxiosError('offline'))
-    fireEvent.click(screen.getAllByRole('button')[1])
+    fireEvent.click(screen.getByRole('button', { name: 'Finalizar execução' }))
 
     await waitFor(() => expect(mockToast.error).toHaveBeenCalledWith(
       'Backend indisponível. Verifique se o servidor está ativo.',
@@ -186,5 +203,39 @@ describe('TelemetryPage', () => {
 
     act(() => socket.onclose?.())
     expect(screen.getByRole('button', { name: 'ESP desconectada' })).toBeDisabled()
+  })
+
+  test('shows waiting state without inventing readings before the first packet', async () => {
+    mockApi.get.mockResolvedValue({ data: null })
+    renderPage()
+    await connectEsp({
+      has_data: false, connected: false, stale: true, generated_at: null,
+      age_ms: null, metrics: null, movement: null, position: null,
+    })
+    expect(screen.getByText('Aguardando dados do Micromouse.')).toBeInTheDocument()
+    expect(screen.getByText('Sem dados')).toBeInTheDocument()
+    expect(screen.queryByText('0%')).not.toBeInTheDocument()
+  })
+
+  test('preserves readings and displays their age after losing the ESP signal', async () => {
+    const socket = await renderReady()
+    act(() => socket.send({ connected: false, stale: true, age_ms: 6000 }))
+    expect(screen.getByText('80%')).toBeInTheDocument()
+    expect(screen.getByText('Micromouse desconectado. Exibindo os últimos dados recebidos.')).toBeInTheDocument()
+    expect(screen.getByText('Última atualização há 6 s.')).toBeInTheDocument()
+  })
+
+  test('tracks row/col updates during the run without duplicating stationary positions', async () => {
+    const socket = await renderReady(activeRun)
+    act(() => socket.send({ position: { row: 2, col: 2 } }))
+    act(() => socket.send({ position: { row: 3, col: 2 } }))
+    act(() => socket.send({ position: { row: 3, col: 2 } }))
+    expect(screen.getByText('(2, 3)')).toBeInTheDocument()
+    expect(screen.getByText('Células visitadas').parentElement).toHaveTextContent('3')
+    mockApi.post.mockResolvedValueOnce({ data: {} })
+    fireEvent.click(screen.getByRole('button', { name: 'Finalizar execução' }))
+    await screen.findByText('Aguardando início')
+    act(() => socket.send({ position: { row: 3, col: 3 } }))
+    expect(document.querySelector('polyline')).toHaveAttribute('points', '')
   })
 })

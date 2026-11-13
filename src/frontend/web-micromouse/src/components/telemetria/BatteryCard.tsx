@@ -1,7 +1,7 @@
 import { TelemetryCard } from "./TelemetryCard";
 import batterySvg from '../../../assets/battery.svg'
 interface BatteryCardProps {
-  battery: number;
+  battery: number | null;
 }
 
 export function BatteryCard({
@@ -11,7 +11,7 @@ export function BatteryCard({
     <TelemetryCard title="Bateria" icon={<img src={batterySvg}/>}>
       <div className="flex min-w-0 items-center justify-between">
         <strong className="truncate text-2xl font-bold text-white sm:text-3xl md:text-[34px]">
-          {battery}%
+          {battery === null ? "—" : `${battery}%`}
         </strong>
       </div>
 
@@ -25,7 +25,7 @@ export function BatteryCard({
             ease-in-out
           "
           style={{
-            width: `${battery}%`,
+            width: `${battery ?? 0}%`,
           }}
         />
       </div>
@@ -34,7 +34,7 @@ export function BatteryCard({
         <span>Estado</span>
 
         <strong className="text-[#DCE1E9]">
-          {battery > 20 ? "Normal" : "Baixa"}
+          {battery === null ? "Sem dados" : battery > 20 ? "Normal" : "Baixa"}
         </strong>
       </div>
     </TelemetryCard>
