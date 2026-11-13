@@ -20,7 +20,8 @@ export type Telemetria ={
     posicao: Posicao;
     velocidade: number;
     rpm: number;
-    bateria: number;
+    bateriaRestante: number | null;
+    bateriaConsumida: number | null;
     labirinto: {
         linhas: number;
         colunas: number;

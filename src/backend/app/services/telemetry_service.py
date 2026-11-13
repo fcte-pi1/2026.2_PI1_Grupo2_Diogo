@@ -60,6 +60,14 @@ class TelemetryService:
                 self.update(telemetry)
                 self._metadata.update(metadata)
 
+    def complete_position(self, telemetry: TelemetryData) -> None:
+        """Completa pacotes legados sem sobrescrever uma leitura mais recente."""
+        with self._lock:
+            if self._last_telemetry is not None and (
+                self._last_telemetry.generated_at == telemetry.generated_at
+            ):
+                self._last_telemetry.position = telemetry.position.model_copy()
+
     def get_current(self) -> TelemetryResponse | None:
         with self._lock:
             if self._last_telemetry is None:

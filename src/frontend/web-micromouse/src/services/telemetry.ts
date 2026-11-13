@@ -1,4 +1,4 @@
-import type { TelemetrySnapshot } from "../types/telemetry";
+import type { TelemetrySnapshot } from "../types/index";
 
 export function telemetryWebSocketUrl(): string {
   const base = new URL(import.meta.env.VITE_API_URL || window.location.origin, window.location.origin);

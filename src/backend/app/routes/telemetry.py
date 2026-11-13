@@ -18,6 +18,7 @@ from app.schemas.telemetry import (
     TelemetryData,
 )
 from app.services.telemetry_service import telemetry_service
+from app.services.esp_websocket import esp_websocket_manager
 
 
 router = APIRouter(
@@ -121,13 +122,21 @@ def receive_telemetry(
 
 
 def _save_telemetry(telemetry: EspTelemetryInput | TelemetryData, db: Session):
+    needs_stored_position = False
     reported_connected = (
         telemetry.connected if isinstance(telemetry, EspTelemetryInput) else True
     )
     telemetry_service.mark_esp_packet_received(reported_connected)
     if isinstance(telemetry, EspTelemetryInput):
+        cached_position = telemetry_service.get_snapshot()["position"]
+        position = telemetry.position
+        if position is None and telemetry.row is not None:
+            position = PositionData(row=telemetry.row, col=telemetry.col)
+        if position is None:
+            needs_stored_position = cached_position is None
+            position = PositionData(**(cached_position or {"row": 0, "col": 0}))
         telemetry = TelemetryData(
-            position=PositionData(row=0, col=0),
+            position=position,
             metrics=MetricsData(
                 battery_pct=telemetry.battery_pct,
                 speed_cm_s=telemetry.speed_cm_s,
@@ -187,6 +196,11 @@ def _save_telemetry(telemetry: EspTelemetryInput | TelemetryData, db: Session):
         ),
         {"execucao_id": execution["id"]},
     ).mappings().first()
+
+    if needs_stored_position and last_movement is not None:
+        pos_x, pos_y = last_movement["pos_x"], last_movement["pos_y"]
+        telemetry.position = PositionData(row=pos_y, col=pos_x)
+        telemetry_service.complete_position(telemetry)
 
     if last_telemetry is not None and last_movement is not None:
         unchanged = (
@@ -254,6 +268,17 @@ def _save_telemetry(telemetry: EspTelemetryInput | TelemetryData, db: Session):
             "gyro_z": gyro[2],
         },
     ).scalar_one()
+    db.execute(
+        text(
+            "UPDATE execucao SET quantidade_celulas_visitadas = ("
+            "  SELECT COUNT(*) FROM ("
+            "    SELECT DISTINCT pos_x, pos_y FROM amostra_movimento "
+            "    WHERE execucao_id = :execucao_id"
+            "  ) AS celulas_visitadas"
+            ") WHERE id = :execucao_id"
+        ),
+        {"execucao_id": execution["id"]},
+    )
     db.commit()
     telemetry_service.associate_execution(telemetry, telemetry_sample_id=inserted_id)
 
@@ -270,25 +295,26 @@ def _save_telemetry(telemetry: EspTelemetryInput | TelemetryData, db: Session):
 async def receive_telemetry_websocket(websocket: WebSocket):
     """Recebe amostras JSON da ESP por uma conexão WebSocket persistente."""
     await websocket.accept()
+    esp_websocket_manager.connect(websocket)
     try:
         while True:
             try:
                 payload = await websocket.receive_json()
                 telemetry = telemetry_input_adapter.validate_python(payload)
             except (ValidationError, ValueError, TypeError) as error:
-                await websocket.send_json({"status": "error", "detail": str(error)})
+                await esp_websocket_manager.send_json({"status": "error", "detail": str(error)})
                 continue
 
             try:
                 result = await asyncio.to_thread(_save_websocket_sample, telemetry)
-                await websocket.send_json(result)
+                await esp_websocket_manager.send_json(result)
             except HTTPException as error:
-                await websocket.send_json(
+                await esp_websocket_manager.send_json(
                     {"status": "error", "detail": error.detail, "code": error.status_code}
                 )
             except SQLAlchemyError:
                 logger.warning("Gravação da telemetria indisponível.", exc_info=True)
-                await websocket.send_json(
+                await esp_websocket_manager.send_json(
                     {
                         "status": "error", "saved": False, "code": 503,
                         "detail": "Leitura recebida, mas não foi possível gravá-la.",
@@ -296,6 +322,8 @@ async def receive_telemetry_websocket(websocket: WebSocket):
                 )
     except WebSocketDisconnect:
         pass
+    finally:
+        esp_websocket_manager.disconnect(websocket)
 
 
 def _save_websocket_sample(telemetry: TelemetryData | EspTelemetryInput):

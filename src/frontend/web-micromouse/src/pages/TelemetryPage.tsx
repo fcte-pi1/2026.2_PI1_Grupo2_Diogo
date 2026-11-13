@@ -13,13 +13,7 @@ import { toast } from "sonner";
 import { api } from "../services/api";
 import axios from "axios";
 import { useTelemetry } from "../hooks/useTelemetry";
-interface PropsExec {
-  id: string | number;
-  algorithm: string;
-  iniciada_em?: string | Date;
-  labirinto_id: number;
-  status: string;
-}
+import type { PropsExec } from "../types/index";
 
 function segundosDesdeInicio(iniciadaEm?: string | Date): number {
   if (!iniciadaEm) return 0;
@@ -34,14 +28,14 @@ function segundosDesdeInicio(iniciadaEm?: string | Date): number {
 
 export function TelemetryPage() {
   const [dataExec, setDataExec] = useState<PropsExec>();
-  const { data: telemetry, connected: conectada, streamStatus, stale, ageMs } = useTelemetry();
+  const { data: telemetry, connected: conectada, streamStatus, stale, ageMs, subscribe } = useTelemetry();
   const [tipo, setTipo] = useState<TipoLabirinto>("4x4");
 
   const [iniciada, setIniciada] = useState(false);
   const [inicioExecucao, setInicioExecucao] = useState<string | Date>();
   const [verificandoExecucao, setVerificandoExecucao] = useState(true);
   const [tempoSegundos, setTempoSegundos] = useState(0);
-  const [trajetoria] = useState<Posicao[]>([]);
+  const [trajetoria, setTrajetoria] = useState<Posicao[]>([]);
   const { linhas, colunas } = LABIRINTOS[tipo];
 
   const handleVerificar = useCallback(async (): Promise<PropsExec | null | undefined> => {
@@ -81,6 +75,27 @@ export function TelemetryPage() {
       mounted = false;
     };
   }, [handleVerificar, streamStatus]);
+
+  useEffect(() => {
+    if (!iniciada) return;
+    return subscribe(dados => {
+      const position = dados.position;
+      if (!position || !Number.isInteger(position.row) || !Number.isInteger(position.col)) return;
+      setTrajetoria(anterior => {
+        const ultimo = anterior.at(-1);
+        const { row, col } = position;
+        if (ultimo?.x === col && ultimo.y === row) return anterior;
+        let direcao: Posicao["direcao"] = "N";
+        if (ultimo) {
+          if (row > ultimo.y) direcao = "S";
+          else if (row < ultimo.y) direcao = "N";
+          else if (col > ultimo.x) direcao = "L";
+          else direcao = "O";
+        }
+        return [...anterior, { x: col, y: row, direcao }];
+      });
+    });
+  }, [iniciada, subscribe]);
   async function handleIniciarExecucao() {
     if (!conectada) {
       toast("Conecte a ESP antes de iniciar a execução.");
@@ -92,6 +107,7 @@ export function TelemetryPage() {
         tipo,
       });
       setDataExec(data);
+      setTrajetoria([]);
       setInicioExecucao(data.iniciada_em);
       setTempoSegundos(segundosDesdeInicio(data.iniciada_em));
       return true;
@@ -112,13 +128,13 @@ export function TelemetryPage() {
   async function handleStopExecucao() {
     // # verificiar se chegou no destino final
     // falha  sucesso
-    const status = "interrompido";
+    const status = "concluido";
     // em_execucao, concluido, interrompido
-    const resultado = "falha";
+    const resultado = "sucesso";
 
     try {
       await api.post(
-        `/api/sessions/${dataExec?.id}/finish`,
+        `/api/sessions/${dataExec?.id ?? dataExec?.execucao_id}/finish`,
         {
           status: status,
           resultado: resultado,
@@ -233,6 +249,7 @@ export function TelemetryPage() {
                 if (execucaoAtiva === undefined) return;
                 if (execucaoAtiva) {
                   setDataExec(execucaoAtiva);
+                  setTrajetoria([]);
                   setInicioExecucao(execucaoAtiva.iniciada_em);
                   setTempoSegundos(segundosDesdeInicio(execucaoAtiva.iniciada_em));
                   setIniciada(true);
@@ -257,13 +274,14 @@ export function TelemetryPage() {
 
             <button
               disabled={!iniciada}
-              aria-label="Interromper execução"
+              aria-label="Finalizar execução"
               onClick={async () => {
 
                 const ok = await handleStopExecucao();
                 if (ok) {
                   setTempoSegundos(0);
                   setIniciada(false);
+                  setTrajetoria([]);
                   setDataExec(undefined);
                   setInicioExecucao(undefined);
                   setTempoSegundos(0);

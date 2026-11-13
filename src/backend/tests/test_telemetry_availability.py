@@ -106,6 +106,36 @@ def test_packets_before_a_race_enable_monitoring_without_writing(environment):
     assert not db.inserts
 
 
+@pytest.mark.parametrize("position", [
+    {"position": {"row": 2, "col": 3}},
+    {"row": 2, "col": 3},
+    {"pos_y": 2, "pos_x": 3},
+])
+def test_flat_esp_packets_preserve_supported_position_formats(environment, position):
+    client, _, db = environment
+    db.active = True
+    response = client.post("/api/telemetry", json={
+        "bateria": 80, "velocidade": 12.5, "rpm_motor": 300, **position,
+    })
+    assert response.json()["saved"] is True
+    assert db.inserts[1][1]["pos_x"] == 3
+    assert db.inserts[1][1]["pos_y"] == 2
+    assert client.get("/api/telemetry/current").json()["position"] == {"row": 2, "col": 3}
+
+
+def test_legacy_packet_without_position_keeps_the_last_stored_cell(environment):
+    client, _, db = environment
+    db.active = True
+    db.last_movement = {
+        "pos_x": 3, "pos_y": 2, "giro_x_deg_s": 0, "giro_y_deg_s": 0, "giro_z_deg_s": 0,
+    }
+    response = client.post("/api/telemetry", json={"bateria": 80, "velocidade": 12.5, "rpm_motor": 300})
+    assert response.json()["saved"] is True
+    assert db.inserts[1][1]["pos_x"] == 3
+    assert db.inserts[1][1]["pos_y"] == 2
+    assert client.get("/api/telemetry/current").json()["position"] == {"row": 2, "col": 3}
+
+
 def test_loss_preserves_readings_and_new_packet_restores_connection(environment):
     client, service, _ = environment
     client.post("/api/telemetry", json=packet())

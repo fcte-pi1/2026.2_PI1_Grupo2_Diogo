@@ -1,7 +1,7 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { TelemetryContext } from "./telemetry";
 import { parseTelemetrySnapshot, telemetryWebSocketUrl } from "../services/telemetry";
-import type { TelemetrySnapshot, TelemetryStreamStatus } from "../types/telemetry";
+import type { TelemetrySnapshot, TelemetryStreamStatus } from "../types/index";
 
 const SILENCE_TIMEOUT_MS = 5000;
 const MAX_RETRY_DELAY_MS = 10000;
@@ -10,6 +10,11 @@ export function TelemetryProvider({ children }: { children: ReactNode }) {
   const [frame, setFrame] = useState<{ data: TelemetrySnapshot; receivedAt: number } | null>(null);
   const [streamStatus, setStreamStatus] = useState<TelemetryStreamStatus>("connecting");
   const [now, setNow] = useState(Date.now);
+  const listeners = useRef(new Set<(data: TelemetrySnapshot) => void>());
+  const subscribe = useCallback((listener: (data: TelemetrySnapshot) => void) => {
+    listeners.current.add(listener);
+    return () => { listeners.current.delete(listener); };
+  }, []);
 
   useEffect(() => {
     let socket: WebSocket | null = null;
@@ -62,6 +67,7 @@ export function TelemetryProvider({ children }: { children: ReactNode }) {
           }));
           setNow(lastMessageAt);
           setStreamStatus("open");
+          listeners.current.forEach(listener => listener(data));
         };
         socket.onclose = retry;
         socket.onerror = retry;
@@ -97,7 +103,7 @@ export function TelemetryProvider({ children }: { children: ReactNode }) {
     || ageMs === null || ageMs > (data?.stale_after_ms ?? 1250);
 
   return (
-    <TelemetryContext.Provider value={{ data, streamStatus, connected, stale, ageMs }}>
+    <TelemetryContext.Provider value={{ data, streamStatus, connected, stale, ageMs, subscribe }}>
       {children}
     </TelemetryContext.Provider>
   );

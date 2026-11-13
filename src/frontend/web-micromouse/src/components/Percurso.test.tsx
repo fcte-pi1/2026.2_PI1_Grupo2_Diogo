@@ -74,11 +74,13 @@ describe('Percurso', () => {
     })
   })
 
-  it('handles an empty trajectory without a robot or enabled replay controls', () => {
+  it('shows the robot at the start with replay disabled when the trajectory is empty', () => {
     const { container } = render(<Percurso linhas={4} colunas={4} trajetoria={[]} />)
 
     expect(container.querySelector('polyline')).toHaveAttribute('points', '')
-    expect(container.querySelector('svg > g[style]')).toBeNull()
+    expect(container.querySelector('svg > g[style]')).toHaveStyle({
+      transform: 'translate(20px, 20px) rotate(0deg)',
+    })
     expect(screen.getByRole('button', { name: /Reproduzir/ })).toBeDisabled()
     expect(screen.getByRole('slider', { name: 'Passo do replay' })).toBeDisabled()
     expect(screen.getByRole('slider', { name: 'Passo do replay' })).toHaveValue('0')

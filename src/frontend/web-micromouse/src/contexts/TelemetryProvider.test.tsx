@@ -3,7 +3,7 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { TelemetryProvider } from "./TelemetryProvider";
 import { useTelemetry } from "../hooks/useTelemetry";
-import type { TelemetrySnapshot } from "../types/telemetry";
+import type { TelemetrySnapshot } from "../types/index";
 
 class MockWebSocket {
   static instances: MockWebSocket[] = [];
