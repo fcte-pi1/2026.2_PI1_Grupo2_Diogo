@@ -245,9 +245,11 @@ A opção vem **desligada por padrão**. Desligada, o reto se comporta exatament
 
 **Corredor longo.** O VL53L0X não lê distâncias longas, então num corredor sem parede ao alcance ele responde "sem alvo". O firmware separa isso de falha do sensor (`frente_logic.h`):
 
-- **Sem alvo** (fora da faixa ou fase inválida): o robô segue. Se ele já tinha visto uma parede, a distância dela é descontada pelo percurso dos encoders, e o robô para quando essa estimativa chega ao limite, mesmo sem nova leitura.
-- **Falha** (perto demais, timeout, erro de I2C, status de leitura 1 a 3, ou nenhuma amostra nova em 150 ms): o robô freia.
-- **Partida:** exige leitura válida acima de 85 mm ou 3 leituras "sem alvo" seguidas. Uma parede vista a menos de 85 mm nos últimos 500 ms também bloqueia a partida.
+- **Sem alvo** (fora da faixa, fase inválida ou sinal fraco, status 1 e 2 do sensor, código -7): o robô segue. Se ele já tinha visto uma parede, a distância dela é descontada pelo percurso dos encoders, e o robô para quando essa estimativa chega ao limite, mesmo sem nova leitura.
+- **Falha** (perto demais, timeout, erro de I2C, status de leitura 3 e 5, ou nenhuma amostra nova em 150 ms): o robô freia.
+- **Partida:** exige leitura válida acima de 85 mm ou 3 leituras "sem alvo" seguidas. Com o sensor piscando no limite do alcance, vale a última leitura válida dos últimos 500 ms: acima de 85 mm libera, abaixo bloqueia.
+
+No primeiro teste no labirinto, o reto centralizado não partia com a parede da frente longe. A causa provável é o sinal fraco, que antes era tratado como falha (a confirmar pelo `frenteStatusVL`). Um retorno fraco também pode vir de uma parede próxima que reflete pouco; quem segura esse caso é a lembrança da última parede vista, descontada pelo percurso.
 
 O painel mostra o código da leitura do U3 (`frenteCodigo`), a decisão (`frenteDecisao`), a parede estimada pelo percurso e a contagem de "sem alvo"; os campos também vão para o CSV. A proteção frontal sem centralização continua como antes. A correção só começa depois da partida conjunta (#152), que termina com poucos pulsos; dentro dos primeiros 50 mm ela já age. Por isso, o ensaio do #152 (`partidaDifMaxMm`) deve ser feito com a centralização desligada.
 
@@ -272,7 +274,7 @@ O `/api/status`, a aba do reto e o CSV mostram o modo (`centroModo`: `DUAS`, `ES
 ### Testes
 
 - `test/test_centralizacao_logic` (17 testes): sinais do erro, assimetria, referência aprendida e fixa, volta a zero sem parede, integral congelada, limite do alvo e validação das leituras (amostra nova, borda de parede, pico isolado, leitura velha).
-- `test/test_frente_logic` (11 testes): corredor aberto com parede surgindo, parede vista que vira "sem alvo", leitura piscando, falhas, sensor parado e regras da partida.
+- `test/test_frente_logic` (13 testes): corredor aberto com parede surgindo, parede vista que vira "sem alvo", leitura piscando, falhas, sensor parado, regras da partida, partida com o sensor piscando e corredor com sinal fraco.
 - `tests/host/test_centralizacao.cpp`: corredor de 168 mm simulado, com posição lateral e ângulo calculados das rodas e lasers a cada 60 ms com ruído e o mesmo filtro do firmware. Em 900 mm:
 
 | Caso | Desligada | Ligada |
@@ -291,7 +293,7 @@ O `/api/status`, a aba do reto e o CSV mostram o modo (`centroModo`: `DUAS`, `ES
 - **Falta a bancada:**
   - **primeiro, conferir o sinal com as rodas suspensas:** com anteparos dos dois lados e o direito mais perto, `centroErroMm` deve ser positivo e a roda esquerda deve girar mais devagar. Se estiver ao contrário, o robô vira para a parede;
   - comparar `controlePeriodoMaxMs` e `imuFalhasI2C` com a centralização ligada e desligada;
-  - **conferir o que o U3 responde com o corredor livre:** apontar para mais de 1,5 m sem obstáculo e ver `frenteCodigo` e `frenteStatusVL`. Se der -2 (fora da faixa) ou -4 (fase inválida), o corredor longo funciona; se der -1 (status 1 a 3), o robô continua freando e é preciso separar esse status no `lasers_logic.h`;
+  - **conferir o que o U3 responde com o corredor livre:** apontar para mais de 1,5 m sem obstáculo e ver `frenteCodigo` e `frenteStatusVL`. -2, -4 e -7 contam como "sem alvo"; se der -1 (status 3 ou 5), o robô continua freando;
   - medir com régua onde o robô para em relação à parede da frente e ajustar `FRENTE_LIMIAR_CENTRO_MM` ou a margem de frenagem (`FRENTE_REACAO_S`, `FRENTE_DESACEL_ESTIMADA_MM_S2`);
   - medir `CENTRO_ASSIMETRIA_MM` com o robô centrado;
   - percorrer várias células em linha reta sem encostar nas paredes (critério do card) e ajustar `CENTRO_KP` e `CENTRO_KI_POR_MM`. A simulação não tem o atraso real dos lasers, então ganhos maiores podem fazer o robô oscilar.
