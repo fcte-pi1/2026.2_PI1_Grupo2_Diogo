@@ -15,8 +15,20 @@ void test_offset_zero_nao_muda_a_leitura() {
 
 void test_codigos_de_erro_passam_sem_offset() {
   const int codigos[] = {LASER_SEM_LEITURA, LASER_FORA_ESCALA, LASER_TIMEOUT,
-                         LASER_FASE_INVALIDA, LASER_PERTO_DEMAIS, LASER_ERRO_COMUNICACAO};
+                         LASER_FASE_INVALIDA, LASER_PERTO_DEMAIS, LASER_ERRO_COMUNICACAO,
+                         LASER_SINAL_FRACO};
   for (int codigo : codigos) TEST_ASSERT_EQUAL_INT(codigo, aplicarOffsetLaser(codigo, 20));
+}
+
+void test_status_do_sensor_viram_codigos() {
+  TEST_ASSERT_EQUAL_INT(150, classificarLeitura(false, 0, 150, 20, 2000));
+  TEST_ASSERT_EQUAL_INT(LASER_SINAL_FRACO, classificarLeitura(false, 1, 8190, 20, 2000));
+  TEST_ASSERT_EQUAL_INT(LASER_SINAL_FRACO, classificarLeitura(false, 2, 8190, 20, 2000));
+  TEST_ASSERT_EQUAL_INT(LASER_SEM_LEITURA, classificarLeitura(false, 3, 15, 20, 2000));
+  TEST_ASSERT_EQUAL_INT(LASER_FASE_INVALIDA, classificarLeitura(false, 4, 8190, 20, 2000));
+  TEST_ASSERT_EQUAL_INT(LASER_SEM_LEITURA, classificarLeitura(false, 5, 0, 20, 2000));
+  TEST_ASSERT_EQUAL_INT(LASER_ERRO_COMUNICACAO, classificarLeitura(true, 0, 150, 20, 2000));
+  TEST_ASSERT_EQUAL_STRING("SINAL_FRACO", textoStatusLaser(LASER_SINAL_FRACO));
 }
 
 void test_leitura_corrigida_nunca_fica_negativa() {
@@ -45,6 +57,7 @@ int main() {
   RUN_TEST(test_offset_e_subtraido_da_leitura);
   RUN_TEST(test_offset_zero_nao_muda_a_leitura);
   RUN_TEST(test_codigos_de_erro_passam_sem_offset);
+  RUN_TEST(test_status_do_sensor_viram_codigos);
   RUN_TEST(test_leitura_corrigida_nunca_fica_negativa);
   RUN_TEST(test_offset_entra_antes_da_deteccao_de_parede);
   RUN_TEST(test_leitura_invalida_continua_invalida_no_filtro);

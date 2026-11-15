@@ -9,11 +9,13 @@ constexpr int LASER_TIMEOUT = -3;
 constexpr int LASER_FASE_INVALIDA = -4;
 constexpr int LASER_PERTO_DEMAIS = -5;
 constexpr int LASER_ERRO_COMUNICACAO = -6;
+constexpr int LASER_SINAL_FRACO = -7;   // status 1 (sigma) ou 2 (sinal): retorno fraco
 
 inline int classificarLeitura(bool erroComunicacao, uint8_t rangeStatus,
                             uint16_t distanciaMm, int minMm, int maxMm) {
     if (erroComunicacao) return LASER_ERRO_COMUNICACAO;
     if (rangeStatus == 4) return LASER_FASE_INVALIDA;
+    if (rangeStatus == 1 || rangeStatus == 2) return LASER_SINAL_FRACO;
     if (rangeStatus != 0) return LASER_SEM_LEITURA;
     if (distanciaMm < minMm) return LASER_PERTO_DEMAIS;
     if (distanciaMm > maxMm) return LASER_FORA_ESCALA;
@@ -99,6 +101,7 @@ inline const char* textoStatusLaser(int v) {
         case LASER_FASE_INVALIDA:return "FASE_INVALIDA";
         case LASER_PERTO_DEMAIS:return "ABAIXO_MINIMO";
         case LASER_ERRO_COMUNICACAO:return "ERRO_I2C";
+        case LASER_SINAL_FRACO:return "SINAL_FRACO";
         default:return "VALIDO";
     }
 }
