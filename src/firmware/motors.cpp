@@ -158,3 +158,16 @@ void frearMotorDir() {
 void frearMotoresTudo() {
     pararMotores(); // modo seguro STBY, sem freio eletrico ativo
 }
+
+// Short brake do TB6612: IN1 = IN2 = HIGH com STBY HIGH, qualquer PWM (#163).
+void frearAtivoMotores() {
+    if (!pwmConfigurado) { pararMotores(); return; }
+    pwmCanalA(0);
+    pwmCanalB(0);
+    digitalWrite(PIN_AIN1, HIGH);
+    digitalWrite(PIN_AIN2, HIGH);
+    digitalWrite(PIN_BIN1, HIGH);
+    digitalWrite(PIN_BIN2, HIGH);
+    digitalWrite(PIN_STBY, HIGH);
+    standbyHabilitado = true;
+}
