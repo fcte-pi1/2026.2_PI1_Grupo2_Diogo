@@ -18,6 +18,7 @@
 #include "speed.h"
 #include "giro_logic.h"
 #include "frente_logic.h"
+#include "freio_logic.h"
 #include <string.h>
 #include "maze_state.h"
 
@@ -41,6 +42,10 @@ static uint32_t frenteUltimaIdadeMs = 0;
 static bool frenteParouPorLaser = false;
 static ProtecaoFrontal protecaoFrontal(FRENTE_IDADE_MAX_MS, FRENTE_SEM_ALVO_PARTIDA, FRENTE_MEMORIA_PARTIDA_MS);
 static DecisaoFrente frenteDecisao = DecisaoFrente::INVALIDA;
+static bool freioAtivoHabilitado = FREIO_ATIVO_PADRAO;
+static bool freioSegurando = false;
+static LiberacaoFreio liberacaoFreio(FREIO_ATIVO_PARADO_MS, FREIO_ATIVO_MAX_MS);
+static const char* freioUltimaParada = "NENHUMA";
 
 // Correcao do angulo depois do giro de 90 graus (issue #153). O modo continua
 // GIRO durante todas as fases, entao heartbeat, limite de tempo e corte de
@@ -152,7 +157,17 @@ static void encerrarTeste(const char* motivo) {
         // PRIMEIRO captura contagens; depois manda o TB6612 frear.
         iniciarMedicaoFreio();
     }
-    frearMotoresTudo();
+    const bool freioAtivo = estavaMotorizado && freioAtivoHabilitado &&
+                            paradaUsaFreioAtivo(motivo, modo == Modo::PWM || modo == Modo::RPM);
+    if (freioAtivo) {
+        frearAtivoMotores();
+        const DadosEncoder e = lerEncoders();
+        liberacaoFreio.iniciar(millis(), e.esq, e.dir);
+    } else {
+        frearMotoresTudo();
+    }
+    freioSegurando = freioAtivo;
+    if (estavaMotorizado) freioUltimaParada = freioAtivo ? "ATIVO" : "COAST";
     if (modo == Modo::PWM) {
         DadosEncoder d = lerEncoders();
         ultimoTesteDeltaE = d.esq - testeInicioE;
@@ -263,6 +278,9 @@ static void handleStatus() {
     json += ",\"controleLimiteRpm\":" + numeroOuNull(ctrl.limiteRpm);
     json += ",\"chegouE\":" + String(ctrl.finalizouE ? "true" : "false");
     json += ",\"chegouD\":" + String(ctrl.finalizouD ? "true" : "false");
+    json += ",\"freioModo\":\"" + String(freioAtivoHabilitado ? "ATIVO" : "COAST") + "\"";
+    json += ",\"freioUltimaParada\":\"" + String(freioUltimaParada) + "\"";
+    json += ",\"freioSegurando\":" + String(freioSegurando ? "true" : "false");
     json += ",\"freioValido\":" + String(f.valido ? "true" : "false");
     json += ",\"freio300Pronto\":" + String(f.tem300 ? "true" : "false");
     json += ",\"freio1000Pronto\":" + String(f.tem1000 ? "true" : "false");
@@ -725,6 +743,14 @@ static void handleReiniciarImu() {
 
 // Limites temporarios da protecao de bateria, para ensaio em bancada sem
 // descarregar a LiPo. Sem parametros, volta aos limites padrao.
+static void handleFreioModo() {
+    const String m = server.arg("modo");
+    if (m != "ativo" && m != "coast") return respostaErro(400, "Modo do freio: ativo ou coast");
+    if (modo != Modo::PARADO) return respostaErro(409, "Troque o modo do freio com o robo parado");
+    freioAtivoHabilitado = m == "ativo";
+    respostaOk(freioAtivoHabilitado ? "Freio ativo no fim do movimento" : "Parada em coast (STBY)");
+}
+
 static void handleBateriaLimites() {
     if (modo != Modo::PARADO || aguardandoMedicaoFreio())
         return respostaErro(409, "Troque os limites somente parado e apos o freio");
@@ -821,6 +847,7 @@ void setupTelemetry() {
         respostaOk("Motores frenados");
     });
     server.on("/api/bateria/limites", HTTP_POST, handleBateriaLimites);
+    server.on("/api/freio/modo", HTTP_POST, handleFreioModo);
     server.on("/api/heartbeat", HTTP_POST, handleHeartbeat);
     server.onNotFound([]() { respostaErro(404, "Rota nao encontrada"); });
 }
@@ -831,7 +858,7 @@ static bool giroTerminouBem(const char* motivo) {
 
 // Corta os motores e espera o robo terminar de girar por inercia.
 static void iniciarAssentamentoGiro(uint32_t agora) {
-    pararMotores();
+    if (freioAtivoHabilitado) frearAtivoMotores(); else pararMotores();
     desativarControleMovimento();
     faseGiro = FaseGiro::ASSENTANDO;
     giroAssentandoDesde = agora;
@@ -890,6 +917,17 @@ void loopTelemetry() {
                                      modo == Modo::RETO ? lerControleMovimento().retoProgressoMm : 0.0f);
         else
             protecaoFrontal.esquecerParede();
+    }
+    if (freioSegurando) {
+        if (modo != Modo::PARADO) {
+            freioSegurando = false;  // um novo teste ja reconfigurou a ponte H
+        } else {
+            const DadosEncoder e = lerEncoders();
+            if (liberacaoFreio.podeSoltar(millis(), e.esq, e.dir)) {
+                pararMotores();
+                freioSegurando = false;
+            }
+        }
     }
     if (!modoMotorizado()) return;
     uint32_t agora = millis();

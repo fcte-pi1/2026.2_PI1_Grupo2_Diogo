@@ -297,3 +297,43 @@ O `/api/status`, a aba do reto e o CSV mostram o modo (`centroModo`: `DUAS`, `ES
   - medir com régua onde o robô para em relação à parede da frente e ajustar `FRENTE_LIMIAR_CENTRO_MM` ou a margem de frenagem (`FRENTE_REACAO_S`, `FRENTE_DESACEL_ESTIMADA_MM_S2`);
   - medir `CENTRO_ASSIMETRIA_MM` com o robô centrado;
   - percorrer várias células em linha reta sem encostar nas paredes (critério do card) e ajustar `CENTRO_KP` e `CENTRO_KI_POR_MM`. A simulação não tem o atraso real dos lasers, então ganhos maiores podem fazer o robô oscilar.
+
+## Freio ativo
+
+Issue #163.
+
+### O que faz
+
+Até aqui, toda parada era em coast: o firmware zerava o PWM e desligava o STBY do TB6612, e as rodas paravam soltas. Com o **freio ativo**, no fim do movimento o firmware põe IN1 = IN2 = HIGH com STBY HIGH, o short brake do datasheet, que curto-circuita o motor e o para mais rápido. Quando as rodas ficam 100 ms sem pulsos (ou no máximo 600 ms), o freio solta e o driver volta ao STBY.
+
+**Quais paradas freiam** (`freio_logic.h`):
+- **Freio ativo:** chegada ao alvo (posição, reto e giro, inclusive as chegadas com dessincronia), os resultados da correção do giro, as paradas pelo laser frontal e o `limite_de_tempo` dos testes PWM e RPM.
+- **Corte por STBY, como antes:** bateria crítica, watchdog, botão da página, USB, OTA e qualquer falha (encoder, IMU, curso, dessincronia, atraso do loop) ou motivo desconhecido.
+
+No giro com correção (#153), o robô também é freado enquanto espera parar para medir o ângulo.
+
+O freio vem **desligado por padrão** (`FREIO_ATIVO_PADRAO`), porque as tolerâncias de parada (reto, corte do giro pela IMU, correção do giro e margem dos 5 cm do laser frontal) foram ajustadas com coast. Para ligar, escolher "Freio ativo" na seção "7. Parada medida" da aba de movimento, ou `POST /api/freio/modo` com `modo=ativo`, com o robô parado. A escolha vale até reiniciar a placa.
+
+O `/api/status` mostra o modo escolhido (`freioModo`), o modo usado na última parada (`freioUltimaParada`: `ATIVO` ou `COAST`) e se o freio ainda está segurando (`freioSegurando`). Os dois primeiros também vão para o CSV, junto com as contagens de 300 ms e 1 s depois da parada que a seção 7 já mostrava.
+
+### Arquivos
+
+| Arquivo | Conteúdo |
+|---|---|
+| `freio_logic.h` | `paradaUsaFreioAtivo()` e `LiberacaoFreio`, sem Arduino |
+| `motors.h` / `motors.cpp` | `frearAtivoMotores()` |
+| `web_telemetry.cpp` / `web_page.h` | Escolha da parada no `encerrarTeste`, soltura do freio, opção no painel e campos `freio*` |
+| `config.h` | `FREIO_ATIVO_PADRAO`, `FREIO_ATIVO_PARADO_MS` e `FREIO_ATIVO_MAX_MS` |
+
+### Testes
+
+- `test/test_freio_logic` (9 testes): classificação de todos os motivos de parada do firmware, `limite_de_tempo` só em PWM e RPM, motivo desconhecido e soltura do freio, inclusive no estouro do `millis()`.
+- A troca de pinos no TB6612 só é verificada na placa.
+
+### Estado
+
+- **Implementado e testado no computador.**
+- **Falta a bancada:**
+  - **primeiro, com as rodas suspensas:** num teste PWM com freio ativo, a roda deve travar no fim e soltar logo depois, sem nenhum tranco para a frente ou para trás;
+  - 10 paradas com coast e 10 com freio ativo no mesmo teste, comparando `freioDelta300E/D` e `freioDelta1000E/D` (critério: a distância de parada diminui e se repete);
+  - com o freio ligado, rever as tolerâncias de parada do reto e do giro e repetir os ensaios do #153 e da parada frontal do #155.

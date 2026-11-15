@@ -76,6 +76,10 @@ constexpr int POSICAO_TOLERANCIA_CONTAGENS = 4;
 constexpr int POSICAO_META_MAX_CONTAGENS = 2000;
 constexpr uint32_t CONTROLE_STALL_MS = 1200;
 constexpr uint32_t FREIO_MEDICAO_FINAL_MS = 1000;
+// Freio ativo (#163): desligado ate comparar com o coast na bancada.
+constexpr bool FREIO_ATIVO_PADRAO = false;
+constexpr uint32_t FREIO_ATIVO_PARADO_MS = 100;  // solta depois de 100 ms sem pulsos
+constexpr uint32_t FREIO_ATIVO_MAX_MS = 600;     // abaixo dos 1000 ms para um novo inicio
 
 constexpr char WIFI_SSID[] = "Xaropinho-WiFi";
 constexpr char WIFI_PASSWORD[] = "pi12pi34";
