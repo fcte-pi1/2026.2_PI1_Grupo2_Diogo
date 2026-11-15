@@ -16,9 +16,10 @@ static DecisaoFrente decide(const ProtecaoFrontal &p, int leitura, float percurs
 void setUp() { n = 0; t = 1000; }
 void tearDown() {}
 
-void test_sem_alvo_so_fora_de_faixa_e_fase() {
+void test_sem_alvo_so_fora_de_faixa_fase_e_sinal_fraco() {
   TEST_ASSERT_TRUE(frenteSemAlvo(LASER_FORA_ESCALA));
   TEST_ASSERT_TRUE(frenteSemAlvo(LASER_FASE_INVALIDA));
+  TEST_ASSERT_TRUE(frenteSemAlvo(LASER_SINAL_FRACO));
   TEST_ASSERT_FALSE(frenteSemAlvo(LASER_SEM_LEITURA));
   TEST_ASSERT_FALSE(frenteSemAlvo(LASER_PERTO_DEMAIS));
   TEST_ASSERT_FALSE(frenteSemAlvo(LASER_TIMEOUT));
@@ -129,6 +130,37 @@ void test_partida_recusa_parede_perto_que_sumiu() {
   TEST_ASSERT_TRUE(p.podePartir(LASER_FASE_INVALIDA, 85, t));
 }
 
+void test_partida_com_sensor_piscando_no_limite() {
+  ProtecaoFrontal p = nova();
+  for (int i = 0; i < 6; i++) amostra(p, (i % 2) ? LASER_SINAL_FRACO : 1500, 0);
+  TEST_ASSERT_TRUE(p.podePartir(LASER_SINAL_FRACO, 85, t));
+  ProtecaoFrontal perto = nova();
+  for (int i = 0; i < 6; i++) amostra(perto, (i % 2) ? LASER_SINAL_FRACO : 70, 0);
+  TEST_ASSERT_FALSE(perto.podePartir(LASER_SINAL_FRACO, 85, t));
+}
+
+void test_corredor_com_sinal_fraco_segue_e_para_pelo_percurso() {
+  ProtecaoFrontal p = nova();
+  for (int i = 0; i < 3; i++) amostra(p, LASER_SINAL_FRACO, 0);
+  TEST_ASSERT_TRUE(p.podePartir(LASER_SINAL_FRACO, 85, t));
+  p.iniciarMovimento(t);
+  float s = 0;
+  for (int i = 0; i < 50; i++) {
+    s += 4; amostra(p, LASER_SINAL_FRACO, s);
+    TEST_ASSERT_TRUE(DecisaoFrente::SEGUIR == decide(p, LASER_SINAL_FRACO, s));
+  }
+  s += 4; amostra(p, 400, s);
+  const float viu = s;
+  DecisaoFrente d = DecisaoFrente::SEGUIR;
+  while (d == DecisaoFrente::SEGUIR && s < viu + 500) {
+    s += 4;
+    amostra(p, LASER_SINAL_FRACO, s);
+    d = decide(p, LASER_SINAL_FRACO, s);
+  }
+  TEST_ASSERT_TRUE(DecisaoFrente::PAREDE == d);
+  TEST_ASSERT_FLOAT_WITHIN(5.0f, viu + 400.0f - LIMIAR, s);
+}
+
 void test_esquecer_parede_depois_de_girar() {
   ProtecaoFrontal p = nova();
   amostra(p, 120, 0);
@@ -140,7 +172,7 @@ void test_esquecer_parede_depois_de_girar() {
 
 int main() {
   UNITY_BEGIN();
-  RUN_TEST(test_sem_alvo_so_fora_de_faixa_e_fase);
+  RUN_TEST(test_sem_alvo_so_fora_de_faixa_fase_e_sinal_fraco);
   RUN_TEST(test_corredor_aberto_segue_e_para_na_parede_que_surge);
   RUN_TEST(test_parede_vista_que_vira_sem_alvo_para_pelo_percurso);
   RUN_TEST(test_leitura_piscando_usa_a_ultima_valida);
@@ -150,6 +182,8 @@ int main() {
   RUN_TEST(test_partida_exige_sem_alvo_seguidas);
   RUN_TEST(test_partida_com_leitura_valida);
   RUN_TEST(test_partida_recusa_parede_perto_que_sumiu);
+  RUN_TEST(test_partida_com_sensor_piscando_no_limite);
+  RUN_TEST(test_corredor_com_sinal_fraco_segue_e_para_pelo_percurso);
   RUN_TEST(test_esquecer_parede_depois_de_girar);
   return UNITY_END();
 }

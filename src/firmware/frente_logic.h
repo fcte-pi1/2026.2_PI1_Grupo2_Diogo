@@ -17,9 +17,10 @@ inline const char* textoDecisaoFrente(DecisaoFrente d) {
 }
 
 // Só estes códigos indicam nada dentro do alcance; os demais (perto demais,
-// timeout, erro de I2C, status 1 a 3) são falha e sempre freiam.
+// timeout, erro de I2C, status 3 e 5) são falha e sempre freiam.
 inline bool frenteSemAlvo(int leituraMm) {
-  return leituraMm == LASER_FORA_ESCALA || leituraMm == LASER_FASE_INVALIDA;
+  return leituraMm == LASER_FORA_ESCALA || leituraMm == LASER_FASE_INVALIDA ||
+         leituraMm == LASER_SINAL_FRACO;
 }
 
 class ProtecaoFrontal {
@@ -73,8 +74,10 @@ public:
   bool podePartir(int leituraMm, float limiarMm, uint32_t agoraMs) const {
     if (!temEvento || (uint32_t)(agoraMs - eventoMs) > idadeMax) return false;
     if (leituraMm >= 0) return leituraMm > limiarMm;
-    if (!frenteSemAlvo(leituraMm) || semAlvoSeguidas < semAlvoPartida) return false;
-    return !(temValida && (uint32_t)(agoraMs - validaMs) <= memoria && validaMm <= limiarMm);
+    if (!frenteSemAlvo(leituraMm)) return false;
+    // Leitura válida recente (sensor piscando no limite do alcance) decide sozinha.
+    if (temValida && (uint32_t)(agoraMs - validaMs) <= memoria) return validaMm > limiarMm;
+    return semAlvoSeguidas >= semAlvoPartida;
   }
 
   uint8_t semAlvoSeguidasAgora() const { return semAlvoSeguidas; }

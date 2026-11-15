@@ -229,7 +229,7 @@ async function atualizar(){
     '\nPartida: E '+d.partidaEMs+' ms; D '+d.partidaDMs+' ms; diferenca nos 50 mm '+fmt(d.partidaDifMm,2)+' mm (max '+fmt(d.partidaDifMaxMm,2)+')'+(d.partidaJanelaCompleta?'':' — janela incompleta');
   $('saidaFrontal').textContent='U3 bruto: '+fmt(d.frenteBrutoMm,0)+' mm; valido: '+d.frenteLeituraValida+'; idade: '+fmt(d.frenteIdadeMs,0)+' ms'+
     '\nProtecao ativa: '+d.frenteAtiva+'; limiar base: '+fmt(d.frenteLimiarMm,0)+' mm; dinamico: '+fmt(d.frenteLimiarDinamicoMm,1)+' mm; parada: '+d.frenteParouPorLaser+
-    '\nCodigo U3: '+d.frenteCodigo+' ('+(d.frenteCodigo>=0?'valida':d.frenteCodigo==-2?'fora da faixa':d.frenteCodigo==-4?'fase invalida':'falha')+'); decisao: '+d.frenteDecisao+'; parede estimada: '+fmt(d.frenteParedeEstimadaMm,0)+' mm; sem alvo seguidas: '+d.frenteSemAlvoSeguidas;
+    '\nCodigo U3: '+d.frenteCodigo+' ('+(d.frenteCodigo>=0?'valida':d.frenteCodigo==-2?'fora da faixa':d.frenteCodigo==-4?'fase invalida':d.frenteCodigo==-7?'sinal fraco':'falha')+'); decisao: '+d.frenteDecisao+'; parede estimada: '+fmt(d.frenteParedeEstimadaMm,0)+' mm; sem alvo seguidas: '+d.frenteSemAlvoSeguidas;
   const statusM=$('statusMovimento');
   statusM.textContent='CPR: '+(cprOk?'OK (E '+fmt(d.cprE,2)+' / D '+fmt(d.cprD,2)+')':'NÃO CONFIGURADO — abra Encoders e calibração e salve os dois CPRs')+
     ' | PWM driver: '+(d.driverPreparado?'OK':'ERRO')+
