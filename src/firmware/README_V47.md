@@ -43,6 +43,10 @@ Desde a issue #152, enquanto as duas rodas nao tiverem saido, a ajuda de partida
 
 Desde a issue #155, o reto aceita `centralizar=1` (opcao "Centralizacao" na aba do reto, desligada por padrao). Os lasers laterais sao lidos durante o movimento e o erro lateral vira um alvo de diferenca entre as rodas para o sincronismo suave. Sem parede, segue pelos encoders. Com ela ligada, a protecao frontal fica obrigatoria e o robo para a 5 cm da parede da frente (ou na distancia pedida, o que vier primeiro), a no maximo 35 RPM. Leitura frontal "sem alvo" (corredor longo) nao freia; falha do sensor freia. Os detalhes estao no README principal do firmware.
 
+## Freio ativo
+
+Desde a issue #163, o fim normal do movimento pode usar o short brake do TB6612 (IN1 = IN2 = HIGH) em vez de coast, escolhido na secao "7. Parada medida" (desligado por padrao). Emergencias e falhas continuam cortando por STBY. Os detalhes estao no README principal do firmware.
+
 ## Offset dos lasers
 
 Cada VL53L0X le um valor acima da distancia real. O `config.h` tem um offset por sensor (`LASER_OFFSET_U2_MM`, `LASER_OFFSET_U3_MM`, `LASER_OFFSET_U4_MM`: 20, 20 e 15 mm), subtraido da leitura antes do filtro e da deteccao de parede. No `/api/lasers/status` e na aba de lasers, `brutoMm` e `filtradoMm` ja vem corrigidos, e `semOffsetMm` mostra a leitura original. O CSV de captura ganhou a coluna `sem_offset_mm`. Para recalibrar, capture cada sensor contra uma distancia conhecida e ajuste o offset pela diferenca entre `sem_offset_mm` e a referencia. A conta fica em `lasers_logic.h`, testada em `test/test_lasers_logic`.
@@ -57,7 +61,7 @@ Cada VL53L0X le um valor acima da distancia real. O `config.h` tem um offset por
 
 ## O que continua pendente
 
-- Medir distancia janela U3 -> frente fisica do chassi; testar distancia de parada com coast.
+- Medir distancia janela U3 -> frente fisica do chassi; testar distancia de parada com coast e com freio ativo (#163).
 - Repetir o teste 3.2 do docs/7.3 com gabarito (50, 100, 150 e 200 mm) para conferir os offsets da issue #151 e rever os limiares de parede (120 e 160 mm).
 - Validar feedback e CPU/heap com Wi-Fi durante marcha. A leitura de lasers durante movimento so acontece com U3 frontal armado ou com a centralizacao ligada.
 - Testar corrente com o shunt/circuito concreto. A protecao de bateria (corte travado em 6,6 V) foi religada na issue #150; falta repetir na placa os testes 2.7, 2.8 e 2.9 do docs/7.2.
