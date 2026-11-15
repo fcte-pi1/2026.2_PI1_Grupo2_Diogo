@@ -228,7 +228,7 @@ O relatório mede o arquivo inteiro `src/components/Percurso.tsx`, incluindo os 
 
 Para a PR, capture o terminal com o comando e o resultado e o resumo do relatório HTML. Declare que o percentual corresponde a `Percurso.tsx`.
 
-As paredes detectadas ainda aguardam implementação no componente. O caso correspondente está registrado como `todo`; a integração entre banco, API e paredes no SVG também permanece pendente.
+As paredes detectadas chegam no snapshot do WebSocket (`walls`, com `x`, `y` e `lado`), lidas da tabela `parede_detectada` da execução ativa, e o `Percurso` desenha cada uma na borda da sua célula. A ESP só gera parede quando manda `posicao_estimada` e `paredes` no mesmo pacote. A tela de Labirinto (histórico) ainda não exibe as paredes.
 
 ## Reconexão da telemetria — RNF04
 

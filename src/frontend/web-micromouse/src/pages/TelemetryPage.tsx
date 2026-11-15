@@ -306,6 +306,7 @@ export function TelemetryPage() {
             linhas={linhas}
             colunas={colunas}
             trajetoria={trajetoria}
+            paredes={telemetry?.walls}
             mostrarControles={false}
           />
         </section>

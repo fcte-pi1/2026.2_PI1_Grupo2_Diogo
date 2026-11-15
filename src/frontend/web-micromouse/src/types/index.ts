@@ -1,3 +1,5 @@
+import type { Parede } from "../types";
+
 export interface BatteryData {
   percentage: number;
   voltage: number;
@@ -76,6 +78,7 @@ export interface TelemetrySnapshot {
     giro_z_deg_s: number;
   } | null;
   position: { row: number; col: number } | null;
+  walls?: Parede[];
 }
 
 export type TelemetryStreamStatus = "connecting" | "open" | "reconnecting";

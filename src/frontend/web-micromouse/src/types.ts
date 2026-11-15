@@ -1,5 +1,6 @@
 export type Ponto = { x: number; y: number };
 export type Posicao = Ponto & { direcao: 'N' | 'S' | 'L' | 'O' };
+export type Parede = Ponto & { lado: 'norte' | 'sul' | 'leste' | 'oeste' };
 
 export const CELULA_CM = 18; // lado de cada célula
 

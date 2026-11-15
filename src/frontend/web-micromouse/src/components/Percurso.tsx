@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { Ponto, Posicao } from '../types'
+import type { Parede, Ponto, Posicao } from '../types'
 
 const C = 40
 const PASSO_MS = 400
@@ -9,16 +9,25 @@ const ANGULO: Record<Posicao['direcao'], number> = { N: 0, L: 90, S: 180, O: 270
 const anguloAcumulado = (seq: Posicao[]) =>
   seq.reduce((acc, p) => acc + ((((ANGULO[p.direcao] - acc) % 360) + 540) % 360) - 180, 0)
 
+// segmento de cada lado na borda da célula em celulas: x1, y1, x2, y2
+const BORDA: Record<Parede['lado'], [number, number, number, number]> = {
+  norte: [0, 0, 1, 0],
+  sul: [0, 1, 1, 1],
+  oeste: [0, 0, 0, 1],
+  leste: [1, 0, 1, 1],
+}
+
 const LEGENDA = [
   ['Trajetória', 'text-emerald-500'],
   ['Robô', 'text-cyan-400'],
   ['Início', 'text-emerald-500'],
   ['Meta', 'text-amber-500'],
+  ['Parede', 'text-slate-200'],
 ]
 
-type Props = { linhas: number; colunas: number; trajetoria: Posicao[]; mostrarControles?: boolean }
+type Props = { linhas: number; colunas: number; trajetoria: Posicao[]; paredes?: Parede[]; mostrarControles?: boolean }
 
-export function Percurso({ linhas, colunas, trajetoria, mostrarControles = true }: Props) {
+export function Percurso({ linhas, colunas, trajetoria, paredes = [], mostrarControles = true }: Props) {
 
   
   const [passo, setPasso] = useState<number | null>(null)
@@ -58,6 +67,21 @@ export function Percurso({ linhas, colunas, trajetoria, mostrarControles = true 
         </defs>
         <rect width={w} height={h} fill="url(#grade)" />
         <rect width={w} height={h} fill="none" stroke="#6366f1" strokeWidth={1.2} />
+        {paredes.map(({ x, y, lado }) => {
+          const [x1, y1, x2, y2] = BORDA[lado]
+          return (
+            <line
+              key={`${x},${y},${lado}`}
+              x1={(x + x1) * C}
+              y1={(y + y1) * C}
+              x2={(x + x2) * C}
+              y2={(y + y2) * C}
+              stroke="#e2e8f0"
+              strokeWidth={3}
+              strokeLinecap="square"
+            />
+          )
+        })}
         <polyline
           points={visivel.map(p => centro(p).join(',')).join(' ')}
           fill="none"

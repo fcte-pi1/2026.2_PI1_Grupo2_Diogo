@@ -240,5 +240,24 @@ describe('Percurso', () => {
       .toContain('rotate(0deg)')
   })
 
-  it.todo('renders detected walls from maze data')
+  it('draws each detected wall on its cell edge', () => {
+    const { container } = render(
+      <Percurso
+        linhas={4}
+        colunas={4}
+        trajetoria={[]}
+        paredes={[
+          { x: 1, y: 2, lado: 'norte' },
+          { x: 1, y: 2, lado: 'sul' },
+          { x: 1, y: 2, lado: 'leste' },
+          { x: 1, y: 2, lado: 'oeste' },
+        ]}
+      />,
+    )
+
+    const segments = [...container.querySelectorAll('line')].map(line =>
+      ['x1', 'y1', 'x2', 'y2'].map(attr => line.getAttribute(attr)).join(','),
+    )
+    expect(segments).toEqual(['40,80,80,80', '40,120,80,120', '80,80,80,120', '40,80,40,120'])
+  })
 })

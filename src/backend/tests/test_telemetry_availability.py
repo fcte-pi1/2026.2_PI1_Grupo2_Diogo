@@ -22,6 +22,9 @@ class Result:
     def first(self):
         return self.value
 
+    def all(self):
+        return self.value
+
     def scalar_one(self):
         return self.value
 
@@ -36,6 +39,7 @@ class Database:
         self.inserts = []
         self.last_telemetry = None
         self.last_movement = None
+        self.walls = []
 
     def execute(self, query, params=None):
         if self.fail:
@@ -44,6 +48,8 @@ class Database:
         if "INSERT INTO" in sql:
             self.inserts.append((sql, params))
             return Result(len(self.inserts))
+        if "FROM parede_detectada" in sql:
+            return Result(self.walls)
         if "FROM execucao" in sql:
             return Result({"id": 2, "elapsed_ms": 1500} if self.active else None)
         if "FROM amostra_telemetria WHERE" in sql:
@@ -136,6 +142,34 @@ def test_legacy_packet_without_position_keeps_the_last_stored_cell(environment):
     assert client.get("/api/telemetry/current").json()["position"] == {"row": 2, "col": 3}
 
 
+def test_esp_walls_are_saved_for_the_reported_cell_and_streamed(environment):
+    client, _, db = environment
+    db.active = True
+    response = client.post("/api/telemetry", json={
+        "bateria": 80, "velocidade": 0, "rpm_motor": 0,
+        "posicao_estimada": {"x": 3, "y": 2, "direcao": "S"},
+        "paredes": ["norte", "oeste"],
+    })
+    assert response.json()["saved"] is True
+    assert db.inserts[0][1] == [
+        {"execucao_id": 2, "celula_x": 3, "celula_y": 2, "lado": "norte"},
+        {"execucao_id": 2, "celula_x": 3, "celula_y": 2, "lado": "oeste"},
+    ]
+    db.walls = [{"x": 3, "y": 2, "lado": "norte"}]
+    current = client.get("/api/telemetry/current").json()
+    assert current["position"] == {"row": 2, "col": 3}
+    assert current["walls"] == db.walls
+
+def test_esp_walls_without_position_are_not_saved(environment):
+    client, _, db = environment
+    db.active = True
+    client.post("/api/telemetry", json={
+        "bateria": 80, "velocidade": 0, "rpm_motor": 0, "paredes": ["norte"],
+    })
+    assert db.inserts
+    assert not [sql for sql, _ in db.inserts if "parede_detectada" in sql]
+
+
 def test_loss_preserves_readings_and_new_packet_restores_connection(environment):
     client, service, _ = environment
     client.post("/api/telemetry", json=packet())
@@ -156,11 +190,11 @@ def test_live_data_survives_database_failure_without_claiming_it_was_saved(envir
     db.fail = True
     response = client.post("/api/telemetry", json=packet())
     assert response.status_code == 503
+    assert db.rollbacks == 1
+    assert db.commits == 0
     current = client.get("/api/telemetry/current").json()
     assert current["has_data"] is True
     assert current["metrics"]["battery_pct"] == 87
-    assert db.rollbacks == 1
-    assert db.commits == 0
 
 
 def test_empty_unavailable_database_still_returns_connection_state(environment):

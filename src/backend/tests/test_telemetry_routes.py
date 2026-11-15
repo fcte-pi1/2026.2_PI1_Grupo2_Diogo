@@ -15,10 +15,15 @@ class FakeResult:
     def first(self):
         return self.sample
 
+    def all(self):
+        return self.sample
+
 class FakeDB:
     def __init__(self, sample):
         self.sample = sample
     def execute(self, query):
+        if "FROM parede_detectada" in str(query):
+            return FakeResult([])
         assert "FROM amostra_telemetria" in str(query)
         return FakeResult(self.sample)
 

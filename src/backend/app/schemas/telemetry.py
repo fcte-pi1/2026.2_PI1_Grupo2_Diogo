@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from typing import Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -67,10 +68,22 @@ class TelemetryResponse(TelemetryData):
     stale: bool
 
 
+class EstimatedPosition(BaseModel):
+    x: int = Field(ge=0)
+    y: int = Field(ge=0)
+
+
 class EspTelemetryInput(BaseModel):
     """Formato simples enviado pela ESP, com posição opcional."""
 
     model_config = ConfigDict(populate_by_name=True, allow_inf_nan=False)
+
+    estimated_position: EstimatedPosition | None = Field(
+        default=None, alias="posicao_estimada"
+    )
+    walls: list[Literal["norte", "sul", "leste", "oeste"]] = Field(
+        default_factory=list, alias="paredes", max_length=4
+    )
 
     battery_pct: float = Field(alias="bateria", ge=0, le=100)
     speed_cm_s: float = Field(alias="velocidade", ge=0)

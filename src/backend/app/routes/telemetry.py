@@ -39,7 +39,7 @@ def get_esp_connection_status():
 def get_current_telemetry(db: Session = Depends(get_db)):
     """Consulta a última leitura válida; recupera do banco após reinício."""
     try:
-        return _get_current_telemetry(db)
+        return {**_get_current_telemetry(db), "walls": _active_walls(db)}
     except SQLAlchemyError:
         db.rollback()
         logger.warning("Consulta da telemetria indisponível.", exc_info=True)
@@ -47,6 +47,20 @@ def get_current_telemetry(db: Session = Depends(get_db)):
             **telemetry_service.get_snapshot(),
             "detail": "Telemetria temporariamente indisponível.",
         }
+
+
+def _active_walls(db: Session) -> list[dict]:
+    return [
+        dict(row)
+        for row in db.execute(
+            text(
+                "SELECT celula_x AS x, celula_y AS y, lado FROM parede_detectada "
+                "WHERE execucao_id = (SELECT id FROM execucao "
+                "WHERE status = 'em_execucao' ORDER BY iniciada_em DESC LIMIT 1) "
+                "ORDER BY id"
+            )
+        ).mappings().all()
+    ]
 
 
 def _get_current_telemetry(db: Session):
@@ -123,6 +137,7 @@ def receive_telemetry(
 
 def _save_telemetry(telemetry: EspTelemetryInput | TelemetryData, db: Session):
     needs_stored_position = False
+    walls: list[dict] = []
     reported_connected = (
         telemetry.connected if isinstance(telemetry, EspTelemetryInput) else True
     )
@@ -132,7 +147,16 @@ def _save_telemetry(telemetry: EspTelemetryInput | TelemetryData, db: Session):
         position = telemetry.position
         if position is None and telemetry.row is not None:
             position = PositionData(row=telemetry.row, col=telemetry.col)
-        if position is None:
+        if position is None and telemetry.estimated_position is not None:
+            position = PositionData(
+                row=telemetry.estimated_position.y, col=telemetry.estimated_position.x
+            )
+        if position is not None:
+            walls = [
+                {"celula_x": position.col, "celula_y": position.row, "lado": lado}
+                for lado in telemetry.walls
+            ]
+        else:
             needs_stored_position = cached_position is None
             position = PositionData(**(cached_position or {"row": 0, "col": 0}))
         telemetry = TelemetryData(
@@ -158,6 +182,16 @@ def _save_telemetry(telemetry: EspTelemetryInput | TelemetryData, db: Session):
 
     if execution is None:
         return {"status": "received", "saved": False, "execucao_id": None}
+
+    if walls:
+        db.execute(
+            text(
+                "INSERT INTO parede_detectada (execucao_id, celula_x, celula_y, lado) "
+                "VALUES (:execucao_id, :celula_x, :celula_y, :lado) ON CONFLICT DO NOTHING"
+            ),
+            [{"execucao_id": execution["id"], **wall} for wall in walls],
+        )
+        db.commit()
 
     elapsed_ms = max(0, execution["elapsed_ms"])
     telemetry_service.associate_execution(

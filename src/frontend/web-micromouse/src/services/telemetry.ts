@@ -1,5 +1,7 @@
 import type { TelemetrySnapshot } from "../types/index";
 
+const LADOS = ["norte", "sul", "leste", "oeste"];
+
 export function telemetryWebSocketUrl(): string {
   const base = new URL(import.meta.env.VITE_API_URL || window.location.origin, window.location.origin);
   const url = new URL("/ws/telemetry/current", base);
@@ -40,6 +42,11 @@ export function parseTelemetrySnapshot(message: string): TelemetrySnapshot | nul
     }
     if (value.movement !== null && (!isRecord(value.movement)
       || !["giro_x_deg_s", "giro_y_deg_s", "giro_z_deg_s"].every(key => isNumber((value.movement as Record<string, unknown>)[key])))) {
+      return null;
+    }
+    if (value.walls !== undefined && !(Array.isArray(value.walls) && value.walls.every(wall =>
+      isRecord(wall) && Number.isInteger(wall.x) && Number.isInteger(wall.y)
+      && LADOS.includes(wall.lado as string)))) {
       return null;
     }
     return value as unknown as TelemetrySnapshot;
