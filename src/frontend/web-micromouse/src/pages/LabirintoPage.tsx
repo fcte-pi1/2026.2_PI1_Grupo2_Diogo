@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { Percurso } from '../components/Percurso'
+import { LiveMaze } from '../components/LiveMaze'
 import { useLabirinto } from '../hooks/useLabirinto'
 import { LABIRINTOS, type TipoLabirinto } from '../types'
 
@@ -20,6 +21,8 @@ export function LabirintoPage() {
         </div>
         <Status texto={telemetria?.status ?? 'Sem execução registrada'} />
       </header>
+
+      <div className="mb-6"><LiveMaze /></div>
 
       <div className="grid items-start gap-6 lg:grid-cols-2">
         <section className="rounded-xl border border-white/5 bg-card p-4">

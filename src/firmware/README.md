@@ -1,3 +1,5 @@
+> **V4.8 (16/11/2026):** integração experimental com BFS e mapa vivo. Consulte [../../LEIA_PRIMEIRO_V48.md](../../LEIA_PRIMEIRO_V48.md). O restante deste arquivo descreve versões anteriores e pode ter instruções incompatíveis.
+
 <!--
 Instruções do template da disciplina para esta pasta:
 
@@ -20,6 +22,11 @@ Evite incluir:
 # Firmware do Micromouse
 
 Firmware do ESP32 DevKit, feito com PlatformIO e o framework Arduino. Este documento registra o que foi implementado, como funciona, os problemas encontrados e o estado de cada parte.
+
+> [!IMPORTANT]
+> **Estado atual (integração da V4.7):** o firmware compilado hoje é a versão 4.7 de bancada, descrita em [README_V47.md](README_V47.md), com o roteiro de validação em [VALIDACAO_INTEGRACAO.md](VALIDACAO_INTEGRACAO.md). Ela ainda não foi testada na placa.
+>
+> As seções abaixo descrevem o firmware anterior, exceto as de energia e do giroscópio, que já valem para a V4.7. Os módulos `telemetry.cpp` e `i2c_check.cpp` continuam na pasta, mas estão fora da compilação (`build_src_filter` no `platformio.ini`), porque a V4.7 traz os seus equivalentes (`telemetry_remote.cpp` e `i2c_diagnostics.cpp`).
 
 ## Como compilar e testar
 
@@ -56,7 +63,7 @@ As regras de cada módulo que não dependem do hardware (contas, filtros e máqu
 
 ## Energia: INA219 e proteção da bateria
 
-Issue #121 (parte do INA219), PR #123.
+Issue #121 (parte do INA219), PR #123. Religada no firmware integrado (V4.7) na issue #150.
 
 ### O que faz
 
@@ -65,7 +72,7 @@ O INA219 (endereço 0x40) fica na entrada da bateria LiPo 2S e mede a tensão e 
 - calcula a **tensão da bateria** como tensão do barramento + queda no shunt, que é a tensão nos terminais da bateria;
 - suaviza tensão, corrente e potência com uma **média móvel exponencial** (α = 0,2);
 - estima o **percentual de carga** por uma tabela de tensão por célula (3,30 V = 0% a 4,20 V = 100%), com interpolação entre os pontos;
-- **corta os motores** se a tensão ficar abaixo de 6,6 V por 2 s seguidos, para proteger a LiPo contra descarga profunda;
+- **corta os motores** se a tensão ficar abaixo de 6,6 V por 2 s seguidos, para proteger a LiPo contra descarga profunda. O corte vale em qualquer teste com motor e bloqueia o início de novos testes;
 - avisa **bateria baixa** abaixo de 7,0 V e **sobrecorrente** acima de 2 A por 500 ms.
 
 O corte fica **travado**: depois de acionado, não volta mesmo que a tensão suba quando os motores param. A exigência de 2 s evita cortes falsos pelas quedas rápidas de tensão na partida dos motores.
@@ -76,16 +83,28 @@ No `setup()`, a função `verificarI2C()` confere se os cinco dispositivos do ba
 
 | Arquivo | Conteúdo |
 |---|---|
-| `power.h` / `power.cpp` | Leitura do INA219, filtro e funções `obter_tensao_bateria()`, `obter_corrente_mA()`, `obter_potencia_mW()`, `obter_bateria_pct()`, `bateriaCritica()` e `sobrecorrente()` |
-| `power_logic.h` | Percentual de carga e máquina de estados da bateria (`MonitorBateria`), sem Arduino |
-| `i2c_check.h` / `i2c_check.cpp` | Verificação dos dispositivos I2C no boot |
+| `battery.h` / `battery.cpp` | Leitura do INA219, filtro e funções `getVoltage()`, `getCurrent()`, `getPowerMilliwatt()`, `getBatteryPercent()`, `bateriaCritica()`, `bateriaBaixa()` e `sobrecorrente()` |
+| `power_logic.h` | Percentual de carga, máquina de estados da bateria (`MonitorBateria`) e regras dos limites de ensaio, sem Arduino |
+| `i2c_check.h` / `i2c_check.cpp` | Verificação dos dispositivos I2C no boot (firmware anterior, fora da compilação) |
 | `config.h` | Endereço do INA219 e limites: `BAT_V_ALERTA`, `BAT_V_CORTE`, `BAT_TEMPO_CONFIRMACAO_MS`, `I_SOBRECORRENTE_MA`, `I_SOBRECORRENTE_TEMPO_MS` |
 
-No `main.cpp`, o loop chama `updatePower()` e, se `bateriaCritica()` for verdadeiro, `stopMotors()`. A serial mostra a linha `[ENERGIA]` com tensão, corrente, potência e percentual, e os mesmos valores vão para a telemetria.
+No `main.cpp`, o loop chama `updateBattery()`. O `web_telemetry.cpp` para o teste em andamento quando `bateriaCritica()` fica verdadeiro e recusa novos testes com motor. A serial avisa com a linha `[ENERGIA]` quando o estado muda. O `/api/status` traz `bateriaEstado` (`NORMAL`, `BAIXA`, `CRITICA` ou `SEM_LEITURA`), `bateriaPct`, `sobrecorrente` e os limites em uso, e o painel mostra o estado no topo da página.
+
+### Limites de ensaio
+
+Para testar o corte e o aviso de sobrecorrente sem descarregar a bateria, os limites podem ser trocados com o robô parado:
+
+| Ação | Comando (conectado na rede do robô) |
+|---|---|
+| Subir o corte para 8,0 V | `curl -X POST -d "corte=8.0" http://192.168.4.1/api/bateria/limites` |
+| Baixar o aviso de sobrecorrente para 100 mA | `curl -X POST -d "sobrecorrente=100" http://192.168.4.1/api/bateria/limites` |
+| Voltar aos limites padrão | `curl -X POST http://192.168.4.1/api/bateria/limites` |
+
+Os limites de ensaio só deixam a proteção mais sensível: o corte aceita de 6,6 a 9,0 V e a sobrecorrente, de 50 a 2000 mA. Trocar os limites libera o corte travado, mas só se a tensão em repouso estiver em 7,0 V ou mais. Abaixo disso a bateria está descarregada de verdade, e o corte só sai depois da recarga e de reiniciar o robô.
 
 ### Testes
 
-Nove testes no computador (`test/test_power_logic`): percentual nos limites, interpolação e monotonicidade da tabela; queda curta que não corta; subtensão sustentada que corta; corte travado; alerta antes do corte; sobrecorrente só depois do tempo limite; e corte funcionando quando o `millis()` estoura.
+Doze testes no computador (`test/test_power_logic`): percentual nos limites, interpolação e monotonicidade da tabela; queda curta que não corta; subtensão sustentada que corta; corte travado; alerta antes do corte; sobrecorrente só depois do tempo limite; corte funcionando quando o `millis()` estoura; limites de ensaio que só deixam a proteção mais sensível; e corte real que não é liberado com a bateria descarregada.
 
 ### Problemas e soluções
 
@@ -100,50 +119,223 @@ Nove testes no computador (`test/test_power_logic`): percentual nos limites, int
 ### Estado
 
 - **Implementado e testes passando.**
-- **Falta a bancada teste de bancada**
+- **Falta a bancada:** repetir na placa, com o firmware integrado, os testes 2.7, 2.8 e 2.9 do docs/7.2.
 
-## Giroscópio: calibração de bias e zona morta
+## Giroscópio: calibração, zona morta e correção do giro
 
-Issue #119, PR #124.
+Issue #119 (PR #124) no firmware anterior. Refeito sobre a IMU da V4.7 na issue #153.
 
 ### O que faz
 
-O MPU6050 (endereço 0x68) mede a velocidade de giro no eixo Z, que é integrada para obter o ângulo do robô. Todo giroscópio tem um desvio (bias): mesmo parado, mede uma pequena rotação, e na integração isso vira um ângulo que cresce sem parar. A calibração mede esse desvio no boot e o subtrai das leituras.
+A IMU (MPU-6050 ou MPU-6515, endereço 0x68 ou 0x69) mede a velocidade de giro no eixo Z, que é integrada para obter o ângulo do robô (yaw). Todo giroscópio tem um desvio (bias): mesmo parado, mede uma pequena rotação, e na integração isso vira um ângulo que cresce sem parar.
 
-No `initIMU()`:
+**Calibração.** Ao ligar, e pelo botão do painel, o firmware:
 
-1. Lê **800 amostras** do eixo Z com o robô parado, uma a cada 3 ms (~2,4 s).
-2. Calcula a **média** (o bias) e o **desvio padrão** das leituras pelo método de Welford, que não precisa guardar as amostras na memória.
-3. Se o desvio passar de 0,5 °/s, o robô foi mexido durante a calibração: ela é **repetida até 3 vezes**. Se todas falharem, usa a última média e avisa na serial.
-4. Leituras com falha no I2C são descartadas. Se sobrarem menos da metade, a tentativa é invalidada.
+1. Lê **800 amostras** do eixo Z com o robô parado, a 200 Hz (~4 s). A coleta acontece dentro do `loop()`, sem travar o resto.
+2. Calcula a **média** (o bias) e o **desvio padrão** pelo método de Welford, que não guarda as amostras na memória.
+3. Se o desvio passar de 1,4 °/s, o robô foi mexido: a coleta é **repetida sozinha, até 3 tentativas**. Se todas falharem, a IMU fica sem calibração até alguém calibrar pelo painel.
 
-Durante a execução, o `updateIMU()` subtrai o bias e aplica uma **zona morta** de 0,25 °/s: abaixo disso, a rotação é considerada zero, o que impede o ruído de acumular no ângulo com o robô parado.
+**Zona morta.** Na integração, taxas abaixo de 0,25 °/s contam como zero, o que impede o ruído de acumular no ângulo com o robô parado.
+
+**Ângulo confiável.** Se o loop atrasar mais de 100 ms ou houver 3 falhas seguidas de I2C, o ângulo perde a continuidade e deixa de ser confiável (`imuOk` falso). O bias continua válido. O ângulo volta a valer quando o yaw é zerado, o que acontece no início de todo giro e pelo botão "Zerar Yaw". Para zerar, é preciso ter calibração, leitura recente e o robô parado.
+
+### Giro de 90° com correção
+
+O giro de 90° termina um pouco antes do alvo (cerca de 89° na bancada). Com a opção **"Correção pelo giroscópio"** ligada no painel (parâmetro `corrigir=1` em `POST /api/giro/start`), o firmware continua depois do giro:
+
+1. Corta os motores e espera o robô parar: no mínimo 300 ms e até a taxa de giro ficar abaixo de 1 °/s por 100 ms.
+2. Mede o erro em relação aos 90° pelo yaw.
+3. Se o erro for de até 1°, termina. Se passar de 15°, termina sem corrigir, porque algo deu errado no giro.
+4. Caso contrário, faz um **giro curto pela IMU** do tamanho do erro, a 20 RPM, cortando o PWM quando faltam 0,4°. Depois volta ao passo 1. São no máximo 2 correções.
+
+O modo continua `GIRO` durante todas as fases, então o heartbeat, o limite de tempo e o corte de bateria seguem valendo. O `/api/status` e o painel mostram a fase (`giroFase`), o número de correções, o erro antes da correção (`giroErroAntesCorrecao`), a última medição (`giroErroMedido`) e o erro total em relação aos 90° (`giroErroTotal`). O motivo final indica o desfecho: `giro_dentro_da_tolerancia`, `giro_corrigido_dentro_da_tolerancia`, `giro_correcoes_esgotadas`, `giro_erro_grande_demais_para_corrigir`, `giro_sem_correcao_robo_nao_parou` ou `giro_sem_correcao_imu_indisponivel`.
+
+A correção vem **desligada por padrão**, porque os valores ainda não foram ajustados na placa.
 
 ### Arquivos
 
 | Arquivo | Conteúdo |
 |---|---|
-| `imu.h` / `imu.cpp` | Inicialização, calibração e integração do ângulo. `imuCalibrada()` informa se a calibração foi confiável |
-| `imu_logic.h` | `EstatisticaGiro` (média e desvio), `aplicarZonaMorta()` e `calibracaoValida()`, sem Arduino |
-| `config.h` | `IMU_AMOSTRAS_CALIBRACAO`, `IMU_INTERVALO_AMOSTRA_MS`, `IMU_TENTATIVAS_CALIBRACAO`, `IMU_LIMITE_MOVIMENTO_DPS`, `IMU_ZONA_MORTA_DPS` |
-
-A interface pública (`getYawAngle()`, `getYawRate()`, `resetYawAngle()`) foi mantida, porque o giro de 90° e a telemetria dependem dela.
+| `imu.h` / `imu.cpp` | Identificação da IMU, calibração do bias, integração do yaw e `zerarYawIMU()` |
+| `imu_logic.h` | `EstatisticaGiro` (média e desvio), `aplicarZonaMorta()`, `calibracaoValida()` e `yawPodeSerZerado()`, sem Arduino |
+| `giro_logic.h` | `DetectorParado` e `decidirCorrecaoGiro()`, sem Arduino |
+| `motion_control.h` / `.cpp` | `iniciarControleGiroAngulo()`: giro de ângulo qualquer por encoder ou por IMU |
+| `web_telemetry.cpp` | Sequência do giro com correção (fases `PRINCIPAL`, `ASSENTANDO` e `CORRIGINDO`) |
+| `config.h` | `IMU_AMOSTRAS_BIAS`, `IMU_TENTATIVAS_CALIBRACAO`, `IMU_RUIDO_MAX_DPS`, `IMU_ZONA_MORTA_DPS` e as constantes `GIRO_CORRECAO_*` |
 
 ### Testes
 
-Sete testes no computador (`test/test_imu_logic`): média e desvio de um conjunto conhecido; desvio zero com sinal constante; calibração recusada com poucas amostras; calibração aceita com ruído pequeno; calibração recusada quando o robô é tocado no meio; zona morta zerando abaixo do limite e mantendo acima, nos dois sentidos.
-
-### Problemas e soluções
-
-| Problema | Solução |
-|---|---|
-| A calibração anterior usava 150 amostras e não percebia se o robô fosse mexido; o bias saía errado sem aviso e o ângulo derivava a corrida toda | 800 amostras, detecção de movimento pelo desvio e até 3 tentativas |
-| O retorno de `getEvent()` era ignorado, e uma falha no I2C virava leitura | Leituras com falha são descartadas, na calibração e no `updateIMU()` |
-| Parâmetros fixos no meio do código | Todos no `config.h` |
-| Na integração com a telemetria, o código novo voltava a usar a zona morta fixa e ignorava falhas de leitura | O `updateIMU()` passou a guardar os eixos X e Y para a telemetria mantendo a zona morta do `config.h` e o descarte de falhas |
-| O giro de 90° bloqueia o loop por até 2 s; o ângulo ficava parado durante o giro e depois era integrado de uma vez com um intervalo errado | A IMU é atualizada dentro do laço do giro, e o tempo do loop é reiniciado ao terminar |
+- `test/test_imu_logic` (11 testes): média e desvio, calibração aceita e recusada, zona morta e as condições para zerar o yaw.
+- `test/test_giro_logic` (10 testes): decisão da correção e detecção de robô parado, inclusive no estouro do `millis()`.
+- `tests/host/test_giro.cpp`: simulação com rodas ideais do giro de 90° por encoder e por IMU, de correções curtas e da sequência completa (giro que para em 86°, 84,5° ou 93° e é corrigido para dentro de 1°). A simulação não tem atrito nem inércia.
 
 ### Estado
 
 - **Implementado e testado no computador.**
-- **Falta a bancada:** o critério de aceite da #119 é o ângulo ficar estável e próximo de zero por 60 s com o robô parado. A meta proposta é deriva menor que 1° em 60 s. Também falta conferir o bias e o desvio impressos na serial e ajustar a zona morta e o limite de movimento, se preciso.
+- **Falta a bancada:**
+  - deriva menor que 1° em 60 s com o robô parado;
+  - 10 giros para cada lado com a correção ligada, conferindo o ângulo com um gabarito externo (critério: erro final de até 1°);
+  - ajustar as constantes `GIRO_CORRECAO_*`. Um giro de 1° corresponde a menos de 1 mm de curso na roda, então o atrito e a parada por inércia podem fazer a correção passar do ponto.
+
+## Partida conjunta das duas rodas
+
+Issue #152.
+
+### O que faz
+
+Os comandos das duas rodas já saíam juntos, mas a **ajuda de partida** era decidida por roda: quando uma roda ficava 140 ms sem pulsos, recebia sozinha um PWM mínimo (65) para vencer o atrito estático, e a ajuda acabava no primeiro pulso. Assim, uma roda saía antes da outra e o robô descompensava logo no começo do movimento.
+
+Agora, enquanto as duas rodas comandadas não tiverem contado 3 pulsos cada (`PARTIDA_PULSOS_MIN`), o controle está na **fase de partida conjunta**:
+
+1. **Ajuda nas duas.** Quando uma roda precisa da ajuda, a outra recebe também. A roda que já está mais de 1 mm à frente (`PARTIDA_ADIANTAMENTO_MAX_MM`) não recebe a ajuda da outra. Sem esse limite, uma roda presa fazia a solta disparar com o PWM da ajuda.
+2. **Rampa segurada.** A rampa de RPM sobe só até 18 RPM (`PARTIDA_RPM_PISO`) e fica parada até as duas rodas saírem. Quando uma já saiu e a outra não, só a que saiu fica segurada: a roda presa continua com a referência subindo para ganhar torque. O piso fica acima dos 12 RPM que a ajuda exige, para a roda presa ainda pedir ajuda.
+3. Quando as duas saem, a fase termina e o controle volta ao normal, com a ajuda decidida por roda (perto do alvo, uma roda que já chegou não pode receber ajuda da outra).
+
+A fase só vale quando as **duas rodas estão comandadas**. Movimentos com uma roda parada de propósito (posição com alvo zero numa roda, RPM com um lado zero, pausa de sincronismo do giro antigo) seguem como antes. O diagnóstico de roda travada (1,2 s sem pulsos) continua valendo.
+
+**Registro.** Em todo movimento, o firmware registra quanto tempo cada roda levou para sair e a diferença de percurso entre elas (E − D) enquanto o percurso médio estiver nos primeiros 50 mm (`PARTIDA_JANELA_MM`). O `/api/status` mostra `partidaEMs`, `partidaDMs`, `partidaAtrasoMs` (positivo quando a esquerda sai antes), `partidaDifMm` (diferença no fim da janela), `partidaDifMaxMm` (maior diferença dentro dela), `partidaJanelaCompleta` e `partidaConjunta` (fase ativa agora). Os campos também entram no CSV do painel. No giro com correção, o registro é o do giro principal, não o da correção.
+
+### Arquivos
+
+| Arquivo | Conteúdo |
+|---|---|
+| `partida_logic.h` | `rodaPartiu()`, `segurarRampaPartida()`, `ajudaPartidaConjunta()` e `RegistroPartida`, sem Arduino |
+| `motion_control.cpp` | Cálculo do PI separado do acionamento (`calcularRoda()` e `aplicarRoda()`), para decidir a ajuda olhando as duas rodas |
+| `web_telemetry.cpp` / `web_page.h` | Campos `partida*` no status, na aba de posição e no CSV |
+| `config.h` | `PARTIDA_PULSOS_MIN`, `PARTIDA_RPM_PISO`, `PARTIDA_ADIANTAMENTO_MAX_MM` e `PARTIDA_JANELA_MM` |
+
+### Testes
+
+- `test/test_partida_logic` (10 testes): saída da roda, rampa segurada, ajuda conjunta com o limite de adiantamento e registro da janela de 50 mm.
+- `tests/host/test_partida.cpp`: simulação com atrito estático diferente em cada roda. Confere a diferença nos primeiros 50 mm do reto, a roda travada caindo no diagnóstico (reto e RPM) e o movimento de posição com uma roda só.
+
+A simulação **não reproduz o problema visto na bancada**: no reto, com uma roda que precisa de até 60 de PWM para sair, o firmware anterior e o novo dão a mesma diferença (menos de 0,3 mm). A comparação com o firmware anterior, roda esquerda leve e direita mais presa:
+
+| Movimento | Direita precisa de | Antes | Agora |
+|---|---|---|---|
+| Reto 200 mm | 70 de PWM | 9,2 mm, chega | 5,2 mm, chega |
+| Reto 200 mm | 90 de PWM | 17 mm, para por dessincronia | 10 mm, para por dessincronia |
+| Giro 90° (encoder ou IMU) | 60 de PWM | para por dessincronia | 6 mm, conclui |
+| Correção curta de 1,5° | qualquer | igual | igual |
+| Posição, duas rodas | 70 / 90 de PWM | 7 / 21 mm | 10 / 14 mm |
+
+Quando uma roda precisa de mais PWM que a ajuda, o problema é a ajuda fraca demais para aquela roda, e não a partida conjunta.
+
+### Estado
+
+- **Implementado e testado no computador.**
+- **Falta a bancada:** 10 partidas no chão, conferindo `partidaDifMaxMm` (critério: até 2 mm nos primeiros 50 mm). Se uma roda precisar de mais PWM que a ajuda para sair, ajustar `PWM_AJUDA_PARTIDA` antes de mexer nas constantes `PARTIDA_*`.
+
+## Centralização no corredor
+
+Issue #155.
+
+### O que faz
+
+No reto, o sincronismo garante que as duas rodas andem o mesmo tanto, mas não que o robô siga no meio do corredor. Se ele sai torto ou uma roda é um pouco maior, vai se aproximando de uma parede sem que os encoders percebam.
+
+Com a opção **"Centralização"** ligada na aba do reto (`centralizar=1` em `POST /api/reto/start`), os lasers laterais (U2 esquerdo, U4 direito) passam a ser lidos durante o movimento e corrigem a trajetória:
+
+1. **Leitura das paredes.** Um lado só conta se o laser vê parede (`parede` presente e leitura até 120 mm), com leitura de no máximo 150 ms. Cada amostra nova do sensor é avaliada uma vez, e uma leitura só vale depois de duas seguidas sem salto de mais de 15 mm e sem pausa do sensor. Assim, a borda de uma parede e um pico isolado não puxam o robô.
+2. **Erro lateral.** Com duas paredes, é a metade da diferença entre as leituras. Com uma parede, é a leitura menos a referência do centro, aprendida enquanto havia duas paredes (a média das duas leituras). Sem parede, ou sem referência ainda, não há erro.
+3. **Correção.** O erro vira um **alvo de diferença de percurso entre as rodas**, que o sincronismo do reto passa a seguir no lugar de zero. Assim o sincronismo, que já estava ajustado, faz a curva, e as proteções de dessincronia continuam pegando roda presa. O alvo tem uma parte proporcional e uma integral lenta, que tira o desvio que sobra quando o robô sai torto ou uma roda é maior. O alvo é limitado a 12 mm e varia no máximo 20 mm/s.
+4. **Sem parede**, a parte proporcional volta a zero aos poucos e a integral fica congelada: o robô segue pelos encoders na direção que já tinha.
+
+A opção vem **desligada por padrão**. Desligada, o reto se comporta exatamente como antes. Ligada, exige sincronismo suave, distância para a frente e no máximo 35 RPM, e o painel aceita até 2000 mm com timeout automático.
+
+**Proteção frontal obrigatória.** Com a centralização, o laser frontal (U3) fica sempre ligado. O robô para no que vier primeiro: a distância pedida ou a parede da frente a 5 cm (`FRENTE_LIMIAR_CENTRO_MM`, contados na leitura do U3). O firmware soma ao limite uma margem que cresce com a velocidade (a 35 RPM, cerca de 25 mm), para o robô terminar de frear perto dos 5 cm. O movimento não começa se a parede da frente já estiver a menos de 85 mm.
+
+**Corredor longo.** O VL53L0X não lê distâncias longas, então num corredor sem parede ao alcance ele responde "sem alvo". O firmware separa isso de falha do sensor (`frente_logic.h`):
+
+- **Sem alvo** (fora da faixa, fase inválida ou sinal fraco, status 1 e 2 do sensor, código -7): o robô segue. Se ele já tinha visto uma parede, a distância dela é descontada pelo percurso dos encoders, e o robô para quando essa estimativa chega ao limite, mesmo sem nova leitura.
+- **Falha** (perto demais, timeout, erro de I2C, status de leitura 3 e 5, ou nenhuma amostra nova em 150 ms): o robô freia.
+- **Partida:** exige leitura válida acima de 85 mm ou 3 leituras "sem alvo" seguidas. Com o sensor piscando no limite do alcance, vale a última leitura válida dos últimos 500 ms: acima de 85 mm libera, abaixo bloqueia.
+
+No primeiro teste no labirinto, o reto centralizado não partia com a parede da frente longe. A causa provável é o sinal fraco, que antes era tratado como falha (a confirmar pelo `frenteStatusVL`). Um retorno fraco também pode vir de uma parede próxima que reflete pouco; quem segura esse caso é a lembrança da última parede vista, descontada pelo percurso.
+
+O painel mostra o código da leitura do U3 (`frenteCodigo`), a decisão (`frenteDecisao`), a parede estimada pelo percurso e a contagem de "sem alvo"; os campos também vão para o CSV. A proteção frontal sem centralização continua como antes. A correção só começa depois da partida conjunta (#152), que termina com poucos pulsos; dentro dos primeiros 50 mm ela já age. Por isso, o ensaio do #152 (`partidaDifMaxMm`) deve ser feito com a centralização desligada.
+
+O `/api/status`, a aba do reto e o CSV mostram o modo (`centroModo`: `DUAS`, `ESQUERDA`, `DIREITA` ou `NENHUMA`), o erro lateral, o alvo, a referência, as leituras usadas e o maior período do controle (`controlePeriodoMaxMs`, sem o primeiro ciclo, que inclui a resposta HTTP do início). Para saber se o I2C dos lasers atrasa o controle, comparar esse valor e `imuFalhasI2C` em retos com a centralização ligada e desligada. Com a centralização ligada, o descompasso (`retoSyncErroMm` e `retoSyncMaxMm`) é medido em relação ao alvo, não a zero.
+
+### Posição dos lasers
+
+- **Com duas paredes,** o recuo dos lasers não importa se os dois estiverem à mesma distância do centro do robô. Se não estiverem, colocar a diferença em `CENTRO_ASSIMETRIA_MM`: é a leitura esquerda menos a direita com o robô centrado no corredor.
+- **Com uma parede,** o firmware usa a referência aprendida no trecho com duas paredes. Para usar uma parede logo na partida, preencher `CENTRO_REF_FIXA_MM` com a leitura de um lado com o robô centrado; com -1, o modo de uma parede espera a primeira leitura com duas.
+
+### Arquivos
+
+| Arquivo | Conteúdo |
+|---|---|
+| `centralizacao_logic.h` | `Centralizador` (modo, erro, referência e alvo) e `LeitorLateral`, sem Arduino |
+| `frente_logic.h` | `ProtecaoFrontal`: decide seguir, parar por parede ou parar por falha, separando "sem alvo" de falha do sensor |
+| `motion_control.cpp` | Alvo do sincronismo no reto, `informarLateraisReto()` e período máximo do controle |
+| `lasers.cpp` / `main.cpp` | Leitura dos laterais (e do frontal, se armado) durante o reto com centralização |
+| `web_telemetry.cpp` / `web_page.h` | Opção no painel, validação das leituras e campos `centro*` |
+| `config.h` | Constantes `CENTRO_*` |
+
+### Testes
+
+- `test/test_centralizacao_logic` (17 testes): sinais do erro, assimetria, referência aprendida e fixa, volta a zero sem parede, integral congelada, limite do alvo e validação das leituras (amostra nova, borda de parede, pico isolado, leitura velha).
+- `test/test_frente_logic` (13 testes): corredor aberto com parede surgindo, parede vista que vira "sem alvo", leitura piscando, falhas, sensor parado, regras da partida, partida com o sensor piscando e corredor com sinal fraco.
+- `tests/host/test_centralizacao.cpp`: corredor de 168 mm simulado, com posição lateral e ângulo calculados das rodas e lasers a cada 60 ms com ruído e o mesmo filtro do firmware. Em 900 mm:
+
+| Caso | Desligada | Ligada |
+|---|---|---|
+| Saída torta 3° | 47 mm do centro (encosta) | 1 mm no fim, 6 mm no máximo |
+| Roda direita 1% maior | 41 mm (encosta) | 2 mm no fim, 4 mm no máximo |
+| Saída 15 mm deslocada | — | volta a 3 mm |
+| Sem parede direita por 2 células | — | 1 mm no fim |
+| Sem paredes por 1 célula, torto 2° | — | 4 mm no máximo |
+
+  Também confere borda de parede gradual e pico isolado (desvio abaixo de 4 mm), paredes sumindo nos últimos 15 mm (chega sem dessincronia), laser travado (segue só pelos encoders), roda presa (para por dessincronia) e a recusa de ré e de sincronismo desligado. A simulação usa a mesma validação de leituras do firmware. Com a opção desligada, as simulações de reto, giro e partida dão os mesmos números de antes.
+
+### Estado
+
+- **Implementado e testado no computador.**
+- **Falta a bancada:**
+  - **primeiro, conferir o sinal com as rodas suspensas:** com anteparos dos dois lados e o direito mais perto, `centroErroMm` deve ser positivo e a roda esquerda deve girar mais devagar. Se estiver ao contrário, o robô vira para a parede;
+  - comparar `controlePeriodoMaxMs` e `imuFalhasI2C` com a centralização ligada e desligada;
+  - **conferir o que o U3 responde com o corredor livre:** apontar para mais de 1,5 m sem obstáculo e ver `frenteCodigo` e `frenteStatusVL`. -2, -4 e -7 contam como "sem alvo"; se der -1 (status 3 ou 5), o robô continua freando;
+  - medir com régua onde o robô para em relação à parede da frente e ajustar `FRENTE_LIMIAR_CENTRO_MM` ou a margem de frenagem (`FRENTE_REACAO_S`, `FRENTE_DESACEL_ESTIMADA_MM_S2`);
+  - medir `CENTRO_ASSIMETRIA_MM` com o robô centrado;
+  - percorrer várias células em linha reta sem encostar nas paredes (critério do card) e ajustar `CENTRO_KP` e `CENTRO_KI_POR_MM`. A simulação não tem o atraso real dos lasers, então ganhos maiores podem fazer o robô oscilar.
+
+## Freio ativo
+
+Issue #163.
+
+### O que faz
+
+Até aqui, toda parada era em coast: o firmware zerava o PWM e desligava o STBY do TB6612, e as rodas paravam soltas. Com o **freio ativo**, no fim do movimento o firmware põe IN1 = IN2 = HIGH com STBY HIGH, o short brake do datasheet, que curto-circuita o motor e o para mais rápido. Quando as rodas ficam 100 ms sem pulsos (ou no máximo 600 ms), o freio solta e o driver volta ao STBY.
+
+**Quais paradas freiam** (`freio_logic.h`):
+- **Freio ativo:** chegada ao alvo (posição, reto e giro, inclusive as chegadas com dessincronia), os resultados da correção do giro, as paradas pelo laser frontal e o `limite_de_tempo` dos testes PWM e RPM.
+- **Corte por STBY, como antes:** bateria crítica, watchdog, botão da página, USB, OTA e qualquer falha (encoder, IMU, curso, dessincronia, atraso do loop) ou motivo desconhecido.
+
+No giro com correção (#153), o robô também é freado enquanto espera parar para medir o ângulo.
+
+O freio vem **desligado por padrão** (`FREIO_ATIVO_PADRAO`), porque as tolerâncias de parada (reto, corte do giro pela IMU, correção do giro e margem dos 5 cm do laser frontal) foram ajustadas com coast. Para ligar, escolher "Freio ativo" na seção "7. Parada medida" da aba de movimento, ou `POST /api/freio/modo` com `modo=ativo`, com o robô parado. A escolha vale até reiniciar a placa.
+
+O `/api/status` mostra o modo escolhido (`freioModo`), o modo usado na última parada (`freioUltimaParada`: `ATIVO` ou `COAST`) e se o freio ainda está segurando (`freioSegurando`). Os dois primeiros também vão para o CSV, junto com as contagens de 300 ms e 1 s depois da parada que a seção 7 já mostrava.
+
+### Arquivos
+
+| Arquivo | Conteúdo |
+|---|---|
+| `freio_logic.h` | `paradaUsaFreioAtivo()` e `LiberacaoFreio`, sem Arduino |
+| `motors.h` / `motors.cpp` | `frearAtivoMotores()` |
+| `web_telemetry.cpp` / `web_page.h` | Escolha da parada no `encerrarTeste`, soltura do freio, opção no painel e campos `freio*` |
+| `config.h` | `FREIO_ATIVO_PADRAO`, `FREIO_ATIVO_PARADO_MS` e `FREIO_ATIVO_MAX_MS` |
+
+### Testes
+
+- `test/test_freio_logic` (9 testes): classificação de todos os motivos de parada do firmware, `limite_de_tempo` só em PWM e RPM, motivo desconhecido e soltura do freio, inclusive no estouro do `millis()`.
+- A troca de pinos no TB6612 só é verificada na placa.
+
+### Estado
+
+- **Implementado e testado no computador.**
+- **Falta a bancada:**
+  - **primeiro, com as rodas suspensas:** num teste PWM com freio ativo, a roda deve travar no fim e soltar logo depois, sem nenhum tranco para a frente ou para trás;
+  - 10 paradas com coast e 10 com freio ativo no mesmo teste, comparando `freioDelta300E/D` e `freioDelta1000E/D` (critério: a distância de parada diminui e se repete);
+  - com o freio ligado, rever as tolerâncias de parada do reto e do giro e repetir os ensaios do #153 e da parada frontal do #155.

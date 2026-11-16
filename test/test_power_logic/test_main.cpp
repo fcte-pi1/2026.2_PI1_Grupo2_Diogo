@@ -83,6 +83,25 @@ void test_corte_funciona_no_estouro_do_millis() {
   TEST_ASSERT_EQUAL(BATERIA_CRITICA, m.estado());
 }
 
+void test_limites_de_ensaio_so_deixam_a_protecao_mais_sensivel() {
+  TEST_ASSERT_TRUE(limitesDeEnsaioValidos(8.0f, 100.0f, LIM, 9.0f, 50.0f));
+  TEST_ASSERT_TRUE(limitesDeEnsaioValidos(6.6f, 2000.0f, LIM, 9.0f, 50.0f));   // os próprios padrões
+  TEST_ASSERT_FALSE(limitesDeEnsaioValidos(6.0f, 2000.0f, LIM, 9.0f, 50.0f));  // corte abaixo do padrão
+  TEST_ASSERT_FALSE(limitesDeEnsaioValidos(6.6f, 3000.0f, LIM, 9.0f, 50.0f));  // sobrecorrente acima do padrão
+  TEST_ASSERT_FALSE(limitesDeEnsaioValidos(9.5f, 2000.0f, LIM, 9.0f, 50.0f));
+  TEST_ASSERT_FALSE(limitesDeEnsaioValidos(6.6f, 10.0f, LIM, 9.0f, 50.0f));
+}
+
+void test_corte_real_nao_rearma_com_bateria_descarregada() {
+  TEST_ASSERT_FALSE(podeRearmarCorte(BATERIA_CRITICA, 6.9f, LIM.vAlerta));
+  TEST_ASSERT_TRUE(podeRearmarCorte(BATERIA_CRITICA, 7.34f, LIM.vAlerta));  // corte de ensaio com a bateria boa
+}
+
+void test_sem_corte_os_limites_podem_ser_trocados() {
+  TEST_ASSERT_TRUE(podeRearmarCorte(BATERIA_NORMAL, 6.9f, LIM.vAlerta));
+  TEST_ASSERT_TRUE(podeRearmarCorte(BATERIA_BAIXA, 6.9f, LIM.vAlerta));
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_percentual_nos_limites);
@@ -94,5 +113,8 @@ int main() {
   RUN_TEST(test_alerta_de_bateria_baixa_antes_do_corte);
   RUN_TEST(test_sobrecorrente_so_depois_do_tempo_limite);
   RUN_TEST(test_corte_funciona_no_estouro_do_millis);
+  RUN_TEST(test_limites_de_ensaio_so_deixam_a_protecao_mais_sensivel);
+  RUN_TEST(test_corte_real_nao_rearma_com_bateria_descarregada);
+  RUN_TEST(test_sem_corte_os_limites_podem_ser_trocados);
   return UNITY_END();
 }

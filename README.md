@@ -1,3 +1,5 @@
+> **V4.8 — Integração de navegação (candidata, ainda não validada fisicamente):** veja [LEIA_PRIMEIRO_V48.md](LEIA_PRIMEIRO_V48.md) para compilação, instalação, segurança e execução da missão.
+
 # Template PI1
 
 ![Calendário 2026/2](https://github.com/fcte-pi1/template/blob/main/docs/figs/Calendario.png?raw=true)

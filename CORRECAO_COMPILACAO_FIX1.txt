@@ -1,0 +1,19 @@
+CORRECAO V4.8 FIX1 - 16/11/2026
+
+Problema: conflito do metodo Grid::bit(Direction) com macro bit(b) do Arduino ESP32 3.3.12.
+
+Solucao: metodo renomeado para Grid::wallBit(Direction) em src/firmware/maze_planner.h,
+com todas as chamadas atualizadas. Ajustados dois acessos no teste nativo.
+
+Arquivos alterados:
+- src/firmware/maze_planner.h
+- tests/host/test_maze_planner_v48.cpp
+
+NAO alterados: nova pinagem, drivers de motor, encoders, lasers, giros, bateria, navegacao.
+
+No terminal, na raiz do projeto:
+    pio run -e esp32dev
+
+Este pacote nao equivale a uma compilacao completa na placa; se aparecer outro erro,
+envie as primeiras linhas do proximo diagnostico. Nao habilite autonomia
+antes de validar sensores e medidas fisicas.
