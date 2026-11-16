@@ -96,7 +96,7 @@ def contar(db, tabela, exec_id):
 # --------------------------------------------------------------------------
 # Testes
 # --------------------------------------------------------------------------
-def test_sem_execucao_ativa_retorna_409(db):
+def test_sem_execucao_ativa_recebe_sem_gravar(db):
     ativa = db.execute(
         text("SELECT COUNT(*) FROM execucao WHERE status = 'em_execucao'")
     ).scalar_one()
@@ -105,7 +105,8 @@ def test_sem_execucao_ativa_retorna_409(db):
 
     r = client.post(URL, json=ESP)
 
-    assert r.status_code == 409
+    assert r.status_code == 200
+    assert r.json() == {"status": "received", "saved": False, "execucao_id": None}
 
 
 def test_primeira_amostra_e_salva(db, execucao_ativa):

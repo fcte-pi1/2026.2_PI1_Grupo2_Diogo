@@ -1,5 +1,6 @@
 from urllib.parse import quote_plus
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,10 +11,10 @@ class Settings(BaseSettings):
     POSTGRES_PORT: int = 5432
     POSTGRES_HOST: str = "localhost"
     
-    TELEMETRY_UPDATE_INTERVAL_MS: int = 1000
-    TELEMETRY_LATENCY_TOLERANCE_MS: int = 250
+    TELEMETRY_UPDATE_INTERVAL_MS: int = Field(default=1000, ge=1, le=1000)
+    TELEMETRY_LATENCY_TOLERANCE_MS: int = Field(default=250, ge=0)
     TELEMETRY_HEARTBEAT_INTERVAL_MS: int = 5000
-    ESP_CONNECTION_TIMEOUT_MS: int = 5000
+    ESP_CONNECTION_TIMEOUT_MS: int = Field(default=5000, gt=0)
 
     model_config = SettingsConfigDict(
         env_file=".env",

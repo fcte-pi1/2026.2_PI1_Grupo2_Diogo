@@ -9,7 +9,8 @@ def test_root():
     assert r.status_code == 200
     assert r.json()["message"] == "Micromouse API funcionando"
 
-def test_health_conectado():
+def test_health_conectado(monkeypatch):
+    monkeypatch.setattr("app.main.test_database_connection", lambda: None)
     r = client.get("/health")
     assert r.status_code == 200
     assert r.json()["database"] == "connected"

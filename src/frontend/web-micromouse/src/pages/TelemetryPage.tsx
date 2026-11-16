@@ -4,7 +4,7 @@ import { MotorRPMCard } from "../components/telemetria/MotorRPMCard";
 import { SpeedCard } from "../components/telemetria/SpeedCard";
 
 import { Percurso } from "../components/Percurso";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { LABIRINTOS, type Posicao, type TipoLabirinto } from "../types";
 import { TbRestore } from "react-icons/tb";
 
@@ -12,8 +12,8 @@ import { toast } from "sonner";
 
 import { api } from "../services/api";
 import axios from "axios";
+import { useTelemetry } from "../hooks/useTelemetry";
 import type { PropsExec } from "../types/index";
-type StatusConexao = true | false;
 
 function segundosDesdeInicio(iniciadaEm?: string | Date): number {
   if (!iniciadaEm) return 0;
@@ -28,7 +28,7 @@ function segundosDesdeInicio(iniciadaEm?: string | Date): number {
 
 export function TelemetryPage() {
   const [dataExec, setDataExec] = useState<PropsExec>();
-  const [, setError] = useState<string | null>(null);
+  const { data: telemetry, connected: conectada, streamStatus, stale, ageMs, subscribe } = useTelemetry();
   const [tipo, setTipo] = useState<TipoLabirinto>("4x4");
 
   const [iniciada, setIniciada] = useState(false);
@@ -36,31 +36,30 @@ export function TelemetryPage() {
   const [verificandoExecucao, setVerificandoExecucao] = useState(true);
   const [tempoSegundos, setTempoSegundos] = useState(0);
   const [trajetoria, setTrajetoria] = useState<Posicao[]>([]);
-  const execucaoAtivaRef = useRef(false);
   const { linhas, colunas } = LABIRINTOS[tipo];
-  const [conectada, setStatus] = useState<StatusConexao>(false);
 
-  const handleVerificar = useCallback(async (): Promise<PropsExec | null> => {
+  const handleVerificar = useCallback(async (): Promise<PropsExec | null | undefined> => {
     try {
       const { data } = await api.get<PropsExec | null>("/api/sessions/active");
       return data;
     } catch {
       const mensagem = "Backend indisponível. Verifique se o servidor está ativo.";
-      setError(mensagem);
       toast.error(mensagem);
-      return null;
+      return undefined;
     } finally {
       setVerificandoExecucao(false);
     }
   }, []);
 
   useEffect(() => {
+    if (streamStatus === "reconnecting") return;
     let mounted = true;
 
     const atualizarExecucaoAtiva = async () => {
       const execucaoAtiva = await handleVerificar();
-      if (!mounted || execucaoAtiva === null) return;
+      if (!mounted || execucaoAtiva === undefined) return;
       setIniciada(Boolean(execucaoAtiva));
+      setDataExec(execucaoAtiva ?? undefined);
       if (execucaoAtiva) {
         setDataExec(execucaoAtiva);
         setInicioExecucao(execucaoAtiva.iniciada_em);
@@ -75,69 +74,28 @@ export function TelemetryPage() {
     return () => {
       mounted = false;
     };
-  }, [handleVerificar]);
+  }, [handleVerificar, streamStatus]);
 
   useEffect(() => {
-    let ws: WebSocket | undefined;
-    let disposed = false;
-
-    const timer = window.setTimeout(() => {
-      if (disposed) return;
-      ws = new WebSocket("ws://localhost:8000/ws/telemetry/current");
-
-      ws.onmessage = (event) => {
-        try {
-          const dados = JSON.parse(event.data) as PropsExec;
-        
-            setStatus(Boolean(dados.connected))
-         
-
-          if (dados.metrics) {
-            setDataExec((anterior) => ({
-              ...anterior,
-              ...dados,
-              iniciada_em: dados.iniciada_em ?? anterior?.iniciada_em,
-            }));
-          }
-
-          if (
-            execucaoAtivaRef.current &&
-            dados.position &&
-            Number.isInteger(dados.position.row) &&
-            Number.isInteger(dados.position.col)
-          ) {
-            setTrajetoria((anterior) => {
-              const ultimo = anterior.at(-1);
-              const { row, col } = dados.position;
-              // A API envia row/col; no desenho, x corresponde à coluna e y à linha.
-              if (ultimo?.x === col && ultimo.y === row) return anterior;
-
-              let direcao: Posicao["direcao"] = "N";
-              if (ultimo) {
-                if (row > ultimo.y) direcao = "S";
-                else if (row < ultimo.y) direcao = "N";
-                else if (col > ultimo.x) direcao = "L";
-                else direcao = "O";
-              }
-
-              return [...anterior, { x: col, y: row, direcao }];
-            });
-          }
-        } catch {
-          setStatus(false);
+    if (!iniciada) return;
+    return subscribe(dados => {
+      const position = dados.position;
+      if (!position || !Number.isInteger(position.row) || !Number.isInteger(position.col)) return;
+      setTrajetoria(anterior => {
+        const ultimo = anterior.at(-1);
+        const { row, col } = position;
+        if (ultimo?.x === col && ultimo.y === row) return anterior;
+        let direcao: Posicao["direcao"] = "N";
+        if (ultimo) {
+          if (row > ultimo.y) direcao = "S";
+          else if (row < ultimo.y) direcao = "N";
+          else if (col > ultimo.x) direcao = "L";
+          else direcao = "O";
         }
-      };
-
-      ws.onclose = () => setStatus(false);
-      ws.onerror = () => ws?.close();
-    }, 0);
-
-    return () => {
-      disposed = true;
-      window.clearTimeout(timer);
-      ws?.close();
-    };
-  }, []);
+        return [...anterior, { x: col, y: row, direcao }];
+      });
+    });
+  }, [iniciada, subscribe]);
   async function handleIniciarExecucao() {
     if (!conectada) {
       toast("Conecte a ESP antes de iniciar a execução.");
@@ -149,7 +107,6 @@ export function TelemetryPage() {
         tipo,
       });
       setDataExec(data);
-      execucaoAtivaRef.current = true;
       setTrajetoria([]);
       setInicioExecucao(data.iniciada_em);
       setTempoSegundos(segundosDesdeInicio(data.iniciada_em));
@@ -159,10 +116,8 @@ export function TelemetryPage() {
         const mensagem = err.response
           ? err.response.data.detail ?? "Não foi possível iniciar a execução."
           : "Backend indisponível. Verifique se o servidor está ativo.";
-        setError(mensagem);
         toast.error(mensagem);
       } else {
-        setError("Error inesperado");
         toast.error("Erro inesperado ao iniciar a execução.");
       }
 
@@ -171,19 +126,15 @@ export function TelemetryPage() {
   }
 
   async function handleStopExecucao() {
-    if (!conectada) {
-      toast("Conecte a ESP antes de parar a execução.");
-      return false;
-    }
     // # verificiar se chegou no destino final
     // falha  sucesso
-    let status = "concluido";
+    const status = "concluido";
     // em_execucao, concluido, interrompido
-    let resultado = "sucesso";
+    const resultado = "sucesso";
 
     try {
       await api.post(
-        `/api/sessions/${dataExec?.execucao_id ?? dataExec?.id}/finish`,
+        `/api/sessions/${dataExec?.id ?? dataExec?.execucao_id}/finish`,
         {
           status: status,
           resultado: resultado,
@@ -195,10 +146,8 @@ export function TelemetryPage() {
         const mensagem = err.response
           ? err.response.data.detail ?? "Não foi possível parar a execução."
           : "Backend indisponível. Verifique se o servidor está ativo.";
-        setError(mensagem);
         toast.error(mensagem);
       } else {
-        setError("Error inesperado");
         toast.error("Erro inesperado ao parar a execução.");
       }
 
@@ -219,14 +168,28 @@ export function TelemetryPage() {
   const tempo = `${String(Math.floor(tempoSegundos / 60)).padStart(2, "0")}:${String(tempoSegundos % 60).padStart(2, "0")}`;
   const posicaoAtual = trajetoria.at(-1);
   const metric = (value: unknown) => {
-    const numericValue = Number(value);
-    return Number.isFinite(numericValue) ? numericValue : 0;
+    return typeof value === "number" && Number.isFinite(value) ? value : null;
   };
+  const mensagemConexao = streamStatus === "connecting"
+    ? "Conectando à telemetria..."
+    : streamStatus === "reconnecting"
+      ? "Conexão interrompida. Tentando reconectar..."
+      : !telemetry?.has_data
+        ? "Aguardando dados do Micromouse."
+        : !conectada
+          ? "Micromouse desconectado. Exibindo os últimos dados recebidos."
+          : stale
+            ? "Telemetria atrasada. Exibindo os últimos dados recebidos."
+            : "Telemetria atualizada.";
 
   return (
     <main className="flex-1 overflow-y-auto px-4 pb-4 pt-34 text-slate-200 sm:p-12">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold text-slate-100">Telemetria</h1>
+        <div role="status" aria-live="polite" className={`w-full rounded-md border px-4 py-3 text-sm ${stale ? "border-amber-500/30 bg-amber-500/10 text-amber-200" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"}`}>
+          <p>{mensagemConexao}</p>
+          {ageMs !== null && <p className="mt-1 text-xs">Última atualização há {Math.floor(ageMs / 1000)} s.</p>}
+        </div>
         <div
           className="
           grid w-full gap-4 sm:gap-5
@@ -235,22 +198,22 @@ export function TelemetryPage() {
         >
           {/* BATERIA  quando a bateria esta no medio da a messagem*/}
 
-          <BatteryCard battery={metric(dataExec?.metrics?.battery_pct)} />
+          <BatteryCard battery={metric(telemetry?.metrics?.battery_pct)} />
 
           {/* VELOCIDADE */}
-          <SpeedCard speed={metric(dataExec?.metrics?.speed_cm_s)} />
+          <SpeedCard speed={metric(telemetry?.metrics?.speed_cm_s)} />
 
           {/* MOTORES */}
           <MotorRPMCard
-            leftRpm={metric(dataExec?.metrics?.rpmLeft)}
-            rightRpm={metric(dataExec?.metrics?.rpmRight)}
+            leftRpm={metric(telemetry?.metrics?.rpmLeft)}
+            rightRpm={metric(telemetry?.metrics?.rpmRight)}
           />
 
           {/* GIROSCÓPIO */}
           <GyroscopeCard
-            x={metric(dataExec?.movement?.giro_x_deg_s)}
-            y={metric(dataExec?.movement?.giro_y_deg_s)}
-            z={metric(dataExec?.movement?.giro_z_deg_s)}
+            x={metric(telemetry?.movement?.giro_x_deg_s)}
+            y={metric(telemetry?.movement?.giro_y_deg_s)}
+            z={metric(telemetry?.movement?.giro_z_deg_s)}
           />
         </div>
       </header>
@@ -283,8 +246,8 @@ export function TelemetryPage() {
               type="button"
               onClick={async () => {
                 const execucaoAtiva = await handleVerificar();
+                if (execucaoAtiva === undefined) return;
                 if (execucaoAtiva) {
-                  execucaoAtivaRef.current = true;
                   setDataExec(execucaoAtiva);
                   setTrajetoria([]);
                   setInicioExecucao(execucaoAtiva.iniciada_em);
@@ -296,7 +259,6 @@ export function TelemetryPage() {
 
                 const ok = await handleIniciarExecucao();
                 if (ok) {
-                  execucaoAtivaRef.current = true;
                   setTempoSegundos(0);
                   setIniciada(true);
                   toast("Execução Iniciada");
@@ -311,13 +273,15 @@ export function TelemetryPage() {
             </button>
 
             <button
-              disabled={!conectada || !iniciada}
+              disabled={!iniciada}
+              aria-label="Finalizar execução"
               onClick={async () => {
 
                 const ok = await handleStopExecucao();
                 if (ok) {
                   setTempoSegundos(0);
                   setIniciada(false);
+                  setTrajetoria([]);
                   setDataExec(undefined);
                   setInicioExecucao(undefined);
                   setTempoSegundos(0);

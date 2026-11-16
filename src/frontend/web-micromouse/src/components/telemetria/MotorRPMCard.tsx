@@ -1,8 +1,8 @@
 import { TelemetryCard } from "./TelemetryCard";
 import RpmSvg from '../../../assets/rpm.svg'
 interface MotorRPMCardProps {
-  leftRpm: number;
-  rightRpm: number;
+  leftRpm: number | null;
+  rightRpm: number | null;
 }
 
 export function MotorRPMCard({
@@ -20,7 +20,7 @@ export function MotorRPMCard({
             </span>
 
             <strong className="truncate text-xl text-white sm:text-2xl">
-              {leftRpm}
+              {leftRpm ?? "—"}
             </strong>
 
             <small className="text-[#6B7280]">
@@ -36,7 +36,7 @@ export function MotorRPMCard({
             </span>
 
             <strong className="truncate text-xl text-white sm:text-2xl">
-              {rightRpm}
+              {rightRpm ?? "—"}
             </strong>
 
             <small className="text-[#6B7280]">

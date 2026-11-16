@@ -17,8 +17,9 @@ PowerShell.
 | `GET /api/sessions/{id}/telemetry` | Consulta o histórico de uma execução, com paginação. |
 | `POST /api/sessions/{id}/finish` | Finaliza a execução ativa. |
 
-`current` e `status` têm propósitos diferentes: `current` lê os últimos valores
-persistidos no banco; `status` informa quando o backend recebeu o último pacote.
+`current` retorna a última leitura válida recebida, mesmo antes de iniciar uma
+corrida; após reinício, pode recuperar a última amostra persistida. `status`
+informa quando o backend recebeu o último pacote.
 Mesmo quando a leitura não muda e não gera uma nova linha, o recebimento do
 pacote atualiza o status da conexão.
 
@@ -83,7 +84,7 @@ recebida, mas foi omitida para reduzir gravações repetidas.
 
 ## 4. Consultar a última leitura e a conexão
 
-Última amostra salva:
+Última leitura disponível:
 
 ```bash
 curl http://localhost:8000/api/telemetry/current

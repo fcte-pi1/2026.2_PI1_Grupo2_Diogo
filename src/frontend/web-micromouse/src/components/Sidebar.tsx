@@ -1,48 +1,21 @@
 import LogoIconSVG from "../../assets/Logo.svg";
 import BurguerSVG from "../../assets/burguer.svg";
 import { NavLinkBar } from "./NavLinkBar";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useTelemetry } from "../hooks/useTelemetry";
 import { RxDashboard } from "react-icons/rx";
 import { GiMaze } from "react-icons/gi";
 import { GoClock } from "react-icons/go";
 import { LuBookText } from "react-icons/lu";
-type StatusConexao =  true | false
 
 export function Sidebar() {
   const [IsOpen, setIsOpen] = useState(false);
-  const [status, setStatus] = useState<StatusConexao>(false)
-
-   useEffect(() => {
-    let ws: WebSocket | undefined
-    let disposed = false
-
-    const timer = window.setTimeout(() => {
-      if (disposed) return
-      ws = new WebSocket('ws://localhost:8000/ws/telemetry/current')
-
-      ws.onmessage = (event) => {
-        try {
-          const dados = JSON.parse(event.data)
-          console.log(dados)
-          setStatus(Boolean(dados.connected))
-        } catch {
-          setStatus(false)
-        }
-      }
-
-      ws.onclose = () => setStatus(false)
-      ws.onerror = () => ws?.close()
-    }, 0)
-
-    return () => {
-      disposed = true
-      window.clearTimeout(timer)
-      ws?.close()
-    }
-  }, [])
+  const { connected, stale, streamStatus } = useTelemetry();
+  const connectionLabel = streamStatus === "connecting" ? "Conectando..."
+    : streamStatus === "reconnecting" ? "Reconectando..."
+      : !connected ? "Desconectado" : stale ? "Dados atrasados" : "Conectado";
 
   function handleClick() {
-    console.log(IsOpen);
     setIsOpen(!IsOpen);
   }
   
@@ -64,17 +37,14 @@ export function Sidebar() {
           </div>
         </div>
 
-        {status ? (
-          <div className="bg-[#00BC7D]/10 sm:w-50 w-30 h-7 sm:h-6.5 justify-center gap-2 sm:justify-start sm:gap-6 flex items-center sm:py-4 sm:pl-6  rounded-[20px] border border-[#00BC7D]/20">
-            <div className="w-1.5 h-1.5 rounded-full bg-[#00BC7D]" />
-            <p className="text-[#00BC7D] sm:text-base text-sm">Conectado</p>
-          </div>
-        ) : (
-          <div className="bg-[#FF6467]/10 w-50 h-6.5 gap-6 flex items-center py-4 pl-6  rounded-[20px] border border-[#FF6467]/20">
-            <div className="w-1.5 h-1.5 rounded-full bg-[#FF6467]" />
-            <p className="text-[#FF6467]">Desconectado</p>
-          </div>
-        )}
+        <div className={`flex h-7 items-center justify-center gap-2 rounded-full border px-4 text-sm sm:w-50 ${
+          connected && !stale ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
+            : streamStatus === "open" && !connected ? "border-red-400/20 bg-red-400/10 text-red-400"
+              : "border-amber-500/20 bg-amber-500/10 text-amber-300"
+        }`}>
+          <span className="h-1.5 w-1.5 rounded-full bg-current" />
+          <p>{connectionLabel}</p>
+        </div>
 
         <button className="cursor-pointer" onClick={handleClick}>
           <img

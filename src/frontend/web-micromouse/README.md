@@ -20,7 +20,7 @@ Documentação de como rodar a aplicação frontend em ambiente de desenvolvimen
 ## Dockerfile
 
 ```dockerfile
-FROM node:20-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 COPY package*.json ./
@@ -205,7 +205,7 @@ Para conferir só o caminho até a API, abra http://localhost:5173/api/sessions/
 
 ## Testes unitários do SVG
 
-A suíte usa React Testing Library, Vitest 4 e jsdom. O Vitest 4 é compatível com o Node 20 usado pelo container. Os testes renderizam `Percurso` com posições conhecidas e verificam o SVG e os controles; a execução é independente do backend e do banco.
+A suíte usa React Testing Library, Vitest 5 e jsdom. Use Node 22.12 ou superior (o container usa Node 22). Os testes renderizam `Percurso` com posições conhecidas e verificam o SVG e os controles; a execução é independente do backend e do banco. Também há testes do estado compartilhado e da página de telemetria.
 
 Na pasta `src/frontend/web-micromouse`, instale as dependências e execute:
 
@@ -229,3 +229,25 @@ O relatório mede o arquivo inteiro `src/components/Percurso.tsx`, incluindo os 
 Para a PR, capture o terminal com o comando e o resultado e o resumo do relatório HTML. Declare que o percentual corresponde a `Percurso.tsx`.
 
 As paredes detectadas ainda aguardam implementação no componente. O caso correspondente está registrado como `todo`; a integração entre banco, API e paredes no SVG também permanece pendente.
+
+## Reconexão da telemetria — RNF04
+
+O `TelemetryProvider`, montado em `App.tsx`, mantém um WebSocket para a página
+e a barra lateral. A URL usa `VITE_API_URL` quando definida; caso contrário,
+usa a origem do navegador e o proxy `/ws` do Vite. Conexões HTTPS usam `wss`.
+
+Após uma queda, as novas tentativas aguardam 1, 2, 4, 8 e no máximo 10 segundos.
+Cinco segundos sem mensagens também iniciam a reconexão. A última leitura fica
+visível com aviso e sua idade; antes da primeira leitura, os cards exibem “—”.
+O recebimento de dados válidos restaura a atualização sem recarregar a página.
+
+Para executar o cenário em Chromium com HTTP e WebSocket simulados:
+
+```powershell
+npx.cmd playwright install chromium
+npm.cmd run test:e2e
+```
+
+O Playwright inicia um servidor Vite temporário na porta 5184. O teste verifica
+o início sem histórico e a retomada após queda. Os resultados ficam em
+`test-results/`, pasta ignorada pelo Git.

@@ -48,10 +48,10 @@ Os caminhos das rotas continuam com `sessions`, mas o que elas devolvem segue o 
 | `GET /api/sessions/{id}/path` | A trajetória: lista de `{row, col}`, do início até a posição atual. | 404 |
 | `GET /api/sessions/{id}/metrics` | As métricas atuais: `speed_cm_s`, `rpm` e `battery_pct`. | 404 |
 | `GET /api/sessions/{id}/events` | O log de eventos: `timestamp`, `type` e `message`. | 404 |
-| `POST /api/telemetry` | Salva quando os valores mudam ou a cada 5 s; a resposta informa `saved` ou `unchanged` e inclui `execucao_id`. | `409` se não houver execução ativa. |
+| `POST /api/telemetry` | Atualiza a leitura disponível em memória. Durante uma corrida, salva quando os valores mudam ou a cada 5 s. Sem corrida, responde `received`, com `saved:false`. | `503` se a persistência falhar; a leitura continua disponível. |
 | `WS /ws/telemetry` | Recebe as mesmas amostras JSON da rota HTTP e responde a cada mensagem com o resultado do salvamento. |
 | `GET /api/telemetry/status` | Informa se um pacote recente da ESP foi recebido; devolve `connected`, `last_seen` e `age_ms`. A conexão WebSocket aberta sem envio de pacotes não conta como placa conectada. Pacotes expiram após `ESP_CONNECTION_TIMEOUT_MS` (5 s por padrão). | — |
-| `GET /api/telemetry/current` | Busca no banco a última amostra salva, priorizando execução ativa; devolve métricas, posição, horário relativo e estado da conexão WebSocket ou do recebimento HTTP recente. | `503` se ainda não houver amostras salvas. |
+| `GET /api/telemetry/current` | Retorna a última leitura válida em memória; após reinício, recupera do banco. Sempre inclui o estado da conexão. | Sem amostras: `200`, `has_data:false` e `metrics:null`. |
 | `WS /ws/telemetry/current` | Envia a amostra atual imediatamente e depois a cada segundo, até o cliente desconectar. |
 
 O campo `status` vale `em_execucao`, `concluido` ou `interrompido`, como na documentação do projeto. O tempo (`tempo_total_ms`) é em **milissegundos**.
@@ -67,10 +67,10 @@ Os comandos são para o PowerShell (Windows), dentro de `src/backend`. No Linux 
 
 ```powershell
 python -m venv .venv
-.venv\Scripts\python -m pip install fastapi uvicorn pytest httpx
+.venv\Scripts\python -m pip install -r requirements.txt
 ```
 
-A `.venv` é uma pasta com um Python só deste projeto. Ela está no `.gitignore` e não vai para o repositório. Ainda não há `requirements.txt`; os pacotes acima são os necessários.
+A `.venv` é uma pasta com um Python só deste projeto. Ela está no `.gitignore` e não vai para o repositório. As dependências da API e dos testes estão em `requirements.txt`.
 
 ### Operação normal: dados do mock, parados
 
@@ -141,21 +141,21 @@ Use `python -m pytest`, e não só `pytest`. O `-m` coloca a pasta atual no cami
 
 - **Labirintos retangulares (8×4 e 12×4):** o modelo `Maze` guarda um número só (`size`), então só representa labirintos quadrados. Para 8×4 e 12×4, ele vai precisar de linhas e colunas separadas. Quando isso mudar, o front também precisa mudar, em `src/api.ts` (tipo `ApiMaze`) e em `src/hooks/useLabirinto.ts` (`linhas` e `colunas`).
 - **Rotas do labirinto:** labirinto, trajetória, métricas e eventos ainda usam o mock em memória.
-- **`requirements.txt`:** ainda não existe.
+- As dependências do backend estão em `requirements.txt`.
 
 ## Telemetria em tempo real — RNF01
 
-A API disponibiliza a última amostra persistida da telemetria através do endpoint:
+A API disponibiliza a última leitura válida da telemetria através do endpoint:
 
 ```http
 GET /api/telemetry/current
 ```
 
-O front pode consultar `GET /api/telemetry/current` ou abrir `ws://<IP_DO_BACKEND>:8000/ws/telemetry/current` para receber atualizações em tempo real (envio imediato e depois a cada segundo). Cada mensagem inclui `execucao_id`, `telemetry_sample_id`, `metrics`, `position`, `connected` e `stale`. Em `metrics`, `rpm` é a média e `rpmLeft`/`rpmRight` preservam os valores individuais. Se a execução estiver ativa, a API prioriza as amostras dela; caso contrário, devolve a amostra mais recente disponível. Se ainda não houver amostras, o WebSocket envia `{"status":"error","detail":"Nenhuma telemetria salva no banco.","code":503}`.
+O front pode consultar `GET /api/telemetry/current` ou abrir `ws://<IP_DO_BACKEND>:8000/ws/telemetry/current`. Cada mensagem inclui `has_data`, `metrics`, `position`, `movement`, `connected` e `stale`. Sem leituras, o estado da conexão continua disponível e `metrics` é `null`. Em `metrics`, `rpm` é a média e `rpmLeft`/`rpmRight` preservam os valores individuais. A última leitura permanece disponível durante quedas; pacotes novos retomam a atualização, inclusive quando valores iguais dispensam uma gravação no banco.
 
 Para persistir os dados enviados pela ESP, use `POST /api/telemetry` ou WebSocket `/ws/telemetry`. O backend considera a ESP conectada por até 5 segundos após o último pacote recebido; uma conexão aberta sem pacotes não marca a placa como conectada. A interface pode consultar `GET /api/telemetry/status` ou o campo `connected` de `GET /api/telemetry/current`.
 
-Para usar WebSocket, conecte a ESP em `ws://<IP_DO_BACKEND>:8000/ws/telemetry` e envie uma mensagem JSON por amostra. No formato aninhado, envie `metrics.rpmLeft` e `metrics.rpmRight` para preservar os valores individuais em `rpm_motor_esq` e `rpm_motor_dir`. `metrics.rpm` é opcional quando os dois valores individuais são enviados; se omitido, o backend calcula a média. Sem os campos individuais, `rpm` preenche os dois lados. Também é aceito o formato plano da ESP (`bateria`, `velocidade`, `rpm_motor`, opcionalmente `connected`). Cada pacote recebe uma resposta JSON com `saved` ou `unchanged`; a conexão aberta sozinha não marca a ESP online: é preciso enviar pacotes regularmente.
+Para usar WebSocket, conecte a ESP em `ws://<IP_DO_BACKEND>:8000/ws/telemetry` e envie uma mensagem JSON por amostra. No formato aninhado, envie `metrics.rpmLeft` e `metrics.rpmRight`; `metrics.rpm` é opcional quando ambos são enviados. O campo opcional `movement` aceita `giro_x_deg_s`, `giro_y_deg_s` e `giro_z_deg_s`. Também é aceito o formato plano da ESP (`bateria`, `velocidade`, `rpm_motor`, opcionalmente `connected`). As respostas usam `saved`, `unchanged`, `received` (sem corrida ativa) ou `ignored` (amostra fora de ordem). Falha de gravação informa `saved:false` e código `503`, mantendo o socket aberto para os próximos pacotes. Uma conexão aberta sozinha não marca a ESP online.
 
 ### Intervalo de atualização
 
@@ -215,6 +215,17 @@ Os campos relacionados ao controle de atualização são:
 - `age_ms`: idade do dado em milissegundos;
 - `stale`: informa se o dado ultrapassou o intervalo esperado mais a tolerância.
 
+O campo `stale` também é verdadeiro quando a ESP está desconectada. O campo
+`connection_age_ms` mede o tempo desde o último pacote, enquanto `age_ms` mede
+a idade da leitura. `connection_timeout_ms` e `stale_after_ms` informam os
+limites configurados ao frontend. A ausência de dados usa `has_data:false` e
+campos de leitura nulos. Os identificadores de gravação podem ser nulos quando
+o pacote ainda não gerou uma amostra persistida.
+
+O cache é local ao processo; a execução atual usa um worker Uvicorn. Após um
+reinício, a última amostra persistida pode ser recuperada, mas a ESP só volta
+a ser considerada conectada quando um novo pacote chega.
+
 ### Dados defasados
 
 Quando:
@@ -255,18 +266,18 @@ Quando esse dado ultrapassa o limite de tempo configurado, ele passa a ser ident
 
 ### Dados simulados
 
-Atualmente os dados de telemetria são fornecidos pelo simulador localizado em:
+Para demonstrar o fluxo de telemetria sem a ESP, use, em `src/backend`:
 
 ```text
-app/mock/simulation.py
+python scripts/demo_telemetry.py --quantidade 1200 --intervalo 0.5
 ```
 
-A integração com o Micromouse real não faz parte do escopo atual do RNF01.
+O script cria uma execução se necessário e envia aproximadamente 10 minutos de amostras. Interrompa e execute novamente para testar perda e retomada de sinal. Para verificar o navegador reconectando ao backend, reinicie a API mantendo o frontend aberto.
 
-Para executar o backend utilizando a simulação:
+Para executar a API:
 
 ```bash
-python -m uvicorn app.mock.dev_server:app --reload
+python -m uvicorn app.main:app --reload --host 0.0.0.0
 ```
 
 ### Testes automatizados
