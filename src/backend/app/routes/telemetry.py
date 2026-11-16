@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import os
+import httpx
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
@@ -347,3 +349,26 @@ async def stream_current_telemetry_websocket(websocket: WebSocket):
             await asyncio.sleep(settings.TELEMETRY_UPDATE_INTERVAL_MS / 1000)
     except WebSocketDisconnect:
         pass
+
+
+# V4.8: proxy opcional do mapa/estado embarcado. Nao depende do banco de dados.
+# Computador deve estar conectado ao AP da ESP32. Nunca mover motores por esta rota.
+async def _esp_get(path: str):
+    base = os.environ.get("MICROMOUSE_ESP_BASE_URL", "http://192.168.4.1").rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=1.5, trust_env=False) as client:
+            response = await client.get(base + path)
+            response.raise_for_status()
+            return response.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(status_code=503, detail="ESP32 indisponivel na rede local") from exc
+
+
+@router.get("/maze/live")
+async def get_esp_maze_live():
+    return await _esp_get("/api/maze")
+
+
+@router.get("/mission/live")
+async def get_esp_mission_live():
+    return await _esp_get("/api/nav/status")

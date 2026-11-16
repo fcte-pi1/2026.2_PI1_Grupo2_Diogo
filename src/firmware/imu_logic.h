@@ -30,3 +30,10 @@ inline float aplicarZonaMorta(float taxa, float limite) {
 inline bool calibracaoValida(const EstatisticaGiro &e, float limiteDesvio, uint32_t minAmostras) {
   return e.amostras() >= minAmostras && e.desvio() <= limiteDesvio;
 }
+
+// O yaw só pode ser zerado, e voltar a valer como referência, com o bias calibrado,
+// uma leitura recente e o robô parado
+inline bool yawPodeSerZerado(bool calibrada, uint32_t idadeLeituraMs, uint32_t idadeMaxMs,
+                             float taxaDps, float taxaParadoMaxDps) {
+  return calibrada && idadeLeituraMs <= idadeMaxMs && fabsf(taxaDps) <= taxaParadoMaxDps;
+}

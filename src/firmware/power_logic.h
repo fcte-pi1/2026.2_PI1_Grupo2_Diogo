@@ -30,6 +30,20 @@ struct LimitesBateria {
   uint32_t tempoSobrecorrenteMs;
 };
 
+// Limites temporários para ensaio em bancada: só deixam a proteção mais sensível
+// (corte igual ou acima do padrão e sobrecorrente igual ou abaixo do padrão)
+inline bool limitesDeEnsaioValidos(float corteV, float sobrecorrenteMA, const LimitesBateria &padrao,
+                                   float corteMaxV, float sobrecorrenteMinMA) {
+  return corteV >= padrao.vCorte && corteV <= corteMaxV &&
+         sobrecorrenteMA >= sobrecorrenteMinMA && sobrecorrenteMA <= padrao.iSobrecorrenteMA;
+}
+
+// O corte travado só pode ser liberado se a tensão em repouso estiver acima do alerta.
+// Abaixo disso a bateria está realmente descarregada e precisa de recarga
+inline bool podeRearmarCorte(EstadoBateria estado, float tensaoV, float vAlerta) {
+  return estado != BATERIA_CRITICA || tensaoV >= vAlerta;
+}
+
 class MonitorBateria {
 public:
   explicit MonitorBateria(const LimitesBateria &limites) : lim(limites) {}
