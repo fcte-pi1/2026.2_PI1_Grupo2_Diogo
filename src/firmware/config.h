@@ -272,7 +272,10 @@ constexpr uint16_t NAV_MAX_PASSOS = 512; // limite de seguranca, nao garantia de
 
 // V4.9: opcoes novas conservadoras. Nao altera leitura/offset dos lasers.
 // O status 2 continua inconclusivo por padrao; nunca confundir erro I2C com passagem.
-constexpr bool NAV_SEM_ALVO_COMO_PASSAGEM = false;
+// V4.9.1: habilitado. Sem isso, corredor aberto (VL53L0X sem retorno) nunca era
+// confirmado como passagem e a missao parava com "sem_passagem_confirmada".
+// Erro de I2C/timeout continuam sem liberar passagem.
+constexpr bool NAV_SEM_ALVO_COMO_PASSAGEM = true;
 constexpr uint8_t NAV_SEM_ALVO_AMOSTRAS_MINIMAS = 3;
 #if defined(NAV_HOST_SIM) && !defined(ARDUINO)
 constexpr bool NAV_RE_HABILITADA = true;
@@ -297,3 +300,6 @@ constexpr float NAV_AJUSTE_MAX_MM = 12.0f;
 constexpr float NAV_AJUSTE_RESTANTE_MIN_MM = 25.0f;
 constexpr float NAV_YAW_RETO_MAX_GRAUS = 12.0f;
 constexpr float NAV_YAW_GIRO_TOL_GRAUS = 12.0f;
+// V4.9.1: tempo maximo com o U3 sem evidencia durante o avanco antes de parar
+// (uma unica amostra ruim nao interrompe mais a missao).
+constexpr uint32_t NAV_FRENTE_INDEFINIDA_MAX_MS = 300;

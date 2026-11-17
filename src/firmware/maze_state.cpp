@@ -27,6 +27,15 @@ bool mazeObserve(uint8_t x,uint8_t y,uint8_t conhecidas,uint8_t presentes){
  }
  mapa=candidate;++revisao;return true;
 }
+bool mazeUpdate(uint8_t x,uint8_t y,uint8_t conhecidas,uint8_t presentes,uint8_t inferidas){
+ if(!mapa.inside(x,y)||((conhecidas|inferidas)&0xF0)||(presentes&~conhecidas))return false;
+ for(uint8_t i=0;i<4;i++){
+   const auto d=(mazeplan::Direction)i;
+   if(conhecidas&(1<<i)) mapa.update(x,y,d,(presentes&(1<<i))!=0);
+   else if((inferidas&(1<<i)) && !mapa.isKnown(x,y,d)) mapa.update(x,y,d,true);
+ }
+ ++revisao;return true;
+}
 bool mazeMarkVisited(uint8_t x,uint8_t y){if(!mapa.inside(x,y))return false;mapa.cell[y][x].visited=1;++revisao;return true;}
 bool mazeIsGoal(){return poseConhecida&&mapa.atGoal(posX,posY);}
 bool mazeNextDirection(char& d,uint8_t& nx,uint8_t& ny){

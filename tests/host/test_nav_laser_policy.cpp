@@ -29,12 +29,23 @@ int main() {
     h.reiniciar(110);
     for(uint32_t i=111;i<114;i++)h.novaAmostra(i,-7,2,PAREDE_INDEFINIDA);
     assert(decisao(-7,2)==EvidenciaParedeNav::LIVRE);
-    // RangeStatus=1/4 e timeout nunca liberam passagem.
-    h.novaAmostra(114,-7,1,PAREDE_INDEFINIDA);
-    assert(decisao(-7,1)==EvidenciaParedeNav::INDEFINIDA);
-    h.novaAmostra(115,-4,4,PAREDE_INDEFINIDA);
-    assert(decisao(-4,4)==EvidenciaParedeNav::INDEFINIDA);
-    h.novaAmostra(116,LASER_TIMEOUT,255,PAREDE_INDEFINIDA);
-    assert(decisao(-3,255)==EvidenciaParedeNav::INDEFINIDA);
-    printf("PASS: 11 casos de classificacao para navegacao\n");
+    // V4.9.1: sinal fraco (status 1), falha de fase (4) e fora de escala
+    // tambem significam "sem alvo" e, repetidos, contam como passagem.
+    h.reiniciar(200);
+    h.novaAmostra(201,LASER_SINAL_FRACO,1,PAREDE_INDEFINIDA);
+    h.novaAmostra(202,LASER_FASE_INVALIDA,4,PAREDE_INDEFINIDA);
+    assert(decisao(LASER_FASE_INVALIDA,4)==EvidenciaParedeNav::INDEFINIDA);
+    h.novaAmostra(203,LASER_FORA_ESCALA,0,PAREDE_INDEFINIDA);
+    assert(decisao(LASER_FORA_ESCALA,0)==EvidenciaParedeNav::LIVRE);
+    // Timeout e erro de I2C nunca liberam passagem e zeram a contagem.
+    h.novaAmostra(204,LASER_TIMEOUT,255,PAREDE_INDEFINIDA);
+    assert(decisao(LASER_TIMEOUT,255)==EvidenciaParedeNav::INDEFINIDA);
+    assert(h.semAlvoSeguidas()==0);
+    // Abaixo do minimo do sensor: algo encostado = parede, nunca passagem.
+    h.reiniciar(300);
+    h.novaAmostra(301,LASER_PERTO_DEMAIS,0,PAREDE_INDEFINIDA);
+    assert(decisao(LASER_PERTO_DEMAIS,0)==EvidenciaParedeNav::PRESENTE);
+    for(uint32_t i=302;i<306;i++)h.novaAmostra(i,LASER_SINAL_FRACO,2,PAREDE_INDEFINIDA);
+    assert(decisao(LASER_SINAL_FRACO,2)==EvidenciaParedeNav::INDEFINIDA);
+    printf("PASS: 15 casos de classificacao para navegacao\n");
 }

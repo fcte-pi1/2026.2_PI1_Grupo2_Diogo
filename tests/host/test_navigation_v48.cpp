@@ -20,8 +20,8 @@ static int moves=0,turns=0,reverses=0,adjustments=0;
 static uint8_t px=0,py=0;
 static Direction heading=NORTH;
 static float yaw=0,targetMm=0,progress=0;
-static bool weakFront=false,missingFront=false,forceMotionFail=false;
-static bool trackingCase=false;
+static bool weakFront=false,missingFront=false,forceMotionFail=false,timeoutFront=false,leftLiesOpen=false;
+static bool trackingCase=false,openNoTarget=false;
 static std::string status(){return navigationStatusJson().c_str();}
 static bool has(const char* s){return status().find(s)!=std::string::npos;}
 static Direction sensorDir(uint8_t s){return s==LASER_U2?Grid::left(heading):s==LASER_U4?Grid::right(heading):heading;}
@@ -34,7 +34,12 @@ LeituraLaser lerLaser(uint8_t sensor){
  if(trackingCase&&moving&&!turning&&targetMm<0&&px==0&&py==2&&sensor==LASER_U4&&fabsf(progress)>=90)present=false;
  l.brutoMm=present?60:300;l.filtradoMm=l.brutoMm;l.statusVL=0;
  l.parede=present?PAREDE_PRESENTE:PAREDE_AUSENTE;
+ // Corredor aberto real: o VL53L0X nao ve alvo e devolve sinal fraco.
+ if(!present&&!moving&&sensor!=LASER_U3&&openNoTarget){l.brutoMm=LASER_SINAL_FRACO;l.statusVL=2;l.parede=PAREDE_INDEFINIDA;}
  if(weakFront&&sensor==LASER_U3){l.brutoMm=LASER_SINAL_FRACO;l.statusVL=2;l.parede=PAREDE_INDEFINIDA;}
+ if(timeoutFront&&sensor==LASER_U3){l.brutoMm=LASER_TIMEOUT;l.statusVL=255;l.parede=PAREDE_INDEFINIDA;l.ultimaValidaMs=0;}
+ // Sensor esquerdo "mente" que a borda externa esta aberta.
+ if(leftLiesOpen&&sensor==LASER_U2&&px==0&&heading==NORTH){l.brutoMm=300;l.parede=PAREDE_AUSENTE;}
  return l;
 }
 bool batteryAvailable(){return true;}
@@ -69,7 +74,7 @@ static void tick(){
  navigationTick();nowMs+=20;
 }
 static void reset(uint8_t w,uint8_t h,uint8_t gx,uint8_t gy){
- assert(truth.init(w,h,gx,gy));moves=turns=reverses=adjustments=0;moving=turning=false;resultOk=true;weakFront=missingFront=forceMotionFail=trackingCase=false;px=py=0;heading=NORTH;yaw=0;nowMs+=10000;
+ assert(truth.init(w,h,gx,gy));moves=turns=reverses=adjustments=0;moving=turning=false;resultOk=true;weakFront=missingFront=forceMotionFail=trackingCase=timeoutFront=leftLiesOpen=openNoTarget=false;px=py=0;heading=NORTH;yaw=0;nowMs+=10000;
 }
 static void run(){for(int i=0;i<30000&&navigationRunning();++i)tick();assert(!navigationRunning());}
 static void expectGoal(){if(!has("OBJETIVO_ATINGIDO"))fprintf(stderr,"Unexpected nav status: %s\n",status().c_str());assert(has("OBJETIVO_ATINGIDO"));assert(px==truth.goalX&&py==truth.goalY);}
@@ -85,7 +90,20 @@ int main(){
  assert(!navigationStart(8,4,7,3));run();expectGoal();assert(reverses==2&&turns==2&&moves==14);assert(adjustments>=1);puts("PASS: 8x4, beco, dois recuos, abertura e giro na bifurcacao, canto oposto");
  reset(2,2,1,0);assert(truth.observe(0,0,EAST,false));weakFront=true;assert(!navigationStart(2,2,1,0)); // start does not require distance
  for(int i=0;i<130;++i){tick();}weakFront=false;run();expectGoal();puts("PASS: sem alvo frontal nao impede observar e escolher alternativa conhecida");
- reset(2,2,0,1);weakFront=true;assert(!navigationStart(2,2,0,1));run();assert(moves==0&&has("FALHA"));puts("PASS: sinal fraco sozinho nao libera movimento");
+ // V4.9.1: corredor sem retorno optico (sinal fraco repetido) e passagem.
+ reset(2,2,0,1);assert(truth.observe(0,0,NORTH,false));weakFront=true;assert(!navigationStart(2,2,0,1));run();expectGoal();puts("PASS: sem alvo a frente repetido = passagem livre");
+ // Timeout/erro do sensor NUNCA libera passagem: a face vira parede por precaucao.
+ reset(2,2,0,1);assert(truth.observe(0,0,NORTH,false));timeoutFront=true;assert(!navigationStart(2,2,0,1));run();assert(moves==0&&has("FALHA")&&has("sem_passagem"));assert(has("\"celulasComFaceInferida\":1"));puts("PASS: timeout frontal nao libera movimento e nao trava esperando");
+ // Laterais em corredor aberto devolvem sinal fraco: antes o robo travava.
+ reset(2,2,1,0);assert(truth.observe(0,0,EAST,false));openNoTarget=true;assert(!navigationStart(2,2,1,0));run();expectGoal();assert(turns==1);puts("PASS: lateral aberta sem retorno optico e reconhecida");
+ // Leitura que contradiz a borda externa nao aborta mais a missao.
+ reset(2,2,0,1);assert(truth.observe(0,0,NORTH,false));leftLiesOpen=true;assert(!navigationStart(2,2,0,1));run();expectGoal();puts("PASS: leitura contraditoria na borda e ignorada");
+ // Inicio fora do canto (0,0)/N.
+ {reset(3,3,0,0);px=2;py=2;heading=SOUTH;
+  assert(truth.observe(2,2,SOUTH,false));assert(truth.observe(2,1,WEST,false));assert(truth.observe(1,1,SOUTH,false));assert(truth.observe(1,0,WEST,false));
+  auto o=navigationDefaultOptions();o.startX=2;o.startY=2;o.initialDirection='S';
+  assert(!navigationStartWithOptions(3,3,0,0,o));run();expectGoal();puts("PASS: inicio em (2,2) voltado S chega em (0,0)");
+  reset(3,3,0,0);o.startX=3;assert(navigationStartWithOptions(3,3,0,0,o));o.startX=0;o.startY=0;assert(navigationStartWithOptions(3,3,0,0,o));o.startY=1;o.initialDirection='X';assert(navigationStartWithOptions(3,3,0,0,o));puts("PASS: inicio invalido e recusado");}
  reset(2,2,0,1);auto invalid=navigationDefaultOptions();invalid.corridorWidth=0;assert(navigationStartWithOptions(2,2,0,1,invalid));puts("PASS: ajuste exige geometria valida");
  reset(2,2,0,1);missingFront=true;assert(navigationStart(2,2,0,1));puts("PASS: sensor nao inicializado bloqueia inicio");
  reset(2,2,0,1);assert(truth.observe(0,0,NORTH,false));forceMotionFail=true;assert(!navigationStart(2,2,0,1));run();assert(has("FALHA")&&has("\"poseConfiavel\":false"));assert(std::string(mazeEstadoJson().c_str()).find("\"pose\":null")!=std::string::npos);puts("PASS: falha no deslocamento invalida pose");

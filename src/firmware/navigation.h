@@ -6,6 +6,8 @@ struct NavigationOptions {
  bool reverse=false, center=false, opening=false;
  float corridorWidth=0, sensorLeftToAxle=-999, sensorRightToAxle=-999;
  char initialDirection='N'; // N/L/S/O no referencial do mapa
+ // V4.9.1: celula inicial configuravel (antes sempre (0,0)); origem no canto sudoeste.
+ uint8_t startX=0, startY=0;
 };
 NavigationOptions navigationDefaultOptions();
 bool navigationReverseAllowed();

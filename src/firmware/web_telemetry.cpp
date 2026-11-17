@@ -901,6 +901,13 @@ void setupTelemetry() {
                 return respostaErro(400,"orientacao_inicial_invalida");
             opts.initialDirection=d[0];
         }
+        // V4.9.1: celula inicial opcional (padrao (0,0)).
+        if(server.hasArg("inicio_x")||server.hasArg("inicio_y")){
+            int sx,sy;
+            if(!inteiroEmFaixa("inicio_x",0,15,sx)||!inteiroEmFaixa("inicio_y",0,15,sy))
+                return respostaErro(400,"posicao_inicial_invalida");
+            opts.startX=(uint8_t)sx;opts.startY=(uint8_t)sy;
+        }
         // Perfil por missao, sem persistencia/flash e sem desativar protecoes.
         if(server.hasArg("perfil_v49")){
             opts.reverse=server.arg("re_supervisionada")=="1";

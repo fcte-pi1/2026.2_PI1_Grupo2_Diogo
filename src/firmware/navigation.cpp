@@ -22,7 +22,9 @@ uint8_t x=0,y=0,targetX=0,targetY=0,turnsRemaining=0;
 char direction='N',targetDirection='N';
 bool turnRight=true, reversing=false, poseCertain=false;
 bool lastMotionWasMove=false, adjustmentApplied=false;
-uint32_t afterSettleMs=0;
+uint32_t afterSettleMs=0, frontUnknownSinceMs=0;
+uint16_t inferredFaces=0;
+uint8_t frontReplans=0; // replanejamentos seguidos sem sair da celula
 float yawStart=0, centerRef=-1, plannedMm=0, openingEstimate=NAN, edgeLeft=NAN,edgeRight=NAN;
 NavOpening openingLeft,openingRight;
 NavigationOptions options;
@@ -131,11 +133,13 @@ const char* navigationStartWithOptions(uint8_t w,uint8_t h,uint8_t gx,uint8_t gy
  if(!lerIMU().confiavel)return "IMU_nao_calibrada";
  for(uint8_t i=0;i<3;++i)if(!lerLaser(i).inicializado)return "laser_nao_inicializado";
  if(!mazeConfigure(w,h,gx,gy))return "dimensoes_ou_objetivo_invalidos";
- x=y=targetX=targetY=0;direction=targetDirection=requested.initialDirection;steps=reverseSteps=0;
+ if(requested.startX>=w||requested.startY>=h)return "posicao_inicial_invalida";
+ if(requested.startX==gx&&requested.startY==gy)return "inicio_igual_ao_objetivo";
+ x=targetX=requested.startX;y=targetY=requested.startY;direction=targetDirection=requested.initialDirection;steps=reverseSteps=0;inferredFaces=0;frontUnknownSinceMs=0;frontReplans=0;
  reversing=false;centerRef=-1;edgeLeft=edgeRight=openingEstimate=NAN;plannedMm=0;adjustmentApplied=false;
  if(!mazeSetPose(x,y,direction))return "erro_ao_inicializar_pose";
  options=requested;poseCertain=true;mazeMarkVisited(x,y);startMs=millis();errorText="";beginSensing();
- Serial.printf("[NAV] INICIADA %ux%u objetivo=(%u,%u)\n",w,h,gx,gy);return nullptr;
+ Serial.printf("[NAV] INICIADA %ux%u inicio=(%u,%u,%c) objetivo=(%u,%u)\n",w,h,x,y,direction,gx,gy);return nullptr;
 }
 void navigationTick(){
  if(!navigationRunning())return;
@@ -150,7 +154,10 @@ void navigationTick(){
   if(fabsf(lerIMU().yawDireitaGraus-yawStart)>NAV_YAW_RETO_MAX_GRAUS){fail("desvio_angular_reto");return;}
   if(!reversing){
    const auto f=lerLaser(LASER_U3);
-   if(classificarSensorNav(LASER_U3,now)==EvidenciaParedeNav::INDEFINIDA){fail("U3_sem_evidencia_durante_avanco");return;}
+   if(classificarSensorNav(LASER_U3,now)==EvidenciaParedeNav::INDEFINIDA){
+    if(!frontUnknownSinceMs)frontUnknownSinceMs=now;
+    else if(now-frontUnknownSinceMs>NAV_FRENTE_INDEFINIDA_MAX_MS){fail("U3_sem_evidencia_durante_avanco");return;}
+   } else frontUnknownSinceMs=0;
    if(f.brutoMm>=0 && f.brutoMm<=dangerLimitMm()){fail("obstaculo_frontal_limite_dinamico");return;}
   }
   for(uint8_t i=LASER_U2;i<=LASER_U4;i+=2){const auto l=lerLaser(i);
@@ -164,10 +171,20 @@ void navigationTick(){
   if(mazeIsGoal()){stage=Stage::DONE;errorText="objetivo_atingido";return;}
   bool enough=true;for(uint8_t i=0;i<3;++i)if((uint32_t)(lerLaser(i).total-sensorCounts[i])<3u)enough=false;
   if(!enough && now-stageMs<NAV_TEMPO_SENSORES_MS)return;
-  uint8_t known,wall;if(!inspect(known,wall)){fail("mapa_leitura_contraditoria");return;}
+  uint8_t known,wall;inspect(known,wall);
+  const uint8_t hd=dirValue(direction);
+  const uint8_t faces=(uint8_t)((1u<<hd)|(1u<<((hd+3)&3))|(1u<<((hd+1)&3)));
   // Espera evidencias adicionais quando uma face ainda e desconhecida.
-  if(known!=((1u<<dirValue(direction))|(1u<<((dirValue(direction)+3)&3))|(1u<<((dirValue(direction)+1)&3))) && now-stageMs<NAV_TEMPO_SENSORES_MS)return;
-  if(known&&!mazeObserve(x,y,known,wall)){fail("mapa_leitura_contraditoria");return;}
+  if(known!=faces && now-stageMs<NAV_TEMPO_SENSORES_MS)return;
+  // V4.9.1: face que continuou sem evidencia apos o prazo e tratada como
+  // BLOQUEADA por precaucao (o robo nunca entra nela), mas so se o mapa ainda
+  // nao a conhecia; uma leitura valida futura pode reabri-la. Antes isso
+  // deixava o mapa sem nenhuma passagem e a missao falhava.
+  const uint8_t inferred=(uint8_t)(faces&~known);
+  if(inferred){++inferredFaces;Serial.printf("[NAV] (%u,%u) faces sem leitura tratadas como parede: 0x%X\n",x,y,inferred);}
+  // V4.9.1: leitura que discorda do mapa nao trava mais a missao; a mais
+  // recente prevalece (borda externa e passagens percorridas sao preservadas).
+  if(!mazeUpdate(x,y,known,wall,inferred)){fail("posicao_fora_do_mapa");return;}
   mazeMarkVisited(x,y);
   uint8_t nx,ny;if(!mazeNextDirection(targetDirection,nx,ny)){fail("sem_passagem_confirmada_ate_objetivo");return;}
   targetX=nx;targetY=ny;
@@ -191,12 +208,28 @@ void navigationTick(){
   if(reversing){if(!options.reverse||!mazeTraversedFromPose(targetDirection)){fail("re_sem_caminho_percorrido");return;}}
   else {
    const auto f=lerLaser(LASER_U3);
-   if(classificarSensorNav(LASER_U3,now)!=EvidenciaParedeNav::LIVRE||
-      (f.brutoMm>=0&&f.brutoMm<=dangerLimitMm()+20)){fail("U3_sem_folga_ou_evidencia_para_avancar");return;}
+   const auto ev=classificarSensorNav(LASER_U3,now);
+   const bool semFolga=f.brutoMm>=0&&f.brutoMm<=dangerLimitMm()+20;
+   if(ev==EvidenciaParedeNav::PRESENTE||semFolga){
+    // V4.9.1: o sensor ve parede onde o mapa dizia passagem: corrige o mapa
+    // e replaneja a partir desta celula, em vez de abortar a missao.
+    Serial.println("[NAV] U3 ve parede a frente: mapa corrigido, replanejando");
+    mazeUpdate(x,y,(uint8_t)(1u<<dirValue(direction)),(uint8_t)(1u<<dirValue(direction)),0);
+    if(++frontReplans>4){fail("parede_a_frente_em_passagem_ja_percorrida");return;}
+    beginSensing();return;
+   }
+   if(ev!=EvidenciaParedeNav::LIVRE){
+    if(now-stageMs<NAV_TEMPO_SENSORES_MS)return; // aguarda nova leitura frontal
+    Serial.println("[NAV] U3 sem evidencia antes do avanco: tratando como parede e replanejando");
+    mazeUpdate(x,y,(uint8_t)(1u<<dirValue(direction)),(uint8_t)(1u<<dirValue(direction)),0);
+    if(++frontReplans>4){fail("parede_a_frente_em_passagem_ja_percorrida");return;}
+    beginSensing();return;
+   }
   }
   if(!navigationDriveReady()){if(now-stageMs>3000)fail("freio_nao_liberou_para_deslocamento");return;}
   yawStart=lerIMU().yawDireitaGraus;plannedMm=NAV_CELULA_MM;adjustmentApplied=false;
   edgeLeft=edgeRight=openingEstimate=NAN;openingLeft.reset(lerLaser(LASER_U2).total);openingRight.reset(lerLaser(LASER_U4).total);
+  frontUnknownSinceMs=0;
   if(!navigationDriveStartStraight(reversing?-plannedMm:plannedMm,reversing?NAV_RPM_RE:NAV_RPM_RETO)){fail("nao_iniciou_deslocamento");return;}
   if(!reversing&&centerRef>0)navigationDriveSetCenterRef(centerRef);
   lastDriverId=navigationDriveResultId();stage=Stage::MOVE_WAIT;stageMs=now;return;
@@ -212,7 +245,7 @@ void navigationTick(){
   if(lastMotionWasMove){
    if(fabsf(lerIMU().yawDireitaGraus-yawStart)>NAV_YAW_RETO_MAX_GRAUS){fail("desvio_angular_apos_parada");return;}
    if(!mazeMarkTraversedFromPose(targetDirection)){fail("erro_registro_travessia");return;}
-   x=targetX;y=targetY;mazeSetPose(x,y,direction);mazeMarkVisited(x,y);++steps;if(reversing)++reverseSteps;
+   x=targetX;y=targetY;mazeSetPose(x,y,direction);mazeMarkVisited(x,y);++steps;frontReplans=0;if(reversing)++reverseSteps;
    if(mazeIsGoal()){stage=Stage::DONE;errorText="objetivo_atingido";return;}
    beginSensing();return;
   }
@@ -235,6 +268,7 @@ String navigationStatusJson(){
   ",\"metaDeslocamentoMm\":"+String(plannedMm,1)+",\"referenciaLateralMm\":"+nOrNull(centerRef>0?centerRef:NAN)+
   ",\"limiteFrontalMm\":"+String(dangerLimitMm(),1)+",\"autonomiaLiberada\":"+String(NAV_AUTONOMIA_HABILITADA?"true":"false")+
   ",\"lateraisCalibrados\":"+String(NAV_LATERAIS_CALIBRADOS?"true":"false")+",\"laserU3AteNarizMm\":"+String(NAV_U3_ATE_NARIZ_MM,1)+
-  ",\"modoSemAlvoHabilitado\":"+String(NAV_SEM_ALVO_COMO_PASSAGEM?"true":"false")+",\"semAlvoU3Seguidas\":"+String(sensorHistorico[LASER_U3].semAlvoSeguidas())+"}";
+  ",\"modoSemAlvoHabilitado\":"+String(NAV_SEM_ALVO_COMO_PASSAGEM?"true":"false")+",\"semAlvoU3Seguidas\":"+String(sensorHistorico[LASER_U3].semAlvoSeguidas())+
+  ",\"celulasComFaceInferida\":"+String(inferredFaces)+"}";
  return s;
 }

@@ -50,6 +50,24 @@ public:
         }
         return true;
     }
+    // V4.9.1: versao TOLERANTE usada pela navegacao real. Em vez de travar a
+    // missao quando uma leitura discorda do mapa, a observacao mais recente
+    // prevalece, com duas excecoes:
+    //  - borda externa do labirinto continua parede (leitura "aberta" ignorada);
+    //  - passagem ja PERCORRIDA fisicamente nao vira parede por leitura ruim.
+    // Retorna false apenas para coordenada invalida.
+    bool update(uint8_t x,uint8_t y,Direction d,bool wall) {
+        if(!inside(x,y))return false;
+        const int nx=x+dx(d),ny=y+dy(d);
+        if(!inside(nx,ny))return true; // borda: ja e parede conhecida
+        const uint8_t b=wallBit(d),rev=wallBit(opposite(d));
+        if(wall && (cell[y][x].traversed&b))return true;
+        Cell& a=cell[y][x];Cell& n=cell[ny][nx];
+        a.known|=b;n.known|=rev;
+        if(wall){a.wall|=b;n.wall|=rev;}else{a.wall&=~b;n.wall&=~rev;}
+        return true;
+    }
+    bool isKnown(uint8_t x,uint8_t y,Direction d)const{return inside(x,y)&&(cell[y][x].known&wallBit(d));}
     bool open(uint8_t x,uint8_t y,Direction d)const {
         if(!inside(x,y))return false;
         const uint8_t b=wallBit(d);
