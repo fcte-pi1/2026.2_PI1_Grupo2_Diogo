@@ -255,11 +255,11 @@ constexpr bool NAV_AUTONOMIA_HABILITADA = true;
 constexpr bool NAV_LATERAIS_CALIBRADOS = true;
 constexpr float NAV_U3_ATE_NARIZ_MM = 10.0f;
 #else
-constexpr bool NAV_AUTONOMIA_HABILITADA = false; // mudar para true apos checklist
-constexpr bool NAV_LATERAIS_CALIBRADOS = false; // confirmar offsets e posicionamento
+constexpr bool NAV_AUTONOMIA_HABILITADA = true; // mudar para true apos checklist
+constexpr bool NAV_LATERAIS_CALIBRADOS = true; // confirmar offsets e posicionamento
 // Distancia da janela do LASER U3 ate o ponto MAIS AVANCADO do chassi (mm).
 // Valor negativo impede armar: medir com regua no robo novo. Nunca chutar.
-constexpr float NAV_U3_ATE_NARIZ_MM = -1.0f;
+constexpr float NAV_U3_ATE_NARIZ_MM = 60.0f;
 #endif
 constexpr float NAV_CELULA_MM = 180.0f; // distancia entre centros: aferir no labirinto real
 constexpr float NAV_RPM_RETO = 25.0f;
@@ -268,4 +268,32 @@ constexpr float NAV_FOLGA_FRONTAL_MM = 15.0f;
 constexpr uint32_t NAV_IDADE_SENSOR_MS = 160;
 constexpr uint32_t NAV_TEMPO_SENSORES_MS = 2000;
 constexpr uint32_t NAV_TEMPO_MISSAO_MS = 600000;
-constexpr uint16_t NAV_MAX_PASSOS = 60;
+constexpr uint16_t NAV_MAX_PASSOS = 512; // limite de seguranca, nao garantia de completar qualquer mapa
+
+// V4.9: opcoes novas conservadoras. Nao altera leitura/offset dos lasers.
+// O status 2 continua inconclusivo por padrao; nunca confundir erro I2C com passagem.
+constexpr bool NAV_SEM_ALVO_COMO_PASSAGEM = false;
+constexpr uint8_t NAV_SEM_ALVO_AMOSTRAS_MINIMAS = 3;
+#if defined(NAV_HOST_SIM) && !defined(ARDUINO)
+constexpr bool NAV_RE_HABILITADA = true;
+constexpr bool NAV_CENTRALIZAR_HABILITADA = true;
+constexpr bool NAV_AJUSTE_ABERTURA_HABILITADO = true;
+constexpr float NAV_ABERTURA_LARGURA_MM = 168.0f;
+constexpr float NAV_U2_A_EIXO_MM = 0.0f;
+constexpr float NAV_U4_A_EIXO_MM = 0.0f;
+#else
+// Sem sensor traseiro: re somente em ambiente controlado e apos validacao presencial.
+constexpr bool NAV_RE_HABILITADA = false;
+constexpr bool NAV_CENTRALIZAR_HABILITADA = false;
+constexpr bool NAV_AJUSTE_ABERTURA_HABILITADO = false;
+// Geometria efetiva: largura livre do corredor; distancia longitudinal do laser ao eixo,
+// positiva se o laser esta a frente do eixo, negativa se atras. Nao inventar esses valores.
+constexpr float NAV_ABERTURA_LARGURA_MM = 0.0f;
+constexpr float NAV_U2_A_EIXO_MM = -999.0f;
+constexpr float NAV_U4_A_EIXO_MM = -999.0f;
+#endif
+constexpr float NAV_RPM_RE = 20.0f;
+constexpr float NAV_AJUSTE_MAX_MM = 12.0f;
+constexpr float NAV_AJUSTE_RESTANTE_MIN_MM = 25.0f;
+constexpr float NAV_YAW_RETO_MAX_GRAUS = 12.0f;
+constexpr float NAV_YAW_GIRO_TOL_GRAUS = 12.0f;

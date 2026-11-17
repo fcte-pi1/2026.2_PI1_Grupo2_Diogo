@@ -36,6 +36,10 @@ bool mazeNextDirection(char& d,uint8_t& nx,uint8_t& ny){
  d=render(r.dir);nx=r.x;ny=r.y;return true;
 }
 bool mazeOpenFromPose(char d){return poseConhecida&&mapa.open(posX,posY,parse(d));}
+bool mazeTraversedFromPose(char d){return poseConhecida&&mapa.traversed(posX,posY,parse(d));}
+bool mazeMarkTraversedFromPose(char d){if(!poseConhecida || !mapa.markTraversed(posX,posY,parse(d)))return false;++revisao;return true;}
+bool mazeOpenAt(uint8_t x,uint8_t y,char d){return mapa.open(x,y,parse(d));}
+void mazeInvalidatePose(){poseConhecida=false;++revisao;}
 String mazeEstadoJson(){
  String s;s.reserve(4400);
  s="{\"largura\":"+String(mapa.width)+",\"altura\":"+String(mapa.height)+

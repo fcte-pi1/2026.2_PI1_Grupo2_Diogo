@@ -106,6 +106,8 @@ public:
     return alvo_;
   }
 
+  void usarReferencia(float ref) { if(isfinite(ref) && ref>0) refAprendida=ref; }
+
   ModoCentro modo() const { return modo_; }
   float erro() const { return erro_; }
   float alvo() const { return alvo_; }

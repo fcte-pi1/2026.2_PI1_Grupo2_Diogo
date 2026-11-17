@@ -67,6 +67,8 @@ bool iniciarControlePosicao(int32_t alvoE, int32_t alvoD,
 bool iniciarControleReto(float distanciaMm, float limiteRpm, float cprE,
                          float cprD, bool sincronismoSuave, bool centralizar = false);
 // Lasers laterais ja validados; chamar antes de atualizarControleMovimento().
+bool ajustarMetaRetoNav(float distanciaMm);
+void informarReferenciaCentroNav(float referenciaMm);
 void informarLateraisReto(LateralLida esquerda, LateralLida direita);
 // Retorno: nullptr se normal; string de motivo se deve interromper/frear.
 const char* atualizarControleMovimento();

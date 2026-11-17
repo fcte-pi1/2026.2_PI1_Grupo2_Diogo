@@ -1,0 +1,125 @@
+=== maze ===
+PASS: mapa 4x4, reciproco, planejamento seguro e objetivo
+=== maze_planner_v48 ===
+PASS maze_planner: fronteiras, reciprocidade, BFS e caminho desconhecido
+=== nav_laser_policy ===
+PASS: 11 casos de classificacao para navegacao
+=== nav_opening ===
+PASS: borda, amostras distintas, projecao assinada, limite de ajuste e rejeicao de leitura invalida
+=== navigation_v48 ===
+PASS: direto uma celula
+PASS: giro e avanco
+PASS: 8x4, beco, dois recuos, abertura e giro na bifurcacao, canto oposto
+PASS: sem alvo frontal nao impede observar e escolher alternativa conhecida
+PASS: sinal fraco sozinho nao libera movimento
+PASS: ajuste exige geometria valida
+PASS: sensor nao inicializado bloqueia inicio
+PASS: falha no deslocamento invalida pose
+=== motion ===
+100mm -> final counts: E=759 D=759 result=reto_meta_atingida
+-100mm -> final counts: E=-5 D=-5 result=reto_meta_atingida
+PASS: motor control v4.5 idealized forward+reverse simulation; bounded retargeting V4.9
+=== giro ===
+90 direita encoder giro_encoder_concluido yaw=89.3031
+ok   giro de 90 termina normalmente
+ok   giro de 90 fica a ate 2 graus do alvo
+90 direita imu giro_imu_concluido yaw=89.153
+ok   giro de 90 termina normalmente
+ok   giro de 90 fica a ate 2 graus do alvo
+90 esquerda encoder giro_encoder_concluido yaw=-89.3031
+ok   giro de 90 termina normalmente
+ok   giro de 90 fica a ate 2 graus do alvo
+90 esquerda imu giro_imu_concluido yaw=-89.153
+ok   giro de 90 termina normalmente
+ok   giro de 90 fica a ate 2 graus do alvo
+correcao 2 -> giro_imu_concluido girou=1.65098
+ok   correcao termina normalmente
+ok   correcao gira para o lado pedido
+ok   correcao fica a ate 1 grau do pedido
+correcao -1.2 -> giro_imu_concluido girou=-0.900535
+ok   correcao termina normalmente
+ok   correcao gira para o lado pedido
+ok   correcao fica a ate 1 grau do pedido
+correcao 5 -> giro_imu_concluido girou=4.80285
+ok   correcao termina normalmente
+ok   correcao gira para o lado pedido
+ok   correcao fica a ate 1 grau do pedido
+correcao -8 -> giro_imu_concluido girou=-7.95473
+ok   correcao termina normalmente
+ok   correcao gira para o lado pedido
+ok   correcao fica a ate 1 grau do pedido
+ida 4.80285 volta 0
+ok   ida e volta sem zerar o yaw retorna perto de zero
+giro de 86 para alvo 90: 1 correcao(oes), yaw final=89.9034
+ok   giro fora da tolerancia dispara a correcao
+ok   depois da correcao o erro fica dentro da tolerancia
+giro de -84.5 para alvo -90: 1 correcao(oes), yaw final=-89.9034
+ok   giro fora da tolerancia dispara a correcao
+ok   depois da correcao o erro fica dentro da tolerancia
+giro de 93 para alvo 90: 1 correcao(oes), yaw final=90.2036
+ok   giro fora da tolerancia dispara a correcao
+ok   depois da correcao o erro fica dentro da tolerancia
+ok   recusa angulo menor que o minimo
+ok   recusa angulo maior que 180
+ok   recusa angulo invalido
+ok   recusa RPM abaixo do minimo
+ok   recusa giro por IMU sem IMU confiavel
+ok   recusa giro de 90 por IMU sem IMU confiavel
+ok   giro por encoder nao depende da IMU
+PASS: giro de 90 graus e correcao de angulo em simulacao ideal
+=== partida ===
+  reto E25/D60: motivo=reto_meta_atingida difMax(teste)=0.13 mm difMax(firmware)=0.13 mm dif=-0.00 atraso=0 ms
+ok   reto com atritos diferentes chega na meta
+ok   diferenca nos primeiros 50 mm ate 2 mm (simulado)
+ok   registro fecha a janela de 50 mm
+ok   registro do firmware bate com o teste
+ok   registro marca a saida das duas rodas
+  reto E60/D25: motivo=reto_meta_atingida difMax=0.13 mm atraso=0 ms
+ok   caso invertido chega na meta
+ok   caso invertido: diferenca ate 2 mm (simulado)
+  reto E15/D70: motivo=reto_meta_atingida difMax=5.24 mm
+ok   roda acima da ajuda: reto chega na meta
+ok   roda acima da ajuda: a solta nao dispara (simulado)
+  reto D travada: motivo=reto_dessincronia_limite
+ok   roda travada interrompe o movimento
+  rpm D travada: motivo=encoder_ou_motor_direito_sem_movimento
+ok   rpm com roda travada cai no diagnostico de travamento
+ok   parar o controle encerra a fase de partida
+  posicao so E: motivo=posicao_meta_atingida
+ok   posicao com uma roda conclui
+ok   posicao com uma roda nao segura a rampa
+PASS: partida conjunta simulada
+=== centralizacao ===
+  (encosta na parede com |x| > 34 mm)
+  saida torta +3 graus               reto_meta_atingida             x final=  -1.1 mm  x max=  5.9 mm
+  saida torta, centralizacao desligada reto_meta_atingida             x final=  47.1 mm  x max= 47.1 mm
+ok   torto: chega sem encostar
+ok   torto: termina a ate 5 mm do centro
+ok   torto: sem centralizacao desvia mais
+  saida torta -3 graus               reto_meta_atingida             x final=   0.9 mm  x max=  5.6 mm
+ok   torto para o outro lado: volta ao centro
+  saida deslocada +15 mm             reto_meta_atingida             x final=   2.9 mm  x max= 15.0 mm
+  saida deslocada -15 mm             reto_meta_atingida             x final=  -2.8 mm  x max= 15.0 mm
+ok   deslocada para a direita: volta ao centro
+ok   deslocada para a esquerda: volta ao centro
+  roda direita 1% maior              reto_meta_atingida             x final=  -2.1 mm  x max=  3.5 mm
+  roda 1% maior, desligada           reto_meta_atingida             x final= -40.7 mm  x max= 40.7 mm
+ok   roda maior: corrige o desvio
+ok   roda maior: sem centralizacao desvia mais
+  sem parede direita 360..720 mm     reto_meta_atingida             x final=   0.8 mm  x max= 10.0 mm
+ok   uma parede: continua no centro
+  sem paredes 360..540 mm, torto     reto_meta_atingida             x final=  -0.9 mm  x max=  4.0 mm
+ok   abertura: atravessa sem encostar
+  laser trava em 300 mm              reto_meta_atingida             x final=   3.4 mm  x max=  4.0 mm
+ok   laser travado: segue so pelos encoders
+  parede direita some em rampa       reto_meta_atingida             x final=   3.1 mm  x max=  3.5 mm
+ok   borda gradual: nao puxa o robo
+  pico isolado na esquerda           reto_meta_atingida             x final=  -0.0 mm  x max=  0.1 mm
+ok   pico isolado: nao puxa o robo
+  paredes somem nos ultimos 15 mm    reto_meta_atingida             x final=  -1.6 mm  x max= 15.0 mm
+ok   paredes somem no fim: chega sem dessincronia
+  roda direita presa                 reto_dessincronia_limite       x final=   0.5 mm  x max=  0.5 mm
+ok   roda presa: o movimento e interrompido
+ok   recusa centralizacao de re
+ok   recusa centralizacao sem sincronismo
+PASS: centralizacao no corredor simulada

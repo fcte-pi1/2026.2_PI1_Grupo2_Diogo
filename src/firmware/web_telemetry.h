@@ -14,6 +14,10 @@ bool lateraisEmMonitoramento();
 // atualmente validados; comandos manuais ficam bloqueados durante a missao.
 bool navigationDriveReady();
 bool navigationDriveStartStraight(float millimeters,float rpm);
+float navigationDriveProgressMm();
+float navigationDriveCenterRefMm();
+bool navigationDriveAdjustStraight(float millimeters);
+void navigationDriveSetCenterRef(float mm);
 bool navigationDriveStartTurn(bool right,float rpm);
 uint32_t navigationDriveResultId();
 bool navigationDriveResultOk();

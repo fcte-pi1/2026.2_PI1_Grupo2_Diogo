@@ -19,19 +19,30 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.9rem;line-height:1.5}
 span.badge{font-weight:600;color:#93d8c1}
 </style></head><body><main>
 <header><div><h1>🐭 Micromouse — Missão</h1><p class="small">Mapa interno da ESP32 · navegação independente do Wi-Fi</p></div><a href="/">← Voltar à calibração</a></header>
-<div class="panel"><div class="warn">⚠️ Autonomia bloqueada por padrão. Antes de habilitar no <code>config.h</code>, valide sensores laterais, distância U3→ponta do chassi, giros no chão e parada. Comece no labirinto 2×2, aberto e supervisionado. O botão PARAR não substitui um corte físico da alimentação dos motores.</div>
-<fieldset style="margin-top:17px"><label>Largura (células)<input id="w" type="number" min="2" max="16" value="4"></label>
+<div class="panel"><div class="warn">⚠️ V4.9: objetivo padrão no canto diagonal. Ré, centralização e ajuste de abertura exigem validação física; consulte o diagnóstico. O botão PARAR não substitui um corte físico da alimentação dos motores.</div>
+<fieldset style="margin-top:17px"><label>Largura (células)<input id="w" type="number" min="2" max="16" value="8"></label>
 <label>Altura (células)<input id="h" type="number" min="2" max="16" value="4"></label>
-<label>Objetivo X<input id="gx" type="number" min="0" max="15" value="1"></label>
-<label>Objetivo Y<input id="gy" type="number" min="0" max="15" value="1"></label></fieldset>
+<label>Objetivo X<input id="gx" type="number" min="0" max="15" value="7"></label>
+<label>Objetivo Y<input id="gy" type="number" min="0" max="15" value="3"></label></fieldset>
+<fieldset style="margin-top:14px"><legend>Perfil de navegação por missão (opcional)</legend>
+<label><input type="checkbox" id="reverse">Ré em percurso já atravessado (sem sensor traseiro)</label>
+<label><input type="checkbox" id="center">Correção lateral validada</label>
+<label><input type="checkbox" id="opening">Ajuste de abertura validado</label>
+<label>Largura livre (mm)<input id="widthFree" type="number" placeholder="medir" step="0.1"></label>
+<label>U2 até eixo (mm)<input id="leftAxle" type="number" placeholder="medir" step="0.1"></label>
+<label>U4 até eixo (mm)<input id="rightAxle" type="number" placeholder="medir" step="0.1"></label>
+<label><input type="checkbox" id="supervisor">Geometria, retorno e paradas validados presencialmente pelo responsável</label></fieldset>
+<p class="small">Sem sensor traseiro, o retorno depende de trecho previamente percorrido e ambiente estático. Os ajustes são experimentais e limitados; valores de eixo positivos à frente, negativos atrás. Não ligue os perfis sem validação.</p>
 <div class="actions"><button id="start" onclick="startMission()">Iniciar exploração</button><button class="stop" onclick="stopMission()">PARAR MOTORES</button><button onclick="refresh()">Atualizar</button></div>
 <p id="message" class="small"></p></div>
 <section class="panel"><h2>Estado: <span class="badge" id="state">...</span></h2><p id="info" class="small">Carregando ...</p><div id="grid"></div><p class="small">Bordas vermelhas = parede; pontilhadas = desconhecidas; sem borda = passagem confirmada. Coordenadas: origem (0,0) no sudoeste, N aponta para cima.</p></section>
 <section class="panel"><h2>Diagnóstico</h2><pre id="status"></pre><p class="small">API do mapa: <a href="/api/maze">/api/maze</a> · Estado da missão: <a href="/api/nav/status">/api/nav/status</a> · Sensores: <a href="/api/lasers/status">/api/lasers/status</a></p></section>
 </main><script>
 async function req(path,opts){let r=await fetch(path,{cache:'no-store',...(opts||{})});let d=await r.json();if(!r.ok)throw Error(d.erro||JSON.stringify(d));return d}
-async function startMission(){let p=new URLSearchParams({largura:document.getElementById('w').value,altura:document.getElementById('h').value,goal_x:document.getElementById('gx').value,goal_y:document.getElementById('gy').value});try{await req('/api/nav/start',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p});document.getElementById('message').textContent='Missão iniciada';}catch(e){document.getElementById('message').textContent='Não iniciou: '+e.message}await refresh()}
+async function startMission(){let p=new URLSearchParams({largura:document.getElementById('w').value,altura:document.getElementById('h').value,goal_x:document.getElementById('gx').value,goal_y:document.getElementById('gy').value,perfil_v49:'1',re_supervisionada:document.getElementById('reverse').checked?'1':'0',centralizar:document.getElementById('center').checked?'1':'0',ajuste_abertura:document.getElementById('opening').checked?'1':'0',validacao_supervisor:document.getElementById('supervisor').checked?'1':'0',largura_livre:document.getElementById('widthFree').value,u2_eixo:document.getElementById('leftAxle').value,u4_eixo:document.getElementById('rightAxle').value});try{await req('/api/nav/start',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p});document.getElementById('message').textContent='Missão iniciada';}catch(e){document.getElementById('message').textContent='Não iniciou: '+e.message}await refresh()}
 async function stopMission(){try{await req('/api/nav/stop',{method:'POST'});document.getElementById('message').textContent='Parada solicitada';}catch(e){document.getElementById('message').textContent=e.message}await refresh()}
+function corner(){document.getElementById("gx").value=Number(document.getElementById("w").value)-1;document.getElementById("gy").value=Number(document.getElementById("h").value)-1;}
+for(const id of ["w","h"])document.getElementById(id).addEventListener("change",corner);
 function borders(maskKnown,maskWall){const cols=['top','right','bottom','left'];const colors={};for(let i=0;i<4;i++)colors[cols[i]]=!(maskKnown&(1<<i))?'2px dotted #6a7d93':(maskWall&(1<<i))?'4px solid #e86c66':'2px solid transparent';return colors;}
 function draw(m){let el=document.getElementById('grid');el.textContent='';el.style.gridTemplateColumns=`repeat(${m.largura},1fr)`;
  for(let y=m.altura-1;y>=0;y--)for(let x=0;x<m.largura;x++){
@@ -39,7 +50,7 @@ function draw(m){let el=document.getElementById('grid');el.textContent='';el.sty
   let cs=borders(data[0],data[1]);for(let [k,v] of Object.entries(cs))c.style['border'+k[0].toUpperCase()+k.slice(1)]=v;
   const arrows={N:'↑',L:'→',S:'↓',O:'←'};c.textContent=(m.pose&&m.pose.x===x&&m.pose.y===y?arrows[m.pose.direcao]:'')+(m.objetivo&&m.objetivo.x===x&&m.objetivo.y===y?'◎':data[2]?'·':'');c.title=`(${x},${y}) paredes=${data[1]} conhecidas=${data[0]}`;el.appendChild(c);
  }}
-async function refresh(){try{let [s,m]=await Promise.all([req('/api/nav/status'),req('/api/maze')]);document.getElementById('state').textContent=s.estado;document.getElementById('info').textContent=`Passos: ${s.passos} · Posição: (${s.x},${s.y}) ${s.direcao} · Motivo: ${s.motivo||'nenhum'}`;
+async function refresh(){try{let [s,m]=await Promise.all([req('/api/nav/status'),req('/api/maze')]);document.getElementById('state').textContent=s.estado;document.getElementById('info').textContent=`Passos: ${s.passos} · Ré: ${s.passosRe||0} · Posição: (${s.x},${s.y}) ${s.direcao}${s.poseConfiavel===false?" (incerta)":""} · Motivo: ${s.motivo||'nenhum'}`;
  document.getElementById('status').textContent=JSON.stringify(s,null,2);document.getElementById('start').disabled=s.ativo;draw(m);
  }catch(e){document.getElementById('status').textContent='Sem conexão: '+e.message}}
 refresh();setInterval(refresh,600)

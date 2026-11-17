@@ -566,15 +566,21 @@ bool navigationDriveReady(){
            !capturaLaserAtiva() && !bateriaCritica() && batteryAvailable();
 }
 bool navigationDriveStartStraight(float mm,float rpm){
-    if(!navigationDriveReady() || !isfinite(mm) || mm<=0 || rpm>FRENTE_RPM_MAX_TESTE)return false;
-    if(!iniciarControleReto(mm,rpm,cprE,cprD,true,false))return false;
-    frenteProtegida=false; // protecao específica fail-closed no navigationTick()
-    retoCentralizar=false; // laterais em correção desabilitadas ate calibrar
+    if(!navigationDriveReady() || !isfinite(mm) || mm==0 || (mm<0 && !navigationReverseAllowed()) || rpm>FRENTE_RPM_MAX_TESTE)return false;
+    const bool centralizar=mm>0 && navigationCenterEnabled() && NAV_LATERAIS_CALIBRADOS;
+    if(!iniciarControleReto(mm,rpm,cprE,cprD,true,centralizar))return false;
+    frenteProtegida=false; // protecao especifica no navigationTick()
+    retoCentralizar=centralizar;
+    leitorE.reiniciar();leitorD.reiniciar();
     movimentoDaMissao=true;
     iniciarRelogioMotorizado(12000,Modo::RETO);
-    ultimoMotivo="nav_avanco_em_andamento";
+    ultimoMotivo=mm>0?"nav_avanco_em_andamento":"nav_re_em_andamento";
     return true;
 }
+float navigationDriveProgressMm(){return lerControleMovimento().retoProgressoMm;}
+float navigationDriveCenterRefMm(){return lerControleMovimento().centroRefMm;}
+bool navigationDriveAdjustStraight(float mm){return movimentoDaMissao && modo==Modo::RETO && ajustarMetaRetoNav(mm);}
+void navigationDriveSetCenterRef(float mm){informarReferenciaCentroNav(mm);}
 bool navigationDriveStartTurn(bool right,float rpm){
     if(!navigationDriveReady())return false;
     if(!iniciarControleGiro(right,false,rpm,cprE,cprD,true))return false;
@@ -824,7 +830,7 @@ static void handleBateriaLimites() {
 
 bool testeMotorAtivo() { return modoMotorizado(); }
 bool frenteEmMonitoramento(){ return modo == Modo::RETO && (frenteProtegida || (movimentoDaMissao && navigationNeedsFrontPoll())); }
-bool lateraisEmMonitoramento(){ return modo == Modo::RETO && retoCentralizar; }
+bool lateraisEmMonitoramento(){ return modo == Modo::RETO && (retoCentralizar || movimentoDaMissao); }
 
 // V4.4 - Laser bench endpoints: no motor commands are called here.
 static bool bancadaParada() {
@@ -888,7 +894,19 @@ void setupTelemetry() {
         if(!inteiroEmFaixa("largura",2,16,w)||!inteiroEmFaixa("altura",2,16,h)||
            !inteiroEmFaixa("goal_x",0,15,gx)||!inteiroEmFaixa("goal_y",0,15,gy))
             return respostaErro(400,"dimensoes_ou_objetivo_invalidos");
-        const char* err=navigationStart((uint8_t)w,(uint8_t)h,(uint8_t)gx,(uint8_t)gy);
+        NavigationOptions opts=navigationDefaultOptions();
+        // Perfil por missao, sem persistencia/flash e sem desativar protecoes.
+        if(server.hasArg("perfil_v49")){
+            opts.reverse=server.arg("re_supervisionada")=="1";
+            opts.center=server.arg("centralizar")=="1";
+            opts.opening=server.arg("ajuste_abertura")=="1";
+            if((opts.opening || !server.arg("largura_livre").isEmpty() || !server.arg("u2_eixo").isEmpty() || !server.arg("u4_eixo").isEmpty()) && (!floatValido("largura_livre",opts.corridorWidth)||
+               !floatValido("u2_eixo",opts.sensorLeftToAxle)||!floatValido("u4_eixo",opts.sensorRightToAxle)))
+                return respostaErro(400,"geometria_abertura_nao_validada");
+            if((opts.reverse||opts.center||opts.opening)&&server.arg("validacao_supervisor")!="1")
+                return respostaErro(400,"perfil_exige_validacao_presencial");
+        }
+        const char* err=navigationStartWithOptions((uint8_t)w,(uint8_t)h,(uint8_t)gx,(uint8_t)gy,opts);
         if(err)return respostaErro(409,err);
         respostaOk("missao_iniciada");
     });

@@ -12,4 +12,8 @@ bool mazeMarkVisited(uint8_t x, uint8_t y);
 bool mazeIsGoal();
 bool mazeNextDirection(char& direction,uint8_t& nx,uint8_t& ny);
 bool mazeOpenFromPose(char direction);
+bool mazeTraversedFromPose(char direction);
+bool mazeMarkTraversedFromPose(char direction);
+bool mazeOpenAt(uint8_t x,uint8_t y,char direction);
+void mazeInvalidatePose();
 String mazeEstadoJson();

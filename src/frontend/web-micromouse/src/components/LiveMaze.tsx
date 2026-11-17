@@ -6,7 +6,11 @@ type LiveMazeData = {
   objetivo: { x: number; y: number }
   celulas: [number, number, number][][]
 }
-type MissionData = { estado: string; ativo: boolean; motivo: string; passos: number }
+type MissionData = {
+  estado: string; ativo: boolean; motivo: string; passos: number
+  passosRe?: number; poseConfiavel?: boolean; centroEstimadoMm?: number | null
+  metaDeslocamentoMm?: number; ajusteAplicado?: boolean; referenciaLateralMm?: number | null
+}
 
 export function LiveMaze() {
   const [map, setMap] = useState<LiveMazeData | null>(null)
@@ -44,8 +48,13 @@ export function LiveMaze() {
         <>
           <p className="mb-3 text-xs text-slate-300">
             {mission?.estado ?? '—'} · {mission?.passos ?? 0} células percorridas · objetivo ({map.objetivo.x},{map.objetivo.y})
+            {mission?.passosRe != null ? ` · ${mission.passosRe} em ré` : ''}
+            {mission?.poseConfiavel === false ? ' · localização incerta' : ''}
             {mission?.motivo ? ` · ${mission.motivo}` : ''}
           </p>
+          {mission?.centroEstimadoMm != null && (
+            <p className="mb-2 text-xs text-slate-300">Centro estimado: {mission.centroEstimadoMm.toFixed(1)} mm · {mission.ajusteAplicado ? 'ajuste aplicado' : 'somente diagnóstico'}</p>
+          )}
           <div className="mx-auto grid max-w-md" style={{ gridTemplateColumns: `repeat(${map.largura},minmax(0,1fr))` }}>
             {Array.from({ length: map.altura }, (_, row) => map.altura - 1 - row).flatMap((y) =>
               Array.from({ length: map.largura }, (_, x) => {

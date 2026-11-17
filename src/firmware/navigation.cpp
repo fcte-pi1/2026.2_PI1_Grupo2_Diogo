@@ -3,6 +3,8 @@
 #include "maze_state.h"
 #include "maze_planner.h"
 #include "lasers.h"
+#include "nav_laser_policy.h"
+#include "nav_opening.h"
 #include "battery.h"
 #include "imu.h"
 #include "config.h"
@@ -14,169 +16,223 @@ Stage stage=Stage::IDLE;
 const char* errorText="parado";
 uint32_t startMs=0,stageMs=0,lastDriverId=0;
 uint32_t sensorCounts[3]={0,0,0};
-uint16_t steps=0;
+HistoricoLaserNav sensorHistorico[3];
+uint16_t steps=0,reverseSteps=0;
 uint8_t x=0,y=0,targetX=0,targetY=0,turnsRemaining=0;
 char direction='N',targetDirection='N';
-bool turnRight=true;
-bool lastMotionWasMove=false;
+bool turnRight=true, reversing=false, poseCertain=false;
+bool lastMotionWasMove=false, adjustmentApplied=false;
 uint32_t afterSettleMs=0;
+float yawStart=0, centerRef=-1, plannedMm=0, openingEstimate=NAN, edgeLeft=NAN,edgeRight=NAN;
+NavOpening openingLeft,openingRight;
+NavigationOptions options;
 const char* stageText(){
  switch(stage){case Stage::IDLE:return "PARADO";case Stage::SENSE:return "OBSERVANDO";
  case Stage::TURN_START:return "PREPARANDO_GIRO";case Stage::TURN_WAIT:return "GIRANDO";
- case Stage::MOVE_START:return "PREPARANDO_AVANCO";case Stage::MOVE_WAIT:return "AVANCANDO";
+ case Stage::MOVE_START:return reversing?"PREPARANDO_RE":"PREPARANDO_AVANCO";
+ case Stage::MOVE_WAIT:return reversing?"RECUANDO":"AVANCANDO";
  case Stage::SETTLE:return "ASSENTANDO";case Stage::DONE:return "OBJETIVO_ATINGIDO";
  default:return "FALHA";}
 }
 uint8_t dirValue(char d){return d=='N'?0:d=='L'?1:d=='S'?2:3;}
 char dirChar(uint8_t d){const char dirs[]={'N','L','S','O'};return dirs[d&3];}
+void invalidateIfMoving(){
+ if(stage==Stage::MOVE_WAIT||stage==Stage::TURN_WAIT||stage==Stage::SETTLE){
+  poseCertain=false;mazeInvalidatePose();
+ }
+}
 void beginSensing(){
  stage=Stage::SENSE;stageMs=millis();
- for(uint8_t i=0;i<3;++i)sensorCounts[i]=lerLaser(i).total;
+ for(uint8_t i=0;i<3;++i){sensorCounts[i]=lerLaser(i).total;sensorHistorico[i].reiniciar(sensorCounts[i]);}
 }
 void fail(const char* why){
  if(stage==Stage::FAULT || stage==Stage::DONE || stage==Stage::IDLE)return;
- errorText=why;stage=Stage::FAULT;
- // A parada de emergencia também notifica o navegador (sem recursao).
+ invalidateIfMoving();errorText=why;stage=Stage::FAULT;
  pararTesteDeEmergencia(why);
  Serial.printf("[NAV] PARADA SEGURA: %s\n",why);
 }
-bool fresh(const LeituraLaser& d,uint32_t now){
- return d.inicializado && d.brutoMm>=0 && d.ultimaValidaMs &&
-        (uint32_t)(now-d.ultimaValidaMs)<=NAV_IDADE_SENSOR_MS &&
-        d.parede!=PAREDE_INDEFINIDA;
+bool eventFresh(const LeituraLaser& d,uint32_t now){return d.inicializado&&d.total>0&&d.ultimoEventoMs>0&&now-d.ultimoEventoMs<=NAV_IDADE_SENSOR_MS;}
+bool validFresh(const LeituraLaser& d,uint32_t now){return eventFresh(d,now)&&d.brutoMm>=0&&d.ultimaValidaMs>0&&now-d.ultimaValidaMs<=NAV_IDADE_SENSOR_MS;}
+EvidenciaParedeNav classificarSensorNav(uint8_t indice,uint32_t now){
+ const auto d=lerLaser(indice);
+ // Um evento anterior a mudanca de pose/rumo nao serve como observacao da nova celula.
+ if(stage==Stage::SENSE && (uint32_t)(d.total-sensorCounts[indice])<3)return EvidenciaParedeNav::INDEFINIDA;
+ return sensorHistorico[indice].classificar(d.brutoMm,d.statusVL,d.parede,eventFresh(d,now),validFresh(d,now),
+    NAV_SEM_ALVO_COMO_PASSAGEM,NAV_SEM_ALVO_AMOSTRAS_MINIMAS);
 }
-// Atualiza so paredes observadas: a inversa e tratada pela matriz.
-bool inspect(){
- const auto left=lerLaser(LASER_U2);
- const auto front=lerLaser(LASER_U3);
- const auto right=lerLaser(LASER_U4);
- uint32_t now=millis();
- if(!fresh(left,now) || !fresh(front,now) || !fresh(right,now))return false;
- uint8_t h=dirValue(direction);
- uint8_t bits=(uint8_t)((1u<<h)|(1u<<((h+3)&3))|(1u<<((h+1)&3)));
- uint8_t walls=0;
- if(front.parede==PAREDE_PRESENTE)walls|=1u<<h;
- if(left.parede==PAREDE_PRESENTE)walls|=1u<<((h+3)&3);
- if(right.parede==PAREDE_PRESENTE)walls|=1u<<((h+1)&3);
- return mazeObserve(x,y,bits,walls);
+void registrarEventosLaser(){for(uint8_t i=0;i<3;++i){const auto d=lerLaser(i);sensorHistorico[i].novaAmostra(d.total,d.brutoMm,d.statusVL,d.parede);}}
+// Registra apenas as faces observadas. Uma face indefinida nao impede o uso de
+// OUTRA passagem comprovada, e nunca vira automaticamente uma parede aberta.
+bool inspect(uint8_t& known,uint8_t& wall){
+ known=wall=0;
+ const uint32_t now=millis();const uint8_t h=dirValue(direction);
+ const uint8_t absolute[3]={(uint8_t)((h+3)&3),h,(uint8_t)((h+1)&3)};
+ for(uint8_t i=0;i<3;++i){const auto e=classificarSensorNav(i,now);
+  if(e==EvidenciaParedeNav::INDEFINIDA)continue;
+  known|=1u<<absolute[i];if(e==EvidenciaParedeNav::PRESENTE)wall|=1u<<absolute[i];
+ }
+ return true;
 }
 float dangerLimitMm(){
- // Conversao RPM -> mm/s. Margem de reacao e freio sao conservadoras,
- // mas sao apenas estimativas: validar distancia real antes da autonomia.
  const float v=NAV_RPM_RETO*3.14159265f*DIAMETRO_RODA_MM/60.0f;
- return NAV_U3_ATE_NARIZ_MM+NAV_FOLGA_FRONTAL_MM+
-        v*FRENTE_REACAO_S+v*v/(2.0f*FRENTE_DESACEL_ESTIMADA_MM_S2);
+ return NAV_U3_ATE_NARIZ_MM+NAV_FOLGA_FRONTAL_MM+v*FRENTE_REACAO_S+v*v/(2.0f*FRENTE_DESACEL_ESTIMADA_MM_S2);
 }
+void trackOpenings(uint32_t now){
+ const float p=(reversing?-1.0f:1.0f)*navigationDriveProgressMm();
+ if(!isfinite(p)||p<0)return;
+ const uint8_t h=dirValue(direction);
+ const uint8_t ids[2]={LASER_U2,LASER_U4};
+ NavOpening* trackers[2]={&openingLeft,&openingRight};
+ const float offsets[2]={options.sensorLeftToAxle,options.sensorRightToAxle};
+ const char dirs[2]={dirChar((h+3)&3),dirChar((h+1)&3)};
+ for(uint8_t i=0;i<2;++i){
+  const auto d=lerLaser(ids[i]);auto& tracker=*trackers[i];
+  // Nunca usa sinal fraco, timeout, leitura antiga ou filtro atrasado para a borda.
+  if(tracker.update(d.total,validFresh(d,now),d.brutoMm>=0&&d.brutoMm<=LASER_PAREDE_PRESENTE_MM,
+        d.brutoMm>=LASER_PAREDE_AUSENTE_MM,p)){
+   if(i==0)edgeLeft=tracker.edgeMm();else edgeRight=tracker.edgeMm();
+  }
+  if(!tracker.found() || !isfinite(offsets[i]) || fabsf(offsets[i])>NAV_CELULA_MM/2 ||
+     options.corridorWidth<=0||options.corridorWidth>NAV_CELULA_MM)continue;
+  const float est=tracker.centerMm(options.corridorWidth,(reversing?-1.0f:1.0f)*offsets[i]);
+  openingEstimate=est;
+  // Ajuste somente em abertura mapeada do destino, e perto da meta nominal.
+  // O retorno sem sensor traseiro nao pode ser estendido por uma estimativa.
+  if(!options.opening || adjustmentApplied || !mazeOpenAt(targetX,targetY,dirs[i]) ||
+     (reversing&&est>NAV_CELULA_MM) || !navOpeningAdjustmentOk(est,NAV_CELULA_MM,p,NAV_AJUSTE_MAX_MM,NAV_AJUSTE_RESTANTE_MIN_MM))continue;
+  if(navigationDriveAdjustStraight((reversing?-1.0f:1.0f)*est)){plannedMm=est;adjustmentApplied=true;}
+ }
+}
+String nOrNull(float f){return isfinite(f)?String(f,1):String("null");}
 }
 bool navigationRunning(){return stage!=Stage::IDLE && stage!=Stage::DONE && stage!=Stage::FAULT;}
-bool navigationNeedsFrontPoll(){return stage==Stage::MOVE_WAIT;}
-void navigationNotifyStop(const char* reason){
- if(navigationRunning()){stage=Stage::FAULT;errorText=reason;}
+bool navigationNeedsFrontPoll(){return stage==Stage::MOVE_WAIT && !reversing;}
+void navigationNotifyStop(const char* reason){if(navigationRunning()){invalidateIfMoving();stage=Stage::FAULT;errorText=reason;}}
+NavigationOptions navigationDefaultOptions(){
+ NavigationOptions o;
+ o.reverse=NAV_RE_HABILITADA;o.center=NAV_CENTRALIZAR_HABILITADA;o.opening=NAV_AJUSTE_ABERTURA_HABILITADO;
+ o.corridorWidth=NAV_ABERTURA_LARGURA_MM;o.sensorLeftToAxle=NAV_U2_A_EIXO_MM;o.sensorRightToAxle=NAV_U4_A_EIXO_MM;return o;
 }
-const char* navigationStart(uint8_t w,uint8_t h,uint8_t gx,uint8_t gy){
+bool navigationReverseAllowed(){return navigationRunning()&&options.reverse;}
+bool navigationCenterEnabled(){return navigationRunning()&&options.center;}
+const char* navigationStart(uint8_t w,uint8_t h,uint8_t gx,uint8_t gy){return navigationStartWithOptions(w,h,gx,gy,navigationDefaultOptions());}
+const char* navigationStartWithOptions(uint8_t w,uint8_t h,uint8_t gx,uint8_t gy,const NavigationOptions& requested){
  if(navigationRunning())return "missao_ja_em_execucao";
  if(!NAV_AUTONOMIA_HABILITADA)return "configure_NAV_AUTONOMIA_HABILITADA_apos_checklist";
  if(!NAV_LATERAIS_CALIBRADOS)return "sensores_laterais_nao_calibrados";
+ if((requested.opening||requested.corridorWidth!=0) && (!isfinite(requested.corridorWidth)||requested.corridorWidth<=0||requested.corridorWidth>NAV_CELULA_MM||
+    !isfinite(requested.sensorLeftToAxle)||fabsf(requested.sensorLeftToAxle)>NAV_CELULA_MM/2||
+    !isfinite(requested.sensorRightToAxle)||fabsf(requested.sensorRightToAxle)>NAV_CELULA_MM/2))return "geometria_abertura_nao_validada";
  if(NAV_U3_ATE_NARIZ_MM<0)return "medir_NAV_U3_ATE_NARIZ_MM";
  if(!(NAV_CELULA_MM>=150 && NAV_CELULA_MM<=200))return "passo_de_celula_invalido";
  if(!navigationDriveReady())return "CPR_driver_ou_freio_indisponivel";
- if(!batteryAvailable() || bateriaBaixa() || bateriaCritica())return "bateria_indisponivel_ou_baixa";
+ if(!batteryAvailable()||bateriaBaixa()||bateriaCritica())return "bateria_indisponivel_ou_baixa";
  if(!lerIMU().confiavel)return "IMU_nao_calibrada";
+ for(uint8_t i=0;i<3;++i)if(!lerLaser(i).inicializado)return "laser_nao_inicializado";
  if(!mazeConfigure(w,h,gx,gy))return "dimensoes_ou_objetivo_invalidos";
- const auto now=millis();
- for(uint8_t i=0;i<3;++i)if(!fresh(lerLaser(i),now))return "laser_indisponivel_ou_leitura_invalida";
- x=0;y=0;direction='N';targetDirection='N';steps=0;
+ x=y=targetX=targetY=0;direction=targetDirection='N';steps=reverseSteps=0;
+ reversing=false;centerRef=-1;edgeLeft=edgeRight=openingEstimate=NAN;plannedMm=0;adjustmentApplied=false;
  if(!mazeSetPose(x,y,direction))return "erro_ao_inicializar_pose";
- mazeMarkVisited(x,y);startMs=now;errorText="";beginSensing();
- Serial.printf("[NAV] INICIADA %ux%u objetivo=(%u,%u)\n",w,h,gx,gy);
- return nullptr;
+ options=requested;poseCertain=true;mazeMarkVisited(x,y);startMs=millis();errorText="";beginSensing();
+ Serial.printf("[NAV] INICIADA %ux%u objetivo=(%u,%u)\n",w,h,gx,gy);return nullptr;
 }
 void navigationTick(){
  if(!navigationRunning())return;
  const uint32_t now=millis();
  if(now-startMs>NAV_TEMPO_MISSAO_MS){fail("timeout_missao");return;}
  if(steps>=NAV_MAX_PASSOS){fail("limite_passos");return;}
- if(!batteryAvailable() || bateriaCritica() || bateriaBaixa()){fail("bateria_sem_leitura_ou_baixa");return;}
- // Em qualquer etapa, se o controle se encontrar em estado inesperado, parar.
- if((stage==Stage::MOVE_WAIT || stage==Stage::TURN_WAIT) && !navigationDriveIsActive()){
-    if(navigationDriveResultId()==lastDriverId){fail("controle_encerrou_sem_resultado");return;}
- }
- if(stage==Stage::MOVE_WAIT){
+ registrarEventosLaser();
+ if(!batteryAvailable()||bateriaCritica()||bateriaBaixa()){fail("bateria_sem_leitura_ou_baixa");return;}
+ if(!lerIMU().confiavel){fail("IMU_sem_referencia_confiavel");return;}
+ if((stage==Stage::MOVE_WAIT||stage==Stage::TURN_WAIT)&&!navigationDriveIsActive()&&navigationDriveResultId()==lastDriverId){fail("controle_encerrou_sem_resultado");return;}
+ if(stage==Stage::MOVE_WAIT && navigationDriveIsActive()){
+  if(fabsf(lerIMU().yawDireitaGraus-yawStart)>NAV_YAW_RETO_MAX_GRAUS){fail("desvio_angular_reto");return;}
+  if(!reversing){
    const auto f=lerLaser(LASER_U3);
-   if(!fresh(f,now)){fail("laser_frontal_invalido_durante_avanco");return;}
-   if(f.brutoMm<=dangerLimitMm()){
-     fail("obstaculo_frontal_limite_dinamico");return;
-   }
+   if(classificarSensorNav(LASER_U3,now)==EvidenciaParedeNav::INDEFINIDA){fail("U3_sem_evidencia_durante_avanco");return;}
+   if(f.brutoMm>=0 && f.brutoMm<=dangerLimitMm()){fail("obstaculo_frontal_limite_dinamico");return;}
+  }
+  for(uint8_t i=LASER_U2;i<=LASER_U4;i+=2){const auto l=lerLaser(i);
+   if(!eventFresh(l,now)||l.brutoMm==LASER_ERRO_COMUNICACAO||l.brutoMm==LASER_TIMEOUT||
+      l.brutoMm==LASER_PERTO_DEMAIS||(l.brutoMm>=0&&l.brutoMm<10)){fail("lateral_sem_comunicacao_ou_folga");return;}
+  }
+  trackOpenings(now);
  }
  switch(stage){
  case Stage::SENSE: {
-   if(now-stageMs>NAV_TEMPO_SENSORES_MS){fail("sensores_sem_tres_amostras_validas");return;}
-   bool enough=true;
-   for(uint8_t i=0;i<3;++i)if((uint32_t)(lerLaser(i).total-sensorCounts[i])<3u)enough=false;
-   if(!enough)return;
-   if(!inspect()){fail("leitura_de_parede_invalida_ou_contraditoria");return;}
-   mazeMarkVisited(x,y);
-   if(mazeIsGoal()){stage=Stage::DONE;errorText="objetivo_atingido";Serial.println("[NAV] OBJETIVO ATINGIDO");return;}
-   uint8_t nx,ny;
-   if(!mazeNextDirection(targetDirection,nx,ny)){fail("sem_caminho_conhecido_seguro");return;}
-   targetX=nx;targetY=ny;
-   const uint8_t delta=(dirValue(targetDirection)+4u-dirValue(direction))&3u;
-   turnsRemaining=(delta==2)?2:((delta==0)?0:1);
-   turnRight=delta!=3;
-   stage=turnsRemaining?Stage::TURN_START:Stage::MOVE_START;
-   stageMs=now;
-   return;
+  if(mazeIsGoal()){stage=Stage::DONE;errorText="objetivo_atingido";return;}
+  bool enough=true;for(uint8_t i=0;i<3;++i)if((uint32_t)(lerLaser(i).total-sensorCounts[i])<3u)enough=false;
+  if(!enough && now-stageMs<NAV_TEMPO_SENSORES_MS)return;
+  uint8_t known,wall;if(!inspect(known,wall)){fail("mapa_leitura_contraditoria");return;}
+  // Espera evidencias adicionais quando uma face ainda e desconhecida.
+  if(known!=((1u<<dirValue(direction))|(1u<<((dirValue(direction)+3)&3))|(1u<<((dirValue(direction)+1)&3))) && now-stageMs<NAV_TEMPO_SENSORES_MS)return;
+  if(known&&!mazeObserve(x,y,known,wall)){fail("mapa_leitura_contraditoria");return;}
+  mazeMarkVisited(x,y);
+  uint8_t nx,ny;if(!mazeNextDirection(targetDirection,nx,ny)){fail("sem_passagem_confirmada_ate_objetivo");return;}
+  targetX=nx;targetY=ny;
+  const uint8_t delta=(dirValue(targetDirection)+4u-dirValue(direction))&3u;
+  reversing=delta==2&&mazeTraversedFromPose(targetDirection);
+  if(reversing&&!options.reverse){fail("retorno_re_pendente_validacao_traseira");return;}
+  turnsRemaining=reversing?0:(delta==2?2:(delta==0?0:1));turnRight=delta!=3;
+  stage=turnsRemaining?Stage::TURN_START:Stage::MOVE_START;stageMs=now;return;
  }
  case Stage::TURN_START:
-   if(!navigationDriveReady()) {
-      if(now-stageMs>3000)fail("freio_nao_liberou_para_giro");
-      return;
-   }
-   if(!navigationDriveStartTurn(turnRight,NAV_RPM_GIRO)){fail("nao_iniciou_giro");return;}
-   lastDriverId=navigationDriveResultId();stage=Stage::TURN_WAIT;stageMs=now;return;
+  if(!navigationDriveReady()){if(now-stageMs>3000)fail("freio_nao_liberou_para_giro");return;}
+  yawStart=lerIMU().yawDireitaGraus;
+  if(!navigationDriveStartTurn(turnRight,NAV_RPM_GIRO)){fail("nao_iniciou_giro");return;}
+  lastDriverId=navigationDriveResultId();stage=Stage::TURN_WAIT;stageMs=now;return;
  case Stage::TURN_WAIT:
-   if(navigationDriveResultId()==lastDriverId)return;
-   if(!navigationDriveResultOk()){fail(navigationDriveResultReason());return;}
-   direction=dirChar((dirValue(direction)+(turnRight?1:3))&3);
-   mazeSetPose(x,y,direction);
-   --turnsRemaining;
-   lastMotionWasMove=false;afterSettleMs=now;
-   stage=Stage::SETTLE;return;
+  if(navigationDriveResultId()==lastDriverId)return;
+  if(!navigationDriveResultOk()){fail(navigationDriveResultReason());return;}
+  lastMotionWasMove=false;afterSettleMs=now;stage=Stage::SETTLE;return;
  case Stage::MOVE_START: {
-   if(!mazeOpenFromPose(targetDirection)){fail("parede_desconhecida_ou_presente");return;}
+  if(!mazeOpenFromPose(targetDirection)){fail("parede_desconhecida_ou_presente");return;}
+  if(reversing){if(!options.reverse||!mazeTraversedFromPose(targetDirection)){fail("re_sem_caminho_percorrido");return;}}
+  else {
    const auto f=lerLaser(LASER_U3);
-   if(!fresh(f,now) || f.brutoMm<=dangerLimitMm()+20.0f){fail("U3_sem_folga_para_avancar");return;}
-   if(!navigationDriveReady()){
-      if(now-stageMs>3000)fail("freio_nao_liberou_para_avanco");
-      return;
-   }
-   if(!navigationDriveStartStraight(NAV_CELULA_MM,NAV_RPM_RETO)){fail("nao_iniciou_avanco");return;}
-   lastDriverId=navigationDriveResultId();stage=Stage::MOVE_WAIT;stageMs=now;return;
+   if(classificarSensorNav(LASER_U3,now)!=EvidenciaParedeNav::LIVRE||
+      (f.brutoMm>=0&&f.brutoMm<=dangerLimitMm()+20)){fail("U3_sem_folga_ou_evidencia_para_avancar");return;}
+  }
+  if(!navigationDriveReady()){if(now-stageMs>3000)fail("freio_nao_liberou_para_deslocamento");return;}
+  yawStart=lerIMU().yawDireitaGraus;plannedMm=NAV_CELULA_MM;adjustmentApplied=false;
+  edgeLeft=edgeRight=openingEstimate=NAN;openingLeft.reset(lerLaser(LASER_U2).total);openingRight.reset(lerLaser(LASER_U4).total);
+  if(!navigationDriveStartStraight(reversing?-plannedMm:plannedMm,reversing?NAV_RPM_RE:NAV_RPM_RETO)){fail("nao_iniciou_deslocamento");return;}
+  if(!reversing&&centerRef>0)navigationDriveSetCenterRef(centerRef);
+  lastDriverId=navigationDriveResultId();stage=Stage::MOVE_WAIT;stageMs=now;return;
  }
  case Stage::MOVE_WAIT:
-   if(navigationDriveResultId()==lastDriverId)return;
-   if(!navigationDriveResultOk()){fail(navigationDriveResultReason());return;}
-   // Pose atualizada APENAS apos o controlador atestar a meta.
-   x=targetX;y=targetY;mazeSetPose(x,y,direction);++steps;
-   lastMotionWasMove=true;afterSettleMs=now;stage=Stage::SETTLE;return;
+  if(navigationDriveResultId()==lastDriverId)return;
+  if(!navigationDriveResultOk()){fail(navigationDriveResultReason());return;}
+  if(!reversing&&navigationDriveCenterRefMm()>0)centerRef=navigationDriveCenterRefMm();
+  lastMotionWasMove=true;afterSettleMs=now;stage=Stage::SETTLE;return;
  case Stage::SETTLE:
-   if(now-afterSettleMs<350 || !navigationDriveReady())return;
-   if(lastMotionWasMove){beginSensing();return;}
-   // Depois do giro, observar novamente a cena antes de autorizar o avanco.
-   if(turnsRemaining){stage=Stage::TURN_START;stageMs=now;return;}
-   // Exigir nova leitura frontal no novo rumo, e atualizar mapa de modo seguro.
+  if(now-afterSettleMs>4000){fail("timeout_assentamento");return;}
+  if(now-afterSettleMs<350||!navigationDriveReady())return;
+  if(lastMotionWasMove){
+   if(fabsf(lerIMU().yawDireitaGraus-yawStart)>NAV_YAW_RETO_MAX_GRAUS){fail("desvio_angular_apos_parada");return;}
+   if(!mazeMarkTraversedFromPose(targetDirection)){fail("erro_registro_travessia");return;}
+   x=targetX;y=targetY;mazeSetPose(x,y,direction);mazeMarkVisited(x,y);++steps;if(reversing)++reverseSteps;
+   if(mazeIsGoal()){stage=Stage::DONE;errorText="objetivo_atingido";return;}
    beginSensing();return;
+  }
+  if(fabsf((lerIMU().yawDireitaGraus-yawStart)-(turnRight?90.0f:-90.0f))>NAV_YAW_GIRO_TOL_GRAUS){fail("giro_IMU_fora_tolerancia");return;}
+  direction=dirChar((dirValue(direction)+(turnRight?1:3))&3);mazeSetPose(x,y,direction);
+  if(--turnsRemaining){stage=Stage::TURN_START;stageMs=now;return;}
+  beginSensing();return;
  default:return;
  }
 }
 String navigationStatusJson(){
- String s="{\"estado\":\""+String(stageText())+"\",\"ativo\":"+
-  String(navigationRunning()?"true":"false")+",\"motivo\":\""+String(errorText)+
-  "\",\"passos\":"+String(steps)+",\"x\":"+String(x)+",\"y\":"+String(y)+
-  ",\"direcao\":\""+String(direction)+"\",\"proximaDirecao\":\""+String(targetDirection)+
-  "\",\"limiteFrontalMm\":"+String(dangerLimitMm(),1)+
-  ",\"autonomiaLiberada\":"+String(NAV_AUTONOMIA_HABILITADA?"true":"false")+
-  ",\"lateraisCalibrados\":"+String(NAV_LATERAIS_CALIBRADOS?"true":"false")+
-  ",\"laserU3AteNarizMm\":"+String(NAV_U3_ATE_NARIZ_MM,1)+"}";
+ String s="{\"estado\":\""+String(stageText())+"\",\"ativo\":"+String(navigationRunning()?"true":"false")+
+  ",\"motivo\":\""+String(errorText)+"\",\"passos\":"+String(steps)+",\"x\":"+String(x)+",\"y\":"+String(y)+
+  ",\"direcao\":\""+String(direction)+"\",\"proximaDirecao\":\""+String(targetDirection)+"\",\"estrategia\":\"goal\",\"retorno\":\"reverse\""+
+  ",\"poseConfiavel\":"+String(poseCertain?"true":"false")+",\"passosRe\":"+String(reverseSteps)+
+  ",\"reHabilitada\":"+String(options.reverse?"true":"false")+",\"centralizacaoHabilitada\":"+String(options.center?"true":"false")+
+  ",\"ajusteAberturaHabilitado\":"+String(options.opening?"true":"false")+",\"ajusteAplicado\":"+String(adjustmentApplied?"true":"false")+
+  ",\"bordaEsqMm\":"+nOrNull(edgeLeft)+",\"bordaDirMm\":"+nOrNull(edgeRight)+",\"centroEstimadoMm\":"+nOrNull(openingEstimate)+
+  ",\"metaDeslocamentoMm\":"+String(plannedMm,1)+",\"referenciaLateralMm\":"+nOrNull(centerRef>0?centerRef:NAN)+
+  ",\"limiteFrontalMm\":"+String(dangerLimitMm(),1)+",\"autonomiaLiberada\":"+String(NAV_AUTONOMIA_HABILITADA?"true":"false")+
+  ",\"lateraisCalibrados\":"+String(NAV_LATERAIS_CALIBRADOS?"true":"false")+",\"laserU3AteNarizMm\":"+String(NAV_U3_ATE_NARIZ_MM,1)+
+  ",\"modoSemAlvoHabilitado\":"+String(NAV_SEM_ALVO_COMO_PASSAGEM?"true":"false")+",\"semAlvoU3Seguidas\":"+String(sensorHistorico[LASER_U3].semAlvoSeguidas())+"}";
  return s;
 }

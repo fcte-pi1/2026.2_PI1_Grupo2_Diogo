@@ -6,7 +6,7 @@
 // N=0/E=1/S=2/O=3; bit de parede = 1<<direcao.
 namespace mazeplan {
 enum Direction : uint8_t { NORTH=0, EAST=1, SOUTH=2, WEST=3 };
-struct Cell { uint8_t known=0, wall=0, visited=0; };
+struct Cell { uint8_t known=0, wall=0, visited=0, traversed=0; };
 struct Next { bool valid=false; Direction dir=NORTH; uint8_t x=0,y=0; };
 class Grid {
 public:
@@ -57,6 +57,17 @@ public:
         int nx=x+dx(d), ny=y+dy(d);
         return inside(nx,ny) && (cell[ny][nx].known&wallBit(opposite(d))) && !(cell[ny][nx].wall&wallBit(opposite(d)));
     }
+    bool markTraversed(uint8_t x,uint8_t y,Direction d) {
+        if(!open(x,y,d))return false;
+        const int nx=x+dx(d),ny=y+dy(d);
+        cell[y][x].traversed|=wallBit(d);
+        cell[ny][nx].traversed|=wallBit(opposite(d));
+        return true;
+    }
+    bool traversed(uint8_t x,uint8_t y,Direction d)const {
+        return open(x,y,d) && (cell[y][x].traversed&wallBit(d)) &&
+          (cell[y+dy(d)][x+dx(d)].traversed&wallBit(opposite(d)));
+    }
     bool atGoal(uint8_t x,uint8_t y)const{return x==goalX && y==goalY;}
     // Busca em largura apenas por arestas COMPROVADAMENTE abertas.
     // Prioriza objetivo conhecido alcancavel; depois proxima celula nao visitada.
@@ -66,23 +77,30 @@ public:
         if(!inside(x,y) || atGoal(x,y))return bad;
         uint8_t qx[MAX*MAX], qy[MAX*MAX], previous[MAX][MAX];
         uint8_t firstDir[MAX][MAX];
+        uint16_t distance[MAX][MAX]{};
         memset(previous,0,sizeof(previous));
         uint16_t start=0,end=0;
         qx[end]=x;qy[end++]=y;previous[y][x]=1;
         bool candidate=false;uint8_t cx=0,cy=0;
+        uint16_t bestScore=65535,bestH=65535;
         // Pequena preferencia local: seguir, direita, esquerda, retornar.
         const Direction preference[4]={heading,right(heading),left(heading),opposite(heading)};
         while(start<end){
             const uint8_t px=qx[start],py=qy[start];++start;
             if(px==goalX && py==goalY){cx=px;cy=py;candidate=true;break;}
-            if(!(px==x && py==y) && !cell[py][px].visited && !candidate){
-                cx=px;cy=py;candidate=true;
+            if(!(px==x && py==y) && !cell[py][px].visited){
+                const uint16_t h=(px>goalX?px-goalX:goalX-px)+(py>goalY?py-goalY:goalY-py);
+                const uint16_t score=distance[py][px]+h;
+                if(!candidate || score<bestScore || (score==bestScore && h<bestH)){
+                    cx=px;cy=py;candidate=true;bestScore=score;bestH=h;
+                }
             }
             for(uint8_t i=0;i<4;i++){
                 Direction d=preference[i];if(!open(px,py,d))continue;
                 const int nx=px+dx(d),ny=py+dy(d);
                 if(previous[ny][nx])continue;
                 previous[ny][nx]=1;
+                distance[ny][nx]=distance[py][px]+1;
                 firstDir[ny][nx]=(px==x && py==y)?(uint8_t)d:firstDir[py][px];
                 qx[end]=(uint8_t)nx;qy[end]=(uint8_t)ny;++end;
             }

@@ -44,5 +44,13 @@ int main(){
  std::cout<<"-100mm -> final counts: E="<<encoder.esq<<" D="<<encoder.dir<<" result="<<(result?result:"timeout")<<"\n";
  if(!result)return 5;
  if(std::string(result)!="reto_meta_atingida")return 6;
- std::cout<<"PASS: motor control v4.5 idealized forward+reverse simulation\n";
+ desativarControleMovimento();
+ if(!iniciarControleReto(180,25,815.55f,815.48f,true))return 7;
+ if(ajustarMetaRetoNav(200)||ajustarMetaRetoNav(-175)||!ajustarMetaRetoNav(175))return 8;
+ if(std::fabs(lerControleMovimento().retoAlvoMm-175)>0.01f)return 9;
+ desativarControleMovimento();
+ if(!iniciarControleReto(-180,20,815.55f,815.48f,true))return 10;
+ if(!ajustarMetaRetoNav(-174)||ajustarMetaRetoNav(174))return 11;
+ desativarControleMovimento();
+ std::cout<<"PASS: motor control v4.5 idealized forward+reverse simulation; bounded retargeting V4.9\n";
 }

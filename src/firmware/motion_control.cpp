@@ -256,6 +256,18 @@ bool iniciarControleReto(float distanciaMm, float limiteRpm, float cprE, float c
     return true;
 }
 
+bool ajustarMetaRetoNav(float distanciaMm) {
+    if(info.tipo!=TipoControle::RETO || !isfinite(distanciaMm) || distanciaMm*sentidoReto<=0 ||
+       fabsf(distanciaMm-info.retoAlvoMm)>NAV_AJUSTE_MAX_MM ||
+       sentidoReto*(distanciaMm-info.retoProgressoMm)<NAV_AJUSTE_RESTANTE_MIN_MM ||
+       sentidoReto*(info.retoAlvoMm-info.retoProgressoMm)<NAV_AJUSTE_RESTANTE_MIN_MM)return false;
+    info.retoAlvoMm=distanciaMm;
+    const float circ=3.14159265358979323846f*DIAMETRO_RODA_MM;
+    info.alvoE=(int32_t)lroundf(distanciaMm*cprE_/circ);
+    info.alvoD=(int32_t)lroundf(distanciaMm*cprD_/circ);
+    return true;
+}
+void informarReferenciaCentroNav(float referenciaMm){if(info.tipo==TipoControle::RETO && info.centroAtivo)centralizador.usarReferencia(referenciaMm);}
 void informarLateraisReto(LateralLida esquerda, LateralLida direita) {
     lateralE = esquerda;
     lateralD = direita;

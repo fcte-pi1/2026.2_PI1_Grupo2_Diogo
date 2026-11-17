@@ -7,7 +7,7 @@ int main(){
  // Bordas nunca podem ser marcadas como livres.
  assert(!g.observe(0,0,SOUTH,false));assert(!g.open(0,0,WEST));
  assert(g.observe(0,0,NORTH,false));
- assert(g.open(0,0,NORTH));assert(g.cell[1][0].known&Grid::wallBit(SOUTH));
+ assert(g.open(0,0,NORTH));assert(!g.traversed(0,0,NORTH));assert(g.markTraversed(0,0,NORTH));assert(g.traversed(0,1,SOUTH));assert(g.cell[1][0].known&Grid::wallBit(SOUTH));
  assert(!g.observe(0,0,NORTH,true)); // discrepancia nao sobrescreve
  g.cell[0][0].visited=1;
  auto n=g.next(0,0,NORTH);assert(n.valid && n.dir==NORTH && n.x==0 && n.y==1);
