@@ -268,6 +268,9 @@ bool ajustarMetaRetoNav(float distanciaMm) {
     return true;
 }
 void informarReferenciaCentroNav(float referenciaMm){if(info.tipo==TipoControle::RETO && info.centroAtivo)centralizador.usarReferencia(referenciaMm);}
+void informarReferenciasCentroNav(float esquerdaMm,float direitaMm){
+    if(info.tipo==TipoControle::RETO && info.centroAtivo)centralizador.usarReferencias(esquerdaMm,direitaMm);
+}
 void informarLateraisReto(LateralLida esquerda, LateralLida direita) {
     lateralE = esquerda;
     lateralD = direita;
@@ -320,6 +323,8 @@ const char* atualizarControleMovimento() {
             info.centroModo = centralizador.modo();
             info.centroErroMm = centralizador.erro();
             info.centroRefMm = centralizador.referencia();
+            info.centroRefEsqMm = centralizador.referenciaEsq();
+            info.centroRefDirMm = centralizador.referenciaDir();
             info.centroLidoEMm = lateralE.valida ? lateralE.mm : NAN;
             info.centroLidoDMm = lateralD.valida ? lateralD.mm : NAN;
         }

@@ -18,6 +18,12 @@ float navigationDriveProgressMm();
 float navigationDriveCenterRefMm();
 bool navigationDriveAdjustStraight(float millimeters);
 void navigationDriveSetCenterRef(float mm);
+float navigationDriveCenterRefEsqMm();
+float navigationDriveCenterRefDirMm();
+void navigationDriveSetCenterRefs(float esquerdaMm,float direitaMm);
+// Para por parede sem notificar uma falha externa; navegacao verifica a pose depois.
+bool navigationDriveStopAtWall();
+bool navigationDriveSettledStraight(float& progressMm,float& syncMm);
 bool navigationDriveStartTurn(bool right,float rpm);
 uint32_t navigationDriveResultId();
 bool navigationDriveResultOk();

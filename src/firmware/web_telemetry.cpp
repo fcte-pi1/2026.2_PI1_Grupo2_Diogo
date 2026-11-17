@@ -78,7 +78,8 @@ static LateralLida lateralCentro(uint8_t sensor, LeitorLateral& leitor, uint32_t
     const LeituraLaser d = lerLaser(sensor);
     const bool ok = d.inicializado && d.brutoMm >= 0;
     const uint32_t idade = d.ultimaValidaMs ? agora - d.ultimaValidaMs : UINT32_MAX;
-    return leitor.atualizar(d.total, ok ? d.filtradoMm : -1, d.parede == PAREDE_PRESENTE, idade);
+    return leitor.atualizar(d.total, ok ? d.filtradoMm : -1,
+                            lateralParedeAtual(d.brutoMm, CENTRO_PAREDE_MAX_MM, d.parede == PAREDE_PRESENTE), idade);
 }
 static const char* nomeFaseGiro() { switch (faseGiro) { case FaseGiro::ASSENTANDO: return "ASSENTANDO"; case FaseGiro::CORRIGINDO: return "CORRIGINDO"; default: return "PRINCIPAL"; } }
 
@@ -581,6 +582,30 @@ float navigationDriveProgressMm(){return lerControleMovimento().retoProgressoMm;
 float navigationDriveCenterRefMm(){return lerControleMovimento().centroRefMm;}
 bool navigationDriveAdjustStraight(float mm){return movimentoDaMissao && modo==Modo::RETO && ajustarMetaRetoNav(mm);}
 void navigationDriveSetCenterRef(float mm){informarReferenciaCentroNav(mm);}
+float navigationDriveCenterRefEsqMm(){return lerControleMovimento().centroRefEsqMm;}
+float navigationDriveCenterRefDirMm(){return lerControleMovimento().centroRefDirMm;}
+void navigationDriveSetCenterRefs(float e,float d){informarReferenciasCentroNav(e,d);}
+bool navigationDriveStopAtWall(){
+    if(!movimentoDaMissao || modo!=Modo::RETO)return false;
+    encerrarTeste("obstaculo_frontal_limite_dinamico");
+    return true;
+}
+bool navigationDriveSettledStraight(float& progressMm,float& syncMm){
+    if(!navigationDriveReady() || !isfinite(cprE) || !isfinite(cprD))return false;
+    const DadosFreio f=lerMedicaoFreio();
+    const DadosEncoder e=lerEncoders();
+    const ControleInfo info=lerControleMovimento();
+    // Exige medicao final do freio e que as rodas nao continuem se movendo.
+    if(!f.valido || !f.tem1000 || e.esq!=f.em1000E || e.dir!=f.em1000D ||
+       !isfinite(e.cpsEsq) || !isfinite(e.cpsDir) ||
+       fabsf(e.cpsEsq)>1.0f || fabsf(e.cpsDir)>1.0f || !info.retoSyncAtivo)return false;
+    const float circ=3.14159265f*DIAMETRO_RODA_MM;
+    const float de=(float)(e.esq-info.inicioE)*circ/cprE;
+    const float dd=(float)(e.dir-info.inicioD)*circ/cprD;
+    progressMm=0.5f*(de+dd);
+    syncMm=de-dd-info.centroAlvoMm; // apenas avanco positivo neste estado
+    return isfinite(progressMm)&&isfinite(syncMm);
+}
 bool navigationDriveStartTurn(bool right,float rpm){
     if(!navigationDriveReady())return false;
     if(!iniciarControleGiro(right,false,rpm,cprE,cprD,true))return false;

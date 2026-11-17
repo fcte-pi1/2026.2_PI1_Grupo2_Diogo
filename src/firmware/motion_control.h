@@ -49,6 +49,7 @@ struct ControleInfo {
     float centroErroMm = NAN;
     float centroAlvoMm = 0;    // alvo de E - D seguido pelo sincronismo
     float centroRefMm = -1;
+    float centroRefEsqMm = -1, centroRefDirMm = -1;
     float centroLidoEMm = NAN, centroLidoDMm = NAN;
     uint32_t periodoMaxMs = 0;
     // Estimativas somente por encoder; NAO medem escorregamento lateral.
@@ -69,6 +70,7 @@ bool iniciarControleReto(float distanciaMm, float limiteRpm, float cprE,
 // Lasers laterais ja validados; chamar antes de atualizarControleMovimento().
 bool ajustarMetaRetoNav(float distanciaMm);
 void informarReferenciaCentroNav(float referenciaMm);
+void informarReferenciasCentroNav(float esquerdaMm,float direitaMm);
 void informarLateraisReto(LateralLida esquerda, LateralLida direita);
 // Retorno: nullptr se normal; string de motivo se deve interromper/frear.
 const char* atualizarControleMovimento();

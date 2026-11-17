@@ -22,6 +22,8 @@ static Direction heading=NORTH;
 static float yaw=0,targetMm=0,progress=0;
 static bool weakFront=false,missingFront=false,forceMotionFail=false,timeoutFront=false,leftLiesOpen=false;
 static bool trackingCase=false,openNoTarget=false;
+static int frontCase=0; // 1: perda breve; 2: distancia em reducao; 3: I2C; 4: obstaculo; 5: evento velho; 6: sigma
+static bool usedMemory=false;
 static std::string status(){return navigationStatusJson().c_str();}
 static bool has(const char* s){return status().find(s)!=std::string::npos;}
 static Direction sensorDir(uint8_t s){return s==LASER_U2?Grid::left(heading):s==LASER_U4?Grid::right(heading):heading;}
@@ -40,6 +42,19 @@ LeituraLaser lerLaser(uint8_t sensor){
  if(timeoutFront&&sensor==LASER_U3){l.brutoMm=LASER_TIMEOUT;l.statusVL=255;l.parede=PAREDE_INDEFINIDA;l.ultimaValidaMs=0;}
  // Sensor esquerdo "mente" que a borda externa esta aberta.
  if(leftLiesOpen&&sensor==LASER_U2&&px==0&&heading==NORTH){l.brutoMm=300;l.parede=PAREDE_AUSENTE;}
+ if(moving&&!turning&&sensor==LASER_U3&&targetMm>0){
+  const uint32_t dt=nowMs-startDriveMs;
+  if(frontCase==2 && dt<240){l.brutoMm=165;l.filtradoMm=165;l.statusVL=0;l.parede=PAREDE_AUSENTE;}
+  if(dt>=240){
+   if((frontCase==1&&dt<300)||frontCase==2){l.brutoMm=LASER_SINAL_FRACO;l.statusVL=2;l.parede=PAREDE_INDEFINIDA;}
+   if(frontCase==3){l.brutoMm=LASER_ERRO_COMUNICACAO;l.statusVL=255;l.parede=PAREDE_INDEFINIDA;}
+   if(frontCase==4){l.brutoMm=20;l.statusVL=0;l.parede=PAREDE_PRESENTE;}
+   if(frontCase==5){l.ultimoEventoMs=nowMs-NAV_IDADE_SENSOR_MS-1;}
+   // Parede no fim do corredor; simulacao do freio termina no centro.
+   if(frontCase==7&&px==0&&py==2&&heading==NORTH&&progress>=175){l.brutoMm=35;l.statusVL=0;l.parede=PAREDE_PRESENTE;}
+   if(frontCase==6){l.brutoMm=LASER_SINAL_FRACO;l.statusVL=1;l.parede=PAREDE_INDEFINIDA;}
+  }
+ }
  return l;
 }
 bool batteryAvailable(){return true;}
@@ -50,13 +65,26 @@ bool navigationDriveReady(){return !moving;}
 bool navigationDriveStartStraight(float mm,float rpm){
  assert(fabsf(mm)==NAV_CELULA_MM&&rpm>0);
  const auto d=mm>0?heading:Grid::opposite(heading);assert(truth.open(px,py,d));
- moving=true;turning=false;startDriveMs=nowMs;targetMm=mm;progress=0;++moves;if(mm<0)++reverses;return true;
+ moving=true;turning=false;resultOk=true;startDriveMs=nowMs;targetMm=mm;progress=0;++moves;if(mm<0)++reverses;return true;
 }
 float navigationDriveProgressMm(){return progress;}
 float navigationDriveCenterRefMm(){return 38;}
 void navigationDriveSetCenterRef(float mm){assert(mm>0);}
+float navigationDriveCenterRefEsqMm(){return 38;}
+float navigationDriveCenterRefDirMm(){return 42;}
+void navigationDriveSetCenterRefs(float e,float d){assert(e==38&&d==42);}
+bool navigationDriveStopAtWall(){
+ assert(moving&&!turning&&targetMm>0);
+ moving=false;resultOk=false;++resultId;
+ if(frontCase==7){ // modelo idealizado: parada final no alvo
+  assert(progress>=175);progress=targetMm;
+  px+=Grid::dx(heading);py+=Grid::dy(heading);
+ }
+ return true;
+}
+bool navigationDriveSettledStraight(float& p,float& sync){if(moving)return false;p=progress;sync=0;return true;}
 bool navigationDriveAdjustStraight(float mm){assert(moving&&!turning&&fabsf(mm-targetMm)<=NAV_AJUSTE_MAX_MM);targetMm=mm;++adjustments;return true;}
-bool navigationDriveStartTurn(bool right,float rpm){assert(rpm>0);moving=true;turning=true;rightTurn=right;startDriveMs=nowMs;++turns;return true;}
+bool navigationDriveStartTurn(bool right,float rpm){assert(rpm>0);moving=true;turning=true;resultOk=true;rightTurn=right;startDriveMs=nowMs;++turns;return true;}
 uint32_t navigationDriveResultId(){return resultId;}
 bool navigationDriveResultOk(){return resultOk;}
 const char* navigationDriveResultReason(){return "simulacao_falhou";}
@@ -71,10 +99,10 @@ static void tick(){
    if(p>=fabsf(targetMm)){const auto d=targetMm>0?heading:Grid::opposite(heading);px+=Grid::dx(d);py+=Grid::dy(d);moving=false;++resultId;}
   }
  }
- navigationTick();nowMs+=20;
+ navigationTick();if(has("folga_medida_recente"))usedMemory=true;nowMs+=20;
 }
 static void reset(uint8_t w,uint8_t h,uint8_t gx,uint8_t gy){
- assert(truth.init(w,h,gx,gy));moves=turns=reverses=adjustments=0;moving=turning=false;resultOk=true;weakFront=missingFront=forceMotionFail=trackingCase=timeoutFront=leftLiesOpen=openNoTarget=false;px=py=0;heading=NORTH;yaw=0;nowMs+=10000;
+ assert(truth.init(w,h,gx,gy));moves=turns=reverses=adjustments=0;moving=turning=false;resultOk=true;weakFront=missingFront=forceMotionFail=trackingCase=timeoutFront=leftLiesOpen=openNoTarget=false;frontCase=0;usedMemory=false;px=py=0;heading=NORTH;yaw=0;nowMs+=10000;
 }
 static void run(){for(int i=0;i<30000&&navigationRunning();++i)tick();assert(!navigationRunning());}
 static void expectGoal(){if(!has("OBJETIVO_ATINGIDO"))fprintf(stderr,"Unexpected nav status: %s\n",status().c_str());assert(has("OBJETIVO_ATINGIDO"));assert(px==truth.goalX&&py==truth.goalY);}
@@ -107,4 +135,19 @@ int main(){
  reset(2,2,0,1);auto invalid=navigationDefaultOptions();invalid.corridorWidth=0;assert(navigationStartWithOptions(2,2,0,1,invalid));puts("PASS: ajuste exige geometria valida");
  reset(2,2,0,1);missingFront=true;assert(navigationStart(2,2,0,1));puts("PASS: sensor nao inicializado bloqueia inicio");
  reset(2,2,0,1);assert(truth.observe(0,0,NORTH,false));forceMotionFail=true;assert(!navigationStart(2,2,0,1));run();assert(has("FALHA")&&has("\"poseConfiavel\":false"));assert(std::string(mazeEstadoJson().c_str()).find("\"pose\":null")!=std::string::npos);puts("PASS: falha no deslocamento invalida pose");
+ reset(2,2,0,1);assert(truth.observe(0,0,NORTH,false));frontCase=1;assert(!navigationStart(2,2,0,1));run();expectGoal();assert(usedMemory);puts("PASS: sinal fraco transitorio com folga medida recente");
+ reset(2,2,0,1);assert(truth.observe(0,0,NORTH,false));frontCase=2;assert(!navigationStart(2,2,0,1));run();assert(usedMemory&&has("U3_sem_evidencia_durante_avanco")&&has("\"poseConfiavel\":false"));puts("PASS: sinal fraco persistente sem folga comprovada para");
+ reset(2,2,0,1);assert(truth.observe(0,0,NORTH,false));frontCase=3;assert(!navigationStart(2,2,0,1));run();assert(!usedMemory&&has("\"u3CodigoAvanco\":-6"));puts("PASS: I2C para imediatamente mesmo com memoria");
+ reset(2,2,0,1);assert(truth.observe(0,0,NORTH,false));frontCase=4;assert(!navigationStart(2,2,0,1));run();assert(!usedMemory&&has("obstaculo_frontal_antes_da_celula_pose_incerta")&&has("\"poseConfiavel\":false")&&reverses==0);puts("PASS: obstaculo prevalece sobre memoria");
+ reset(2,2,0,1);assert(truth.observe(0,0,NORTH,false));frontCase=5;assert(!navigationStart(2,2,0,1));run();assert(!usedMemory&&has("evento_antigo_ou_indisponivel"));puts("PASS: evento antigo para imediatamente");
+ reset(2,2,0,1);assert(truth.observe(0,0,NORTH,false));frontCase=6;assert(!navigationStart(2,2,0,1));run();assert(!usedMemory&&has("\"u3RangeStatusAvanco\":1"));puts("PASS: sigma invalido nao usa memoria");
+
+ reset(8,4,7,3);frontCase=7;
+ for(int y=0;y<3;++y)assert(truth.observe(0,y,NORTH,false));
+ for(int xx=0;xx<7;++xx)assert(truth.observe(xx,1,EAST,false));
+ for(int yy=1;yy<3;++yy)assert(truth.observe(7,yy,NORTH,false));
+ assert(!navigationStart(8,4,7,3));run();expectGoal();
+ assert(reverses==2&&has("\"paradasFrontaisNaCelula\":1"));
+ puts("PASS: parada frontal confirmada em celula, recuo no beco e rota alternativa");
+
 }

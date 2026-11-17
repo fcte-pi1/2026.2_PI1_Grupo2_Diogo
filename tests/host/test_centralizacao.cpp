@@ -125,6 +125,25 @@ int main() {
   const float encosta = CORREDOR_MM / 2 - MEIA_LARGURA_MM;
   std::printf("  (encosta na parede com |x| > %.0f mm)\n", encosta);
 
+  // Bifurcacao: bruto ja perdeu a parede direita, EMA ainda tem a distancia antiga.
+  conferir(!lateralParedeAtual(400, CENTRO_PAREDE_MAX_MM, true), "abertura real rejeita parede filtrada antiga");
+  conferir(lateralParedeAtual(40, CENTRO_PAREDE_MAX_MM, true), "parede esquerda atual continua aceita");
+  ParametrosCentro pc; Centralizador cen(pc);
+  cen.atualizar(LateralLida{true,38}, LateralLida{true,42}, 1, 0.02f);
+  const float ref=cen.referencia();
+  cen.atualizar(LateralLida{true,38}, LateralLida{}, 1, 0.02f);
+  conferir(cen.modo()==ModoCentro::ESQUERDA && cen.referencia()==ref, "duas paredes para esquerda conserva referencia");
+
+  conferir(fabsf(cen.erro())<0.001f, "parede esquerda conserva referencia individual 38 mm");
+  cen.atualizar(LateralLida{}, LateralLida{true,42}, 1, 0.02f);
+  conferir(fabsf(cen.erro())<0.001f, "parede direita conserva referencia individual 42 mm");
+  cen.reiniciar();cen.usarReferencias(38,42);
+  cen.atualizar(LateralLida{true,38}, LateralLida{}, 1, 0.02f);
+  conferir(fabsf(cen.erro())<0.001f && cen.referenciaEsq()==38 && cen.referenciaDir()==42,
+           "par restaurado no proximo segmento");
+  cen.atualizar(LateralLida{true,44}, LateralLida{}, 1, 0.02f);
+  conferir(fabsf(cen.erro()-6)<0.001f && cen.referenciaEsq()==38,
+           "uma parede corrige desvio sem reaprender a referencia");
   Cenario torto{"saida torta +3 graus"}; torto.theta0Graus = 3;
   Cenario semCentro = torto; semCentro.nome = "saida torta, centralizacao desligada"; semCentro.centralizar = false;
   Resultado a = mostrar(torto), a0 = mostrar(semCentro);

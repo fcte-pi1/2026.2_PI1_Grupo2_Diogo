@@ -21,6 +21,12 @@ struct LateralLida {
   float mm = 0;
 };
 
+// A leitura bruta confirma que a parede continua proxima; a filtrada serve
+// para controle, mas nao deve prolongar a parede apos a abertura lateral.
+inline bool lateralParedeAtual(int brutoMm, int paredeMaxMm, bool paredePresente) {
+  return paredePresente && brutoMm >= 0 && brutoMm <= paredeMaxMm;
+}
+
 // Valida um laser lateral. Só avalia amostra nova; uma leitura só vale depois de
 // duas seguidas sem salto (borda de parede, poste) e sem pausa do sensor.
 class LeitorLateral {
@@ -88,7 +94,7 @@ public:
     modo_ = ModoCentro::NENHUMA;
     erro_ = NAN;
     integral = proporcional = alvo_ = 0;
-    refAprendida = -1;
+    refAprendida = refEsq = refDir = -1;
   }
 
   // percursoMm: quanto o robô andou desde a última chamada.
@@ -108,6 +114,16 @@ public:
 
   void usarReferencia(float ref) { if(isfinite(ref) && ref>0) refAprendida=ref; }
 
+  // O par e aprendido exclusivamente quando as duas paredes estao presentes
+  // e o erro de centralizacao ja e pequeno. Nunca reaprender com uma parede.
+  void usarReferencias(float e, float d) {
+    if(isfinite(e)&&isfinite(d)&&e>0&&d>0) {
+      refEsq=e; refDir=d; refAprendida=0.5f*(e+d);
+    }
+  }
+  float referenciaEsq() const { return refEsq; }
+  float referenciaDir() const { return refDir; }
+
   ModoCentro modo() const { return modo_; }
   float erro() const { return erro_; }
   float alvo() const { return alvo_; }
@@ -122,15 +138,19 @@ private:
       erro_ = 0.5f * ((e.mm - d.mm) - par.assimetriaMm);
       const float ref = 0.5f * (e.mm + d.mm);
       refAprendida = refAprendida < 0 ? ref : refAprendida + par.aprendizado * (ref - refAprendida);
+      if (fabsf(erro_) <= 3.0f) {
+        refEsq = refEsq < 0 ? e.mm : refEsq + par.aprendizado * (e.mm - refEsq);
+        refDir = refDir < 0 ? d.mm : refDir + par.aprendizado * (d.mm - refDir);
+      }
       return;
     }
     const float ref = referencia();
     if (ref >= 0 && e.valida) {
       modo_ = ModoCentro::ESQUERDA;
-      erro_ = e.mm - (ref + meiaAssim);
+      erro_ = e.mm - (refEsq > 0 ? refEsq : ref + meiaAssim);
     } else if (ref >= 0 && d.valida) {
       modo_ = ModoCentro::DIREITA;
-      erro_ = (ref - meiaAssim) - d.mm;
+      erro_ = (refDir > 0 ? refDir : ref - meiaAssim) - d.mm;
     } else {
       modo_ = ModoCentro::NENHUMA;
     }
@@ -145,5 +165,5 @@ private:
   ModoCentro modo_ = ModoCentro::NENHUMA;
   float erro_ = NAN;
   float integral = 0, proporcional = 0, alvo_ = 0;
-  float refAprendida = -1;
+  float refAprendida = -1, refEsq = -1, refDir = -1;
 };
