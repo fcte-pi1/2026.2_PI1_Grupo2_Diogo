@@ -8,7 +8,7 @@ const char MISSAO_HTML[] PROGMEM = R"MISSAO(<!DOCTYPE html>
 main{max-width:960px;margin:auto}header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
 h1{font-size:1.9rem;margin:0}a{color:#7bb9ff}.panel{background:#192437;border:1px solid #324256;padding:18px;border-radius:14px;margin-top:20px}
 fieldset{border:0;padding:0;display:flex;flex-wrap:wrap;gap:14px}label{display:flex;flex-direction:column;gap:5px;font-size:.85rem;color:#acbed2}
-input{width:90px;padding:9px;border:1px solid #586986;border-radius:8px;color:#fff;background:#202e43;font-size:1rem}
+input,select{width:90px;padding:9px;border:1px solid #586986;border-radius:8px;color:#fff;background:#202e43;font-size:1rem}
 button{padding:13px 18px;border-radius:9px;border:0;background:#3984df;color:#fff;cursor:pointer;font-weight:600}button.stop{background:#c9393d}
 button:disabled{opacity:.4;cursor:not-allowed}.actions{display:flex;gap:12px;margin-top:14px;flex-wrap:wrap}
 pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.9rem;line-height:1.5}
@@ -23,7 +23,9 @@ span.badge{font-weight:600;color:#93d8c1}
 <fieldset style="margin-top:17px"><label>Largura (células)<input id="w" type="number" min="2" max="16" value="8"></label>
 <label>Altura (células)<input id="h" type="number" min="2" max="16" value="4"></label>
 <label>Objetivo X<input id="gx" type="number" min="0" max="15" value="7"></label>
-<label>Objetivo Y<input id="gy" type="number" min="0" max="15" value="3"></label></fieldset>
+<label>Objetivo Y<input id="gy" type="number" min="0" max="15" value="3"></label>
+<label>Orientação inicial (0,0)<select id="initialDirection" style="width:auto"><option value="N">Norte ↑</option><option value="L">Leste →</option><option value="S">Sul ↓</option><option value="O">Oeste ←</option></select></label></fieldset>
+<p class="small">Selecione a direção física do robô na origem (0,0). Norte aponta para o lado da altura; Leste para o lado da largura. Não altera a posição inicial.</p>
 <fieldset style="margin-top:14px"><legend>Perfil de navegação por missão (opcional)</legend>
 <label><input type="checkbox" id="reverse">Ré em percurso já atravessado (sem sensor traseiro)</label>
 <label><input type="checkbox" id="center">Correção lateral validada</label>
@@ -39,7 +41,7 @@ span.badge{font-weight:600;color:#93d8c1}
 <section class="panel"><h2>Diagnóstico</h2><pre id="status"></pre><p class="small">API do mapa: <a href="/api/maze">/api/maze</a> · Estado da missão: <a href="/api/nav/status">/api/nav/status</a> · Sensores: <a href="/api/lasers/status">/api/lasers/status</a></p></section>
 </main><script>
 async function req(path,opts){let r=await fetch(path,{cache:'no-store',...(opts||{})});let d=await r.json();if(!r.ok)throw Error(d.erro||JSON.stringify(d));return d}
-async function startMission(){let p=new URLSearchParams({largura:document.getElementById('w').value,altura:document.getElementById('h').value,goal_x:document.getElementById('gx').value,goal_y:document.getElementById('gy').value,perfil_v49:'1',re_supervisionada:document.getElementById('reverse').checked?'1':'0',centralizar:document.getElementById('center').checked?'1':'0',ajuste_abertura:document.getElementById('opening').checked?'1':'0',validacao_supervisor:document.getElementById('supervisor').checked?'1':'0',largura_livre:document.getElementById('widthFree').value,u2_eixo:document.getElementById('leftAxle').value,u4_eixo:document.getElementById('rightAxle').value});try{await req('/api/nav/start',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p});document.getElementById('message').textContent='Missão iniciada';}catch(e){document.getElementById('message').textContent='Não iniciou: '+e.message}await refresh()}
+async function startMission(){let p=new URLSearchParams({largura:document.getElementById('w').value,altura:document.getElementById('h').value,goal_x:document.getElementById('gx').value,goal_y:document.getElementById('gy').value,perfil_v49:'1',direcao_inicial:document.getElementById('initialDirection').value,re_supervisionada:document.getElementById('reverse').checked?'1':'0',centralizar:document.getElementById('center').checked?'1':'0',ajuste_abertura:document.getElementById('opening').checked?'1':'0',validacao_supervisor:document.getElementById('supervisor').checked?'1':'0',largura_livre:document.getElementById('widthFree').value,u2_eixo:document.getElementById('leftAxle').value,u4_eixo:document.getElementById('rightAxle').value});try{await req('/api/nav/start',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p});document.getElementById('message').textContent='Missão iniciada';}catch(e){document.getElementById('message').textContent='Não iniciou: '+e.message}await refresh()}
 async function stopMission(){try{await req('/api/nav/stop',{method:'POST'});document.getElementById('message').textContent='Parada solicitada';}catch(e){document.getElementById('message').textContent=e.message}await refresh()}
 function corner(){document.getElementById("gx").value=Number(document.getElementById("w").value)-1;document.getElementById("gy").value=Number(document.getElementById("h").value)-1;}
 for(const id of ["w","h"])document.getElementById(id).addEventListener("change",corner);

@@ -76,6 +76,8 @@ static void expectGoal(){if(!has("OBJETIVO_ATINGIDO"))fprintf(stderr,"Unexpected
 int main(){
  reset(2,2,0,1);assert(truth.observe(0,0,NORTH,false));assert(!navigationStart(2,2,0,1));run();expectGoal();assert(moves==1&&turns==0);puts("PASS: direto uma celula");
  reset(2,2,1,0);assert(truth.observe(0,0,EAST,false));assert(!navigationStart(2,2,1,0));run();expectGoal();assert(moves==1&&turns==1);puts("PASS: giro e avanco");
+ reset(2,2,1,0);heading=EAST;assert(truth.observe(0,0,EAST,false));auto east=navigationDefaultOptions();east.initialDirection='L';assert(!navigationStartWithOptions(2,2,1,0,east));assert(has("\"direcaoInicial\":\"L\""));run();expectGoal();assert(moves==1&&turns==0);puts("PASS: orientacao inicial Leste sem giro desnecessario");
+ reset(2,2,0,1);auto badDirection=navigationDefaultOptions();badDirection.initialDirection='X';assert(navigationStartWithOptions(2,2,0,1,badDirection));assert(!navigationRunning());puts("PASS: orientacao inicial invalida rejeitada");
  reset(8,4,7,3);trackingCase=true;
  for(int y=0;y<3;++y)assert(truth.observe(0,y,NORTH,false)); // beco sem saida em (0,3)
  for(int x=0;x<7;++x)assert(truth.observe(x,1,EAST,false)); // bifurcacao em (0,1)

@@ -895,6 +895,12 @@ void setupTelemetry() {
            !inteiroEmFaixa("goal_x",0,15,gx)||!inteiroEmFaixa("goal_y",0,15,gy))
             return respostaErro(400,"dimensoes_ou_objetivo_invalidos");
         NavigationOptions opts=navigationDefaultOptions();
+        if(server.hasArg("direcao_inicial")){
+            const String d=server.arg("direcao_inicial");
+            if(d.length()!=1||(d!="N"&&d!="L"&&d!="S"&&d!="O"))
+                return respostaErro(400,"orientacao_inicial_invalida");
+            opts.initialDirection=d[0];
+        }
         // Perfil por missao, sem persistencia/flash e sem desativar protecoes.
         if(server.hasArg("perfil_v49")){
             opts.reverse=server.arg("re_supervisionada")=="1";

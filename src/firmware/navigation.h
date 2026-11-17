@@ -5,6 +5,7 @@
 struct NavigationOptions {
  bool reverse=false, center=false, opening=false;
  float corridorWidth=0, sensorLeftToAxle=-999, sensorRightToAxle=-999;
+ char initialDirection='N'; // N/L/S/O no referencial do mapa
 };
 NavigationOptions navigationDefaultOptions();
 bool navigationReverseAllowed();

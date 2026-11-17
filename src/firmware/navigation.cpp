@@ -118,6 +118,7 @@ bool navigationCenterEnabled(){return navigationRunning()&&options.center;}
 const char* navigationStart(uint8_t w,uint8_t h,uint8_t gx,uint8_t gy){return navigationStartWithOptions(w,h,gx,gy,navigationDefaultOptions());}
 const char* navigationStartWithOptions(uint8_t w,uint8_t h,uint8_t gx,uint8_t gy,const NavigationOptions& requested){
  if(navigationRunning())return "missao_ja_em_execucao";
+ if(requested.initialDirection!='N'&&requested.initialDirection!='L'&&requested.initialDirection!='S'&&requested.initialDirection!='O')return "orientacao_inicial_invalida";
  if(!NAV_AUTONOMIA_HABILITADA)return "configure_NAV_AUTONOMIA_HABILITADA_apos_checklist";
  if(!NAV_LATERAIS_CALIBRADOS)return "sensores_laterais_nao_calibrados";
  if((requested.opening||requested.corridorWidth!=0) && (!isfinite(requested.corridorWidth)||requested.corridorWidth<=0||requested.corridorWidth>NAV_CELULA_MM||
@@ -130,7 +131,7 @@ const char* navigationStartWithOptions(uint8_t w,uint8_t h,uint8_t gx,uint8_t gy
  if(!lerIMU().confiavel)return "IMU_nao_calibrada";
  for(uint8_t i=0;i<3;++i)if(!lerLaser(i).inicializado)return "laser_nao_inicializado";
  if(!mazeConfigure(w,h,gx,gy))return "dimensoes_ou_objetivo_invalidos";
- x=y=targetX=targetY=0;direction=targetDirection='N';steps=reverseSteps=0;
+ x=y=targetX=targetY=0;direction=targetDirection=requested.initialDirection;steps=reverseSteps=0;
  reversing=false;centerRef=-1;edgeLeft=edgeRight=openingEstimate=NAN;plannedMm=0;adjustmentApplied=false;
  if(!mazeSetPose(x,y,direction))return "erro_ao_inicializar_pose";
  options=requested;poseCertain=true;mazeMarkVisited(x,y);startMs=millis();errorText="";beginSensing();
@@ -226,6 +227,7 @@ String navigationStatusJson(){
  String s="{\"estado\":\""+String(stageText())+"\",\"ativo\":"+String(navigationRunning()?"true":"false")+
   ",\"motivo\":\""+String(errorText)+"\",\"passos\":"+String(steps)+",\"x\":"+String(x)+",\"y\":"+String(y)+
   ",\"direcao\":\""+String(direction)+"\",\"proximaDirecao\":\""+String(targetDirection)+"\",\"estrategia\":\"goal\",\"retorno\":\"reverse\""+
+  ",\"direcaoInicial\":\""+String(options.initialDirection)+"\""+
   ",\"poseConfiavel\":"+String(poseCertain?"true":"false")+",\"passosRe\":"+String(reverseSteps)+
   ",\"reHabilitada\":"+String(options.reverse?"true":"false")+",\"centralizacaoHabilitada\":"+String(options.center?"true":"false")+
   ",\"ajusteAberturaHabilitado\":"+String(options.opening?"true":"false")+",\"ajusteAplicado\":"+String(adjustmentApplied?"true":"false")+
