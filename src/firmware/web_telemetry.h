@@ -24,7 +24,10 @@ void navigationDriveSetCenterRefs(float esquerdaMm,float direitaMm);
 // Para por parede sem notificar uma falha externa; navegacao verifica a pose depois.
 bool navigationDriveStopAtWall();
 bool navigationDriveSettledStraight(float& progressMm,float& syncMm);
-bool navigationDriveStartTurn(bool right,float rpm);
+// alvoGraus: angulo final desejado (relativo ao yaw do inicio), corrigido pela IMU.
+bool navigationDriveStartTurn(bool right,float rpm,float alvoGraus);
+bool navigationDriveStartAlign(float graus);
+bool navigationDriveStartNudge(float mm);
 uint32_t navigationDriveResultId();
 bool navigationDriveResultOk();
 const char* navigationDriveResultReason();

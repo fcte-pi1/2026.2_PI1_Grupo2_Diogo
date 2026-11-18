@@ -300,6 +300,25 @@ constexpr float NAV_AJUSTE_MAX_MM = 12.0f;
 constexpr float NAV_AJUSTE_RESTANTE_MIN_MM = 25.0f;
 constexpr float NAV_YAW_RETO_MAX_GRAUS = 12.0f;
 constexpr float NAV_YAW_GIRO_TOL_GRAUS = 12.0f;
+// ===== V4.9.2: RUMO ABSOLUTO PELA IMU =====
+// O giro de 90 por encoder depende de ENTRE_RODAS_MM (valor nominal) e do
+// escorregamento; o erro de cada giro se ACUMULAVA porque o reto seguinte so
+// mantinha o rumo em que comecou. Agora a navegacao guarda o rumo esperado
+// (yaw inicial + 90 por giro) e: (1) depois de cada giro corrige pela IMU ate
+// o rumo esperado; (2) antes de cada reta, se o erro passar de
+// NAV_ALINHAR_GRAUS, faz um giro curto de alinhamento.
+constexpr bool NAV_GIRO_CORRIGIR_IMU = true;
+constexpr float NAV_ALINHAR_GRAUS = 2.0f;
+constexpr float NAV_ALINHAR_MAX_GRAUS = 15.0f;
+constexpr uint8_t NAV_ALINHAR_TENTATIVAS = 2;
+// Recuo ANTES de um giro de 90 graus (mm), so quando a celula de tras ja foi
+// percorrida. Serve para robo com eixo na traseira: o nariz varre um circulo
+// de raio R em volta do eixo; se R for maior que a metade livre do corredor,
+// o nariz bate na parede da frente durante o giro. Recuo sugerido:
+//   R_medido + 5 mm - (largura livre do corredor / 2)
+// 0 = desligado. Faixa aceita 0..40 mm. Ajustar por ensaio.
+constexpr float NAV_GIRO_RECUO_MM = 0.0f;
+constexpr float NAV_GIRO_RECUO_RPM = 25.0f;
 // V4.9.1: tempo maximo com o U3 sem evidencia durante o avanco antes de parar
 // (uma unica amostra ruim nao interrompe mais a missao).
 constexpr uint32_t NAV_FRENTE_INDEFINIDA_MAX_MS = 300;

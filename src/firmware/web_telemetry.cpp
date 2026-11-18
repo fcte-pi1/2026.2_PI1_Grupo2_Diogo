@@ -163,7 +163,14 @@ static void encerrarTeste(const char* motivo) {
     if(movimentoDaMissao){
         ++missaoResultadoId;
         missaoResultadoOk = strcmp(motivo,"reto_meta_atingida")==0 ||
-            strcmp(motivo,"giro_encoder_concluido")==0;
+            strcmp(motivo,"giro_encoder_concluido")==0 ||
+            // V4.9.2: giro com correcao pela IMU, alinhamento e recuo curto.
+            // A navegacao confere o rumo final pela IMU em todos os casos.
+            strcmp(motivo,"giro_dentro_da_tolerancia")==0 ||
+            strcmp(motivo,"giro_corrigido_dentro_da_tolerancia")==0 ||
+            strcmp(motivo,"giro_correcoes_esgotadas")==0 ||
+            strcmp(motivo,"giro_imu_concluido")==0 ||
+            strcmp(motivo,"posicao_meta_atingida")==0;
         snprintf(missaoResultadoMotivo,sizeof(missaoResultadoMotivo),"%s",motivo);
         movimentoDaMissao=false;
     }
@@ -606,13 +613,44 @@ bool navigationDriveSettledStraight(float& progressMm,float& syncMm){
     syncMm=de-dd-info.centroAlvoMm; // apenas avanco positivo neste estado
     return isfinite(progressMm)&&isfinite(syncMm);
 }
-bool navigationDriveStartTurn(bool right,float rpm){
+bool navigationDriveStartTurn(bool right,float rpm,float alvoGraus){
     if(!navigationDriveReady())return false;
     if(!iniciarControleGiro(right,false,rpm,cprE,cprD,true))return false;
-    giroCorrigir=false;faseGiro=FaseGiro::PRINCIPAL;
+    // V4.9.2: giro principal por encoder (+-90) e, depois de parado, correcao
+    // pela IMU ate alvoGraus (relativo ao yaw do inicio do giro). alvoGraus ja
+    // inclui o erro acumulado de rumo calculado pela navegacao.
+    giroCorrigir=NAV_GIRO_CORRIGIR_IMU && lerIMU().confiavel && isfinite(alvoGraus) &&
+                 fabsf(alvoGraus-(right?90.0f:-90.0f))<=GIRO_CORRECAO_ERRO_MAX_GRAUS;
+    giroSyncSuave=true;
+    giroAlvoGraus=giroCorrigir?alvoGraus:(right?90.0f:-90.0f);
+    giroYawRef=lerControleMovimento().yawNoInicio;
+    giroCorrecoes=0;giroErroAntes=giroErroMedido=NAN;
+    faseGiro=FaseGiro::PRINCIPAL;
     movimentoDaMissao=true;
     iniciarRelogioMotorizado(10000,Modo::GIRO);
     ultimoMotivo="nav_giro_em_andamento";
+    return true;
+}
+// Giro curto pela IMU para alinhar o rumo antes de uma reta (sem zerar o yaw).
+bool navigationDriveStartAlign(float graus){
+    if(!navigationDriveReady() || !lerIMU().confiavel)return false;
+    if(!iniciarControleGiroAngulo(graus,true,GIRO_CORRECAO_RPM,cprE,cprD,true,false,GIRO_CORRECAO_PARADA_GRAUS))return false;
+    giroCorrigir=false;faseGiro=FaseGiro::PRINCIPAL;
+    movimentoDaMissao=true;
+    iniciarRelogioMotorizado(5000,Modo::GIRO);
+    ultimoMotivo="nav_alinhamento_em_andamento";
+    return true;
+}
+// Deslocamento curto (abaixo do minimo do controle reto) pelo controle de posicao.
+bool navigationDriveStartNudge(float mm){
+    if(!navigationDriveReady() || !isfinite(mm) || fabsf(mm)<1.0f || fabsf(mm)>60.0f)return false;
+    const float k=1.0f/(3.14159265f*DIAMETRO_RODA_MM);
+    const int32_t ce=(int32_t)lroundf(mm*cprE*k), cd=(int32_t)lroundf(mm*cprD*k);
+    if(ce==0 && cd==0)return false;
+    if(!iniciarControlePosicao(ce,cd,NAV_GIRO_RECUO_RPM,cprE,cprD))return false;
+    movimentoDaMissao=true;
+    iniciarRelogioMotorizado(4000,Modo::POSICAO);
+    ultimoMotivo="nav_recuo_antes_do_giro";
     return true;
 }
 uint32_t navigationDriveResultId(){return missaoResultadoId;}

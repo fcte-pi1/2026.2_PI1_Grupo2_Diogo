@@ -29,6 +29,11 @@ uint8_t frontReplans=0; // replanejamentos seguidos sem sair da celula
 float yawStart=0, centerRef=-1, plannedMm=0, openingEstimate=NAN, edgeLeft=NAN,edgeRight=NAN;
 float centerRefEsq=-1,centerRefDir=-1,wallStoppedMm=NAN,wallStoppedSync=NAN;
 uint16_t wallArrivals=0;
+// V4.9.2: rumo absoluto esperado (yaw da IMU) e manobras auxiliares.
+float expectedYaw=0, lastTurnTarget=NAN, lastAlignDeg=NAN;
+bool aligning=false, nudging=false, pendingBackoff=false;
+uint8_t alignTries=0;
+uint16_t alignCount=0, backoffCount=0;
 NavOpening openingLeft,openingRight;
 NavigationOptions options;
 // Diagnostico do ultimo evento frontal do deslocamento. Nao altera o laser.
@@ -197,6 +202,8 @@ const char* navigationStartWithOptions(uint8_t w,uint8_t h,uint8_t gx,uint8_t gy
  x=targetX=requested.startX;y=targetY=requested.startY;direction=targetDirection=requested.initialDirection;steps=reverseSteps=0;inferredFaces=0;frontReplans=0;
  reversing=false;centerRef=centerRefEsq=centerRefDir=-1;wallStoppedMm=wallStoppedSync=NAN;wallArrivals=0;edgeLeft=edgeRight=openingEstimate=NAN;plannedMm=0;adjustmentApplied=false;frontMove=FrontMoveEvidence{};
  if(!mazeSetPose(x,y,direction))return "erro_ao_inicializar_pose";
+ expectedYaw=lerIMU().yawDireitaGraus;lastTurnTarget=lastAlignDeg=NAN;
+ aligning=nudging=pendingBackoff=false;alignTries=0;alignCount=backoffCount=0;
  options=requested;poseCertain=true;mazeMarkVisited(x,y);startMs=millis();errorText="";beginSensing();
  Serial.printf("[NAV] INICIADA %ux%u inicio=(%u,%u,%c) objetivo=(%u,%u)\n",w,h,x,y,direction,gx,gy);return nullptr;
 }
@@ -256,12 +263,26 @@ void navigationTick(){
   reversing=delta==2&&mazeTraversedFromPose(targetDirection);
   if(reversing&&!options.reverse){fail("retorno_re_pendente_validacao_traseira");return;}
   turnsRemaining=reversing?0:(delta==2?2:(delta==0?0:1));turnRight=delta!=3;
+  // V4.9.2: recuo curto antes de um giro de 90, so se a celula de tras ja foi
+  // percorrida (espaco livre comprovado). Ver NAV_GIRO_RECUO_MM no config.h.
+  pendingBackoff=turnsRemaining==1 && NAV_GIRO_RECUO_MM>0.5f && NAV_GIRO_RECUO_MM<=40.0f &&
+                 mazeTraversedFromPose(dirChar((dirValue(direction)+2)&3));
   stage=turnsRemaining?Stage::TURN_START:Stage::MOVE_START;stageMs=now;return;
  }
  case Stage::TURN_START:
   if(!navigationDriveReady()){if(now-stageMs>3000)fail("freio_nao_liberou_para_giro");return;}
+  if(pendingBackoff){
+   pendingBackoff=false;
+   if(!navigationDriveStartNudge(-NAV_GIRO_RECUO_MM)){fail("nao_iniciou_recuo_antes_do_giro");return;}
+   nudging=true;++backoffCount;
+   lastDriverId=navigationDriveResultId();stage=Stage::TURN_WAIT;stageMs=now;return;
+  }
   yawStart=lerIMU().yawDireitaGraus;
-  if(!navigationDriveStartTurn(turnRight,NAV_RPM_GIRO)){fail("nao_iniciou_giro");return;}
+  // V4.9.2: alvo = rumo esperado depois do giro - yaw atual. Inclui o erro
+  // acumulado, que a correcao pela IMU elimina ao final do giro.
+  expectedYaw+=turnRight?90.0f:-90.0f;
+  lastTurnTarget=expectedYaw-yawStart;
+  if(!navigationDriveStartTurn(turnRight,NAV_RPM_GIRO,lastTurnTarget)){fail("nao_iniciou_giro");return;}
   lastDriverId=navigationDriveResultId();stage=Stage::TURN_WAIT;stageMs=now;return;
  case Stage::TURN_WAIT:
   if(navigationDriveResultId()==lastDriverId)return;
@@ -291,6 +312,17 @@ void navigationTick(){
    }
   }
   if(!navigationDriveReady()){if(now-stageMs>3000)fail("freio_nao_liberou_para_deslocamento");return;}
+  // V4.9.2: antes de andar, alinha o rumo com o esperado (erro de giros,
+  // escorregamento ou do posicionamento inicial). Nao vale para a re.
+  if(!reversing && NAV_GIRO_CORRIGIR_IMU && alignTries<NAV_ALINHAR_TENTATIVAS){
+   const float err=expectedYaw-lerIMU().yawDireitaGraus;
+   if(fabsf(err)>NAV_ALINHAR_GRAUS && fabsf(err)<=NAV_ALINHAR_MAX_GRAUS){
+    if(!navigationDriveStartAlign(err)){fail("nao_iniciou_alinhamento");return;}
+    aligning=true;++alignTries;++alignCount;lastAlignDeg=err;
+    lastDriverId=navigationDriveResultId();stage=Stage::TURN_WAIT;stageMs=now;return;
+   }
+  }
+  alignTries=0;
   yawStart=lerIMU().yawDireitaGraus;plannedMm=NAV_CELULA_MM;adjustmentApplied=false;
   edgeLeft=edgeRight=openingEstimate=NAN;openingLeft.reset(lerLaser(LASER_U2).total);openingRight.reset(lerLaser(LASER_U4).total);
   frontMove=FrontMoveEvidence{};
@@ -342,7 +374,10 @@ void navigationTick(){
    if(mazeIsGoal()){stage=Stage::DONE;errorText="objetivo_atingido";return;}
    beginSensing();return;
   }
-  if(fabsf((lerIMU().yawDireitaGraus-yawStart)-(turnRight?90.0f:-90.0f))>NAV_YAW_GIRO_TOL_GRAUS){fail("giro_IMU_fora_tolerancia");return;}
+  if(nudging){nudging=false;stage=Stage::TURN_START;stageMs=now;return;}
+  if(aligning){aligning=false;stage=Stage::MOVE_START;stageMs=now;return;}
+  // V4.9.2: confere contra o rumo ABSOLUTO esperado, nao so o giro relativo.
+  if(fabsf(lerIMU().yawDireitaGraus-expectedYaw)>NAV_YAW_GIRO_TOL_GRAUS){fail("giro_IMU_fora_tolerancia");return;}
   direction=dirChar((dirValue(direction)+(turnRight?1:3))&3);mazeSetPose(x,y,direction);
   if(--turnsRemaining){stage=Stage::TURN_START;stageMs=now;return;}
   beginSensing();return;
@@ -367,6 +402,9 @@ String navigationStatusJson(){
   ",\"lateraisCalibrados\":"+String(NAV_LATERAIS_CALIBRADOS?"true":"false")+",\"laserU3AteNarizMm\":"+String(NAV_U3_ATE_NARIZ_MM,1)+
   ",\"modoSemAlvoHabilitado\":"+String(NAV_SEM_ALVO_COMO_PASSAGEM?"true":"false")+",\"semAlvoU3Seguidas\":"+String(sensorHistorico[LASER_U3].semAlvoSeguidas())+
   ",\"celulasComFaceInferida\":"+String(inferredFaces)+
+  ",\"rumoEsperadoGraus\":"+String(expectedYaw,1)+",\"erroRumoGraus\":"+String(expectedYaw-lerIMU().yawDireitaGraus,1)+
+  ",\"alvoUltimoGiroGraus\":"+nOrNull(lastTurnTarget)+",\"alinhamentos\":"+String(alignCount)+
+  ",\"ultimoAlinhamentoGraus\":"+nOrNull(lastAlignDeg)+",\"recuosAntesDoGiro\":"+String(backoffCount)+
   ",\"u3CodigoAvanco\":"+String(frontMove.raw)+",\"u3RangeStatusAvanco\":"+String(frontMove.range)+
   ",\"u3IdadeEventoAvancoMs\":"+String(frontMove.eventAge)+",\"u3IdadeValidaAvancoMs\":"+String(frontMove.validAge)+
   ",\"u3ProgressoAvancoMm\":"+nOrNull(frontMove.progress)+",\"u3FolgaEstimadaMm\":"+nOrNull(frontMove.remaining)+

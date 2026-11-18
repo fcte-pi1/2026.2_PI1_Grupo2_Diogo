@@ -84,7 +84,10 @@ bool navigationDriveStopAtWall(){
 }
 bool navigationDriveSettledStraight(float& p,float& sync){if(moving)return false;p=progress;sync=0;return true;}
 bool navigationDriveAdjustStraight(float mm){assert(moving&&!turning&&fabsf(mm-targetMm)<=NAV_AJUSTE_MAX_MM);targetMm=mm;++adjustments;return true;}
-bool navigationDriveStartTurn(bool right,float rpm){assert(rpm>0);moving=true;turning=true;resultOk=true;rightTurn=right;startDriveMs=nowMs;++turns;return true;}
+static float turnTarget=0,driftPerMove=0,alignTotal=0,lastTurnAlvo=0;static int aligns=0,nudges=0;static bool aligningFake=false;
+bool navigationDriveStartTurn(bool right,float rpm,float alvo){assert(rpm>0&&fabsf(fabsf(alvo)-90)<=15);moving=true;turning=true;aligningFake=false;resultOk=true;rightTurn=right;turnTarget=alvo;lastTurnAlvo=alvo;startDriveMs=nowMs;++turns;return true;}
+bool navigationDriveStartAlign(float g){assert(!moving&&fabsf(g)<=15);moving=true;turning=true;aligningFake=true;resultOk=true;turnTarget=g;alignTotal+=g;startDriveMs=nowMs;++aligns;return true;}
+bool navigationDriveStartNudge(float mm){assert(!moving&&mm<0&&mm>=-40);++nudges;resultOk=true;++resultId;return true;}
 uint32_t navigationDriveResultId(){return resultId;}
 bool navigationDriveResultOk(){return resultOk;}
 const char* navigationDriveResultReason(){return "simulacao_falhou";}
@@ -93,10 +96,13 @@ void pararTesteDeEmergencia(const char* why){moving=false;navigationNotifyStop(w
 static void tick(){
  if(moving){
   if(forceMotionFail&&nowMs-startDriveMs>200){moving=false;resultOk=false;++resultId;}
-  else if(turning&&nowMs-startDriveMs>350){heading=rightTurn?Grid::right(heading):Grid::left(heading);yaw+=rightTurn?90:-90;moving=false;++resultId;}
+  else if(turning&&nowMs-startDriveMs>350){
+   // Giro com correcao pela IMU: termina no alvo pedido pela navegacao.
+   if(!aligningFake)heading=rightTurn?Grid::right(heading):Grid::left(heading);
+   yaw+=turnTarget;moving=false;++resultId;}
   else if(!turning){
    const float p=0.14f*(nowMs-startDriveMs);progress=targetMm>0?p:-p;
-   if(p>=fabsf(targetMm)){const auto d=targetMm>0?heading:Grid::opposite(heading);px+=Grid::dx(d);py+=Grid::dy(d);moving=false;++resultId;}
+   if(p>=fabsf(targetMm)){const auto d=targetMm>0?heading:Grid::opposite(heading);px+=Grid::dx(d);py+=Grid::dy(d);moving=false;yaw+=driftPerMove;++resultId;}
   }
  }
  navigationTick();if(has("folga_medida_recente"))usedMemory=true;nowMs+=20;
@@ -132,6 +138,15 @@ int main(){
   auto o=navigationDefaultOptions();o.startX=2;o.startY=2;o.initialDirection='S';
   assert(!navigationStartWithOptions(3,3,0,0,o));run();expectGoal();puts("PASS: inicio em (2,2) voltado S chega em (0,0)");
   reset(3,3,0,0);o.startX=3;assert(navigationStartWithOptions(3,3,0,0,o));o.startX=0;o.startY=0;assert(navigationStartWithOptions(3,3,0,0,o));o.startY=1;o.initialDirection='X';assert(navigationStartWithOptions(3,3,0,0,o));puts("PASS: inicio invalido e recusado");}
+ // V4.9.2: deriva de 4 graus em cada reta e corrigida antes da reta seguinte.
+ {reset(4,2,3,0);for(int x=0;x<3;++x)assert(truth.observe(x,0,EAST,false));
+  aligns=0;alignTotal=0;driftPerMove=4;auto o=navigationDefaultOptions();o.initialDirection='L';heading=EAST;
+  assert(!navigationStartWithOptions(4,2,3,0,o));run();expectGoal();
+  assert(aligns==2&&fabsf(alignTotal+8)<0.01f);driftPerMove=0;puts("PASS: deriva de rumo nas retas e alinhada pela IMU");}
+ // Erro acumulado entra no alvo do giro seguinte (rumo absoluto).
+ {reset(2,2,1,1);assert(truth.observe(0,0,NORTH,false));assert(truth.observe(0,1,EAST,false));
+  driftPerMove=3;aligns=0;assert(!navigationStart(2,2,1,1));run();expectGoal();
+  assert(fabsf(lastTurnAlvo-87)<0.01f);driftPerMove=0;puts("PASS: giro mira o rumo absoluto (87 graus apos 3 de deriva)");}
  reset(2,2,0,1);auto invalid=navigationDefaultOptions();invalid.corridorWidth=0;assert(navigationStartWithOptions(2,2,0,1,invalid));puts("PASS: ajuste exige geometria valida");
  reset(2,2,0,1);missingFront=true;assert(navigationStart(2,2,0,1));puts("PASS: sensor nao inicializado bloqueia inicio");
  reset(2,2,0,1);assert(truth.observe(0,0,NORTH,false));forceMotionFail=true;assert(!navigationStart(2,2,0,1));run();assert(has("FALHA")&&has("\"poseConfiavel\":false"));assert(std::string(mazeEstadoJson().c_str()).find("\"pose\":null")!=std::string::npos);puts("PASS: falha no deslocamento invalida pose");
