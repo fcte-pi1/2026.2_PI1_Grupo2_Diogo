@@ -2,7 +2,14 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.encoders import jsonable_encoder
 from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import text
@@ -17,6 +24,7 @@ from app.schemas.telemetry import (
     PositionData,
     TelemetryData,
 )
+from app.services import esp_maze
 from app.services.telemetry_service import telemetry_service
 from app.services.esp_websocket import esp_websocket_manager
 
@@ -39,7 +47,12 @@ def get_esp_connection_status():
 def get_current_telemetry(db: Session = Depends(get_db)):
     """Consulta a última leitura válida; recupera do banco após reinício."""
     try:
-        return {**_get_current_telemetry(db), "walls": _active_walls(db)}
+        current = _get_current_telemetry(db)
+        return {
+            **current,
+            "walls": _active_walls(db),
+            "maze_size": esp_maze.maze_size_for(current["execucao_id"]),
+        }
     except SQLAlchemyError:
         db.rollback()
         logger.warning("Consulta da telemetria indisponível.", exc_info=True)
@@ -121,11 +134,12 @@ def _get_current_telemetry(db: Session):
 @router.post("")
 def receive_telemetry(
     telemetry: EspTelemetryInput | TelemetryData,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     """Recebe uma leitura; persiste quando há uma corrida ativa."""
     try:
-        return _save_telemetry(telemetry, db)
+        result = _save_telemetry(telemetry, db)
     except SQLAlchemyError as error:
         db.rollback()
         logger.warning("Gravação da telemetria indisponível.", exc_info=True)
@@ -133,11 +147,21 @@ def receive_telemetry(
             status_code=503,
             detail="Leitura recebida, mas não foi possível gravá-la.",
         ) from error
+    execucao_id = _maze_sync_target(telemetry, result)
+    if execucao_id is not None:
+        background_tasks.add_task(esp_maze.sync_from_esp, execucao_id)
+    return result
+
+
+def _maze_sync_target(telemetry: EspTelemetryInput | TelemetryData, result: dict):
+    """Pacote da ESP durante uma corrida: o mapa de paredes dela deve ser lido."""
+    if isinstance(telemetry, EspTelemetryInput):
+        return result.get("execucao_id")
+    return None
 
 
 def _save_telemetry(telemetry: EspTelemetryInput | TelemetryData, db: Session):
     needs_stored_position = False
-    walls: list[dict] = []
     reported_connected = (
         telemetry.connected if isinstance(telemetry, EspTelemetryInput) else True
     )
@@ -151,12 +175,7 @@ def _save_telemetry(telemetry: EspTelemetryInput | TelemetryData, db: Session):
             position = PositionData(
                 row=telemetry.estimated_position.y, col=telemetry.estimated_position.x
             )
-        if position is not None:
-            walls = [
-                {"celula_x": position.col, "celula_y": position.row, "lado": lado}
-                for lado in telemetry.walls
-            ]
-        else:
+        if position is None:
             needs_stored_position = cached_position is None
             position = PositionData(**(cached_position or {"row": 0, "col": 0}))
         telemetry = TelemetryData(
@@ -182,16 +201,6 @@ def _save_telemetry(telemetry: EspTelemetryInput | TelemetryData, db: Session):
 
     if execution is None:
         return {"status": "received", "saved": False, "execucao_id": None}
-
-    if walls:
-        db.execute(
-            text(
-                "INSERT INTO parede_detectada (execucao_id, celula_x, celula_y, lado) "
-                "VALUES (:execucao_id, :celula_x, :celula_y, :lado) ON CONFLICT DO NOTHING"
-            ),
-            [{"execucao_id": execution["id"], **wall} for wall in walls],
-        )
-        db.commit()
 
     elapsed_ms = max(0, execution["elapsed_ms"])
     telemetry_service.associate_execution(
@@ -341,6 +350,12 @@ async def receive_telemetry_websocket(websocket: WebSocket):
 
             try:
                 result = await asyncio.to_thread(_save_websocket_sample, telemetry)
+                execucao_id = _maze_sync_target(telemetry, result)
+                if execucao_id is not None:
+                    # Em segundo plano: a resposta à ESP não espera a leitura do mapa.
+                    asyncio.get_running_loop().run_in_executor(
+                        None, esp_maze.sync_from_esp, execucao_id
+                    )
                 await esp_websocket_manager.send_json(result)
             except HTTPException as error:
                 await esp_websocket_manager.send_json(

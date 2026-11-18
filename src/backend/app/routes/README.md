@@ -301,3 +301,24 @@ Para executar todos os testes do backend:
 ```bash
 python -m pytest -v
 ```
+
+## Paredes detectadas — RF-SW02
+
+O firmware guarda o mapa do labirinto na própria ESP e não envia as paredes na telemetria. Quando chega um pacote da ESP (`POST /api/telemetry` ou `WS /ws/telemetry`) durante uma execução ativa, o backend busca `GET {MICROMOUSE_ESP_BASE_URL}/api/maze` em segundo plano (`app/services/esp_maze.py`), no máximo uma vez por segundo, e deixa a tabela `parede_detectada` da execução igual ao mapa: grava as paredes novas e apaga as que o robô reabriu.
+
+- As coordenadas seguem o mapa da ESP: origem (0,0) no canto sudoeste, `x` para leste e `y` para o norte.
+- Cada parede interna é gravada uma vez, como `norte` (entre `y` e `y+1`) ou `leste` (entre `x` e `x+1`). As bordas externas não são gravadas.
+- Enquanto a ESP está sem pose (antes de a missão ser iniciada no painel `/missao`, ou depois de uma falha), as paredes já gravadas são mantidas.
+- `GET /api/telemetry/current` e `WS /ws/telemetry/current` trazem `walls` (`x`, `y`, `lado`) e `maze_size` (`columns` = largura e `rows` = altura do mapa da ESP), que é `null` fora de uma corrida.
+- `MICROMOUSE_ESP_BASE_URL` vale `http://192.168.4.1` por padrão; vazio desliga a leitura. O backend precisa alcançar a ESP, então rode-o no computador conectado à rede `Xaropinho-WiFi`. Dentro do Docker, o IP da ESP pode não ser alcançável.
+
+### Testar sem o carrinho
+
+`scripts/simular_esp.py` faz o papel da ESP: serve `/api/maze` e envia telemetria no formato do firmware. O robô simulado espera uma execução ativa e então explora um labirinto aleatório do tamanho do tipo escolhido no site (8x4 = 4 de largura × 8 de altura), que é impresso no terminal para comparar com o desenho do site. Ao finalizar a execução, ele volta ao estado do boot e espera a próxima. Em `src/backend`:
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.simulador.yml up -d backend
+.venv\Scripts\python scripts\simular_esp.py
+```
+
+O `docker-compose.simulador.yml` só aponta `MICROMOUSE_ESP_BASE_URL` para o simulador (`http://host.docker.internal:8081`). Com o frontend no ar, abra a tela de Telemetria e clique em **Iniciar**. Opções do simulador: `--largura` e `--altura` (fixam o tamanho em vez de seguir o site), `--seed` e `--passo` (segundos por célula, 2 por padrão). A corrida simulada é gravada no banco como uma execução normal. Para voltar ao carrinho de verdade, rode `docker compose up -d backend`.

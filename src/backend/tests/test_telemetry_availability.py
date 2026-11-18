@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.main import app
 from app.routes import telemetry as routes
+from app.services import esp_maze
 from app.services.telemetry_service import TelemetryService
 
 
@@ -142,32 +143,52 @@ def test_legacy_packet_without_position_keeps_the_last_stored_cell(environment):
     assert client.get("/api/telemetry/current").json()["position"] == {"row": 2, "col": 3}
 
 
-def test_esp_walls_are_saved_for_the_reported_cell_and_streamed(environment):
+def test_esp_estimated_position_is_saved_as_row_and_col(environment):
     client, _, db = environment
     db.active = True
     response = client.post("/api/telemetry", json={
         "bateria": 80, "velocidade": 0, "rpm_motor": 0,
-        "posicao_estimada": {"x": 3, "y": 2, "direcao": "S"},
-        "paredes": ["norte", "oeste"],
+        "posicao_estimada": {"x": 3, "y": 2},
     })
     assert response.json()["saved"] is True
-    assert db.inserts[0][1] == [
-        {"execucao_id": 2, "celula_x": 3, "celula_y": 2, "lado": "norte"},
-        {"execucao_id": 2, "celula_x": 3, "celula_y": 2, "lado": "oeste"},
-    ]
-    db.walls = [{"x": 3, "y": 2, "lado": "norte"}]
-    current = client.get("/api/telemetry/current").json()
-    assert current["position"] == {"row": 2, "col": 3}
-    assert current["walls"] == db.walls
+    assert db.inserts[1][1]["pos_x"] == 3
+    assert db.inserts[1][1]["pos_y"] == 2
+    assert client.get("/api/telemetry/current").json()["position"] == {"row": 2, "col": 3}
 
-def test_esp_walls_without_position_are_not_saved(environment):
+
+@pytest.fixture
+def maze_syncs(monkeypatch):
+    calls = []
+    monkeypatch.setattr(esp_maze, "sync_from_esp", calls.append)
+    return calls
+
+
+def test_esp_packet_during_a_race_reads_the_robot_maze(environment, maze_syncs):
     client, _, db = environment
     db.active = True
-    client.post("/api/telemetry", json={
-        "bateria": 80, "velocidade": 0, "rpm_motor": 0, "paredes": ["norte"],
-    })
-    assert db.inserts
-    assert not [sql for sql, _ in db.inserts if "parede_detectada" in sql]
+    client.post("/api/telemetry", json={"bateria": 80, "velocidade": 0, "rpm_motor": 0})
+    assert maze_syncs == [2]
+
+
+def test_maze_is_not_read_without_a_race_or_for_other_clients(environment, maze_syncs):
+    client, _, db = environment
+    client.post("/api/telemetry", json={"bateria": 80, "velocidade": 0, "rpm_motor": 0})
+    db.active = True
+    client.post("/api/telemetry", json=packet())
+    assert maze_syncs == []
+
+
+def test_current_reading_streams_the_race_walls_and_robot_maze_size(environment, monkeypatch):
+    client, _, db = environment
+    db.active = True
+    client.post("/api/telemetry", json=packet())
+    db.walls = [{"x": 1, "y": 0, "lado": "norte"}, {"x": 0, "y": 2, "lado": "leste"}]
+    monkeypatch.setattr(esp_maze, "_maze_size", {"execucao_id": 2, "columns": 4, "rows": 8})
+    current = client.get("/api/telemetry/current").json()
+    assert current["walls"] == db.walls
+    assert current["maze_size"] == {"columns": 4, "rows": 8}
+    monkeypatch.setattr(esp_maze, "_maze_size", {"execucao_id": 1, "columns": 4, "rows": 8})
+    assert client.get("/api/telemetry/current").json()["maze_size"] is None
 
 
 def test_loss_preserves_readings_and_new_packet_restores_connection(environment):

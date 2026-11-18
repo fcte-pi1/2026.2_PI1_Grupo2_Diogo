@@ -3,17 +3,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Posicao } from '../types'
 import { Percurso } from './Percurso'
 
+// y cresce para o norte (para cima na tela), como no mapa da ESP
 const trajectory: Posicao[] = [
-  { x: 0, y: 0, direcao: 'S' },
-  { x: 0, y: 1, direcao: 'S' },
-  { x: 0, y: 2, direcao: 'S' },
-  { x: 0, y: 3, direcao: 'S' },
+  { x: 0, y: 0, direcao: 'N' },
+  { x: 0, y: 1, direcao: 'N' },
+  { x: 0, y: 2, direcao: 'N' },
+  { x: 0, y: 3, direcao: 'N' },
   { x: 1, y: 3, direcao: 'L' },
   { x: 2, y: 3, direcao: 'L' },
   { x: 3, y: 3, direcao: 'L' },
 ]
 
-const fullPathPoints = '20,20 20,60 20,100 20,140 60,140 100,140 140,140'
+const fullPathPoints = '20,140 20,100 20,60 20,20 60,20 100,20 140,20'
 
 describe('Percurso', () => {
   beforeEach(() => {
@@ -34,13 +35,13 @@ describe('Percurso', () => {
     expect(container.querySelector('svg > rect')).toHaveAttribute('height', String(rows * 40))
   })
 
-  it('places the start and goal markers at the grid corners', () => {
+  it('places the start at the south-west corner and the goal at the north-east corner', () => {
     render(<Percurso linhas={8} colunas={4} trajetoria={[]} />)
 
     expect(screen.getByText('S')).toHaveAttribute('x', '20')
-    expect(screen.getByText('S')).toHaveAttribute('y', '20')
+    expect(screen.getByText('S')).toHaveAttribute('y', '300')
     expect(screen.getByText('F')).toHaveAttribute('x', '140')
-    expect(screen.getByText('F')).toHaveAttribute('y', '300')
+    expect(screen.getByText('F')).toHaveAttribute('y', '20')
   })
 
   it('draws the seed trajectory through cell centers and places the robot at its end', () => {
@@ -51,7 +52,7 @@ describe('Percurso', () => {
     expect(container.querySelector('polyline')).toHaveAttribute('points', fullPathPoints)
     const robot = container.querySelector<SVGGElement>('svg > g[style]')
     expect(robot).not.toBeNull()
-    expect(robot?.style.transform).toContain('translate(140px, 140px)')
+    expect(robot?.style.transform).toContain('translate(140px, 20px)')
     expect(screen.getByRole('slider', { name: 'Passo do replay' })).toHaveValue('6')
   })
 
@@ -70,7 +71,7 @@ describe('Percurso', () => {
     )
 
     expect(container.querySelector('svg > g[style]')).toHaveStyle({
-      transform: `translate(100px, 60px) rotate(${angle}deg)`,
+      transform: `translate(100px, 100px) rotate(${angle}deg)`,
     })
   })
 
@@ -79,7 +80,7 @@ describe('Percurso', () => {
 
     expect(container.querySelector('polyline')).toHaveAttribute('points', '')
     expect(container.querySelector('svg > g[style]')).toHaveStyle({
-      transform: 'translate(20px, 20px) rotate(0deg)',
+      transform: 'translate(20px, 140px) rotate(0deg)',
     })
     expect(screen.getByRole('button', { name: /Reproduzir/ })).toBeDisabled()
     expect(screen.getByRole('slider', { name: 'Passo do replay' })).toBeDisabled()
@@ -91,7 +92,7 @@ describe('Percurso', () => {
       <Percurso linhas={4} colunas={4} trajetoria={trajectory.slice(0, 1)} />,
     )
 
-    expect(container.querySelector('polyline')).toHaveAttribute('points', '20,20')
+    expect(container.querySelector('polyline')).toHaveAttribute('points', '20,140')
     expect(container.querySelector('svg > g[style]')).not.toBeNull()
     expect(screen.getByRole('button', { name: /Reproduzir/ })).toBeDisabled()
     expect(screen.getByRole('slider', { name: 'Passo do replay' })).toBeDisabled()
@@ -116,7 +117,7 @@ describe('Percurso', () => {
     fireEvent.click(screen.getByRole('button', { name: /Reproduzir/ }))
 
     expect(slider).toHaveValue('0')
-    expect(container.querySelector('polyline')).toHaveAttribute('points', '20,20')
+    expect(container.querySelector('polyline')).toHaveAttribute('points', '20,140')
     expect(screen.getByRole('button', { name: /Pausar/ })).toBeEnabled()
 
     act(() => { vi.advanceTimersByTime(399) })
@@ -124,7 +125,7 @@ describe('Percurso', () => {
 
     act(() => { vi.advanceTimersByTime(1) })
     expect(slider).toHaveValue('1')
-    expect(container.querySelector('polyline')).toHaveAttribute('points', '20,20 20,60')
+    expect(container.querySelector('polyline')).toHaveAttribute('points', '20,140 20,100')
   })
 
   it('pauses replay and resumes from the same position', () => {
@@ -160,7 +161,7 @@ describe('Percurso', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Reproduzir/ }))
     expect(slider).toHaveValue('0')
-    expect(container.querySelector('polyline')).toHaveAttribute('points', '20,20')
+    expect(container.querySelector('polyline')).toHaveAttribute('points', '20,140')
   })
 
   it('seeks to a selected position, pauses playback, and can select the end', () => {
@@ -174,7 +175,7 @@ describe('Percurso', () => {
     act(() => { vi.advanceTimersByTime(2000) })
     expect(slider).toHaveValue('3')
     expect(container.querySelector('polyline')).toHaveAttribute(
-      'points', '20,20 20,60 20,100 20,140',
+      'points', '20,140 20,100 20,60 20,20',
     )
     expect(screen.getByRole('button', { name: /Reproduzir/ })).toBeEnabled()
 
@@ -193,7 +194,7 @@ describe('Percurso', () => {
     rerender(<Percurso linhas={4} colunas={4} trajetoria={trajectory.slice(0, 2)} />)
 
     expect(slider).toHaveValue('1')
-    expect(container.querySelector('polyline')).toHaveAttribute('points', '20,20 20,60')
+    expect(container.querySelector('polyline')).toHaveAttribute('points', '20,140 20,100')
   })
 
   it('follows new positions when the trajectory grows outside replay', () => {
@@ -225,8 +226,8 @@ describe('Percurso', () => {
         linhas={4}
         colunas={4}
         trajetoria={[
-          { x: 1, y: 1, direcao: 'O' },
-          { x: 1, y: 0, direcao: 'N' },
+          { x: 1, y: 0, direcao: 'O' },
+          { x: 1, y: 1, direcao: 'N' },
         ]}
       />,
     )
@@ -240,7 +241,7 @@ describe('Percurso', () => {
       .toContain('rotate(0deg)')
   })
 
-  it('draws each detected wall on its cell edge', () => {
+  it('draws each detected wall on its cell edge, with north at the top', () => {
     const { container } = render(
       <Percurso
         linhas={4}
@@ -258,6 +259,7 @@ describe('Percurso', () => {
     const segments = [...container.querySelectorAll('line')].map(line =>
       ['x1', 'y1', 'x2', 'y2'].map(attr => line.getAttribute(attr)).join(','),
     )
-    expect(segments).toEqual(['40,80,80,80', '40,120,80,120', '80,80,80,120', '40,80,40,120'])
+    // célula (1,2) numa grade de 4 linhas: segunda linha de cima para baixo na tela
+    expect(segments).toEqual(['40,40,80,40', '40,80,80,80', '80,40,80,80', '40,40,40,80'])
   })
 })

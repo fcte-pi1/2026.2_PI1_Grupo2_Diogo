@@ -1,5 +1,4 @@
 from datetime import datetime, timezone
-from typing import Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -81,9 +80,6 @@ class EspTelemetryInput(BaseModel):
     estimated_position: EstimatedPosition | None = Field(
         default=None, alias="posicao_estimada"
     )
-    walls: list[Literal["norte", "sul", "leste", "oeste"]] = Field(
-        default_factory=list, alias="paredes", max_length=4
-    )
 
     battery_pct: float = Field(alias="bateria", ge=0, le=100)
     speed_cm_s: float = Field(alias="velocidade", ge=0)
@@ -101,4 +97,36 @@ class EspTelemetryInput(BaseModel):
     def validate_position_pair(self):
         if (self.row is None) != (self.col is None):
             raise ValueError("Informe row e col juntos quando enviar a posição.")
+        return self
+
+
+class EspMazePose(BaseModel):
+    x: int = Field(ge=0)
+    y: int = Field(ge=0)
+
+
+class EspMaze(BaseModel):
+    """Mapa que a ESP mantém em GET /api/maze.
+
+    celulas[y][x] = [conhecidas, paredes, visitada], com máscaras N=1, L=2,
+    S=4 e O=8. A origem (0,0) é o canto sudoeste e y cresce para o norte.
+    """
+
+    largura: int = Field(ge=2, le=16)
+    altura: int = Field(ge=2, le=16)
+    pose: EspMazePose | None = None
+    celulas: list[list[list[int]]]
+
+    @model_validator(mode="after")
+    def validate_grid(self):
+        if len(self.celulas) != self.altura or any(
+            len(linha) != self.largura for linha in self.celulas
+        ):
+            raise ValueError("celulas deve ter altura x largura posições.")
+        if any(
+            len(celula) < 2 or not all(0 <= mascara <= 15 for mascara in celula[:2])
+            for linha in self.celulas
+            for celula in linha
+        ):
+            raise ValueError("Cada célula deve trazer as máscaras de 0 a 15.")
         return self

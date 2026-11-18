@@ -131,6 +131,13 @@ test("mensagens inválidas não sobrescrevem a última leitura válida", () => {
   expect(state().data.metrics.battery_pct).toBe(87);
 });
 
+test("tamanho de labirinto inválido não sobrescreve a última leitura válida", () => {
+  mount();
+  act(() => MockWebSocket.instances[0].receive(snapshot({ maze_size: { columns: 4, rows: 8 } })));
+  act(() => MockWebSocket.instances[0].receive(snapshot({ maze_size: { columns: 0, rows: 8 } })));
+  expect(state().data.maze_size).toEqual({ columns: 4, rows: 8 });
+});
+
 test("mantém a telemetria disponível durante dez minutos de atualizações", () => {
   mount();
   for (let second = 0; second < 600; second++) {

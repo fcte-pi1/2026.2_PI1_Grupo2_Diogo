@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     TELEMETRY_LATENCY_TOLERANCE_MS: int = Field(default=250, ge=0)
     TELEMETRY_HEARTBEAT_INTERVAL_MS: int = 5000
     ESP_CONNECTION_TIMEOUT_MS: int = Field(default=5000, gt=0)
+    # Endereço da ESP na rede Xaropinho-WiFi; o mapa de paredes é lido em
+    # GET {endereço}/api/maze. Vazio desliga a leitura.
+    MICROMOUSE_ESP_BASE_URL: str = "http://192.168.4.1"
 
     model_config = SettingsConfigDict(
         env_file=".env",

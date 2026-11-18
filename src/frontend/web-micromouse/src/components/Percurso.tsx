@@ -9,7 +9,8 @@ const ANGULO: Record<Posicao['direcao'], number> = { N: 0, L: 90, S: 180, O: 270
 const anguloAcumulado = (seq: Posicao[]) =>
   seq.reduce((acc, p) => acc + ((((ANGULO[p.direcao] - acc) % 360) + 540) % 360) - 180, 0)
 
-// segmento de cada lado na borda da célula em celulas: x1, y1, x2, y2
+// segmento de cada lado na borda da célula, em células, a partir do canto
+// superior esquerdo dela na tela: x1, y1, x2, y2
 const BORDA: Record<Parede['lado'], [number, number, number, number]> = {
   norte: [0, 0, 1, 0],
   sul: [0, 1, 1, 1],
@@ -51,7 +52,9 @@ export function Percurso({ linhas, colunas, trajetoria, paredes = [], mostrarCon
     setTocando(true)
   }
 
-  const centro = (p: Ponto) => [p.x * C + C / 2, p.y * C + C / 2]
+  // y cresce para o norte, como no mapa da ESP: a linha 0 fica embaixo.
+  const topo = (y: number) => (linhas - 1 - y) * C
+  const centro = (p: Ponto) => [p.x * C + C / 2, topo(p.y) + C / 2]
   const [ix, iy] = centro({ x: 0, y: 0 })
   const [mx, my] = centro({ x: colunas - 1, y: linhas - 1 })
   const w = colunas * C
@@ -73,9 +76,9 @@ export function Percurso({ linhas, colunas, trajetoria, paredes = [], mostrarCon
             <line
               key={`${x},${y},${lado}`}
               x1={(x + x1) * C}
-              y1={(y + y1) * C}
+              y1={topo(y) + y1 * C}
               x2={(x + x2) * C}
-              y2={(y + y2) * C}
+              y2={topo(y) + y2 * C}
               stroke="#e2e8f0"
               strokeWidth={3}
               strokeLinecap="square"

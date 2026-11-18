@@ -49,6 +49,11 @@ export function parseTelemetrySnapshot(message: string): TelemetrySnapshot | nul
       && LADOS.includes(wall.lado as string)))) {
       return null;
     }
+    if (value.maze_size != null && !(isRecord(value.maze_size)
+      && [value.maze_size.columns, value.maze_size.rows].every(size =>
+        Number.isInteger(size) && (size as number) > 0))) {
+      return null;
+    }
     return value as unknown as TelemetrySnapshot;
   } catch {
     return null;

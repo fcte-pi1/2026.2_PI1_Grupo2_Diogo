@@ -1,0 +1,12 @@
+# Teste sem o carrinho: a API do container lê o mapa de paredes do simulador
+# da ESP (scripts/simular_esp.py), que roda no Windows, fora do container.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.simulador.yml up -d backend
+#
+# Para voltar ao carrinho de verdade (ESP em 192.168.4.1):
+#
+#   docker compose up -d backend
+services:
+  backend:
+    environment:
+      MICROMOUSE_ESP_BASE_URL: http://host.docker.internal:8081

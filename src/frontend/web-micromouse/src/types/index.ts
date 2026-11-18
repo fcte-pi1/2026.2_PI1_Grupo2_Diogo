@@ -79,6 +79,8 @@ export interface TelemetrySnapshot {
   } | null;
   position: { row: number; col: number } | null;
   walls?: Parede[];
+  // Tamanho do mapa da ESP na corrida: columns = largura, rows = altura.
+  maze_size?: { columns: number; rows: number } | null;
 }
 
 export type TelemetryStreamStatus = "connecting" | "open" | "reconnecting";

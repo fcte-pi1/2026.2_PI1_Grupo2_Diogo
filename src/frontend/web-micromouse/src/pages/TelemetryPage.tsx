@@ -14,6 +14,8 @@ import { api } from "../services/api";
 import axios from "axios";
 import { useTelemetry } from "../hooks/useTelemetry";
 import type { PropsExec } from "../types/index";
+import type { ApiTelemetrySample } from "../api";
+import { acrescentarPosicao, percursoDasAmostras } from "../utils/trajetoria";
 
 function segundosDesdeInicio(iniciadaEm?: string | Date): number {
   if (!iniciadaEm) return 0;
@@ -36,7 +38,10 @@ export function TelemetryPage() {
   const [verificandoExecucao, setVerificandoExecucao] = useState(true);
   const [tempoSegundos, setTempoSegundos] = useState(0);
   const [trajetoria, setTrajetoria] = useState<Posicao[]>([]);
-  const { linhas, colunas } = LABIRINTOS[tipo];
+  // Durante a corrida a grade segue o mapa configurado na ESP (largura x altura).
+  const { linhas, colunas } = telemetry?.maze_size
+    ? { linhas: telemetry.maze_size.rows, colunas: telemetry.maze_size.columns }
+    : LABIRINTOS[tipo];
 
   const handleVerificar = useCallback(async (): Promise<PropsExec | null | undefined> => {
     try {
@@ -48,6 +53,22 @@ export function TelemetryPage() {
       return undefined;
     } finally {
       setVerificandoExecucao(false);
+    }
+  }, []);
+
+  // As posições ao vivo só ficam na memória da página. Ao abrir a página (ou
+  // reconectar) no meio da corrida, o trecho já percorrido vem do banco.
+  const carregarPercurso = useCallback(async (execucao: PropsExec) => {
+    const id = execucao.id ?? execucao.execucao_id;
+    if (id === undefined) return;
+    try {
+      const { data } = await api.get<{ samples?: ApiTelemetrySample[] }>(
+        `/api/sessions/${id}/telemetry`,
+        { params: { limit: 1000 } },
+      );
+      if (Array.isArray(data?.samples)) setTrajetoria(percursoDasAmostras(data.samples));
+    } catch {
+      // Sem as amostras gravadas, o percurso segue só com as posições ao vivo.
     }
   }, []);
 
@@ -64,6 +85,7 @@ export function TelemetryPage() {
         setDataExec(execucaoAtiva);
         setInicioExecucao(execucaoAtiva.iniciada_em);
         setTempoSegundos(segundosDesdeInicio(execucaoAtiva.iniciada_em));
+        void carregarPercurso(execucaoAtiva);
       } else {
         setInicioExecucao(undefined);
         setTempoSegundos(0);
@@ -74,26 +96,14 @@ export function TelemetryPage() {
     return () => {
       mounted = false;
     };
-  }, [handleVerificar, streamStatus]);
+  }, [handleVerificar, carregarPercurso, streamStatus]);
 
   useEffect(() => {
     if (!iniciada) return;
     return subscribe(dados => {
       const position = dados.position;
       if (!position || !Number.isInteger(position.row) || !Number.isInteger(position.col)) return;
-      setTrajetoria(anterior => {
-        const ultimo = anterior.at(-1);
-        const { row, col } = position;
-        if (ultimo?.x === col && ultimo.y === row) return anterior;
-        let direcao: Posicao["direcao"] = "N";
-        if (ultimo) {
-          if (row > ultimo.y) direcao = "S";
-          else if (row < ultimo.y) direcao = "N";
-          else if (col > ultimo.x) direcao = "L";
-          else direcao = "O";
-        }
-        return [...anterior, { x: col, y: row, direcao }];
-      });
+      setTrajetoria(anterior => acrescentarPosicao(anterior, position.col, position.row));
     });
   }, [iniciada, subscribe]);
   async function handleIniciarExecucao() {
@@ -249,7 +259,7 @@ export function TelemetryPage() {
                 if (execucaoAtiva === undefined) return;
                 if (execucaoAtiva) {
                   setDataExec(execucaoAtiva);
-                  setTrajetoria([]);
+                  void carregarPercurso(execucaoAtiva);
                   setInicioExecucao(execucaoAtiva.iniciada_em);
                   setTempoSegundos(segundosDesdeInicio(execucaoAtiva.iniciada_em));
                   setIniciada(true);

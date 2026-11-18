@@ -228,7 +228,9 @@ O relatório mede o arquivo inteiro `src/components/Percurso.tsx`, incluindo os 
 
 Para a PR, capture o terminal com o comando e o resultado e o resumo do relatório HTML. Declare que o percentual corresponde a `Percurso.tsx`.
 
-As paredes detectadas chegam no snapshot do WebSocket (`walls`, com `x`, `y` e `lado`), lidas da tabela `parede_detectada` da execução ativa, e o `Percurso` desenha cada uma na borda da sua célula. A ESP só gera parede quando manda `posicao_estimada` e `paredes` no mesmo pacote. A tela de Labirinto (histórico) ainda não exibe as paredes.
+As paredes detectadas chegam no snapshot do WebSocket (`walls`, com `x`, `y` e `lado`), lidas da tabela `parede_detectada` da execução ativa, e o `Percurso` desenha cada uma na borda da sua célula. O backend preenche essa tabela com o mapa que a ESP mantém em `GET /api/maze` (detalhes no [README da API](../../backend/app/routes/README.md#paredes-detectadas--rf-sw02)). A tela de Labirinto (histórico) ainda não exibe as paredes.
+
+O `Percurso` usa o mesmo referencial do mapa da ESP: origem (0,0) no canto sudoeste e `y` crescendo para o norte, que fica em cima na tela. Por isso o início (S) aparece embaixo à esquerda e a meta (F) em cima à direita, como no painel `/missao` do robô. Durante a corrida, a grade da tela de Telemetria segue o tamanho do mapa configurado na ESP (`maze_size`: `columns` = largura, `rows` = altura), em vez do tipo escolhido no seletor. O percurso é montado em `src/utils/trajetoria.ts`: quando o robô aparece na célula de início vindo de uma célula que não é vizinha (a pose antiga da corrida anterior dando lugar à missão nova), o percurso recomeça do S em vez de ligar as duas posições. Ao abrir a tela no meio de uma corrida (ou depois de reconectar), o trecho já percorrido é carregado das amostras gravadas (`GET /api/sessions/{id}/telemetry`), e as posições ao vivo continuam a partir dele.
 
 ## Reconexão da telemetria — RNF04
 

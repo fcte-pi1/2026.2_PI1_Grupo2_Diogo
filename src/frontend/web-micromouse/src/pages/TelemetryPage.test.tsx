@@ -238,4 +238,39 @@ describe('TelemetryPage', () => {
     act(() => socket.send({ position: { row: 3, col: 3 } }))
     expect(document.querySelector('polyline')).toHaveAttribute('points', '')
   })
+
+  test('loads the stretch already travelled when the page opens during a run', async () => {
+    mockApi.get.mockImplementation(async (url: string) => (url.endsWith('/telemetry')
+      ? { data: { samples: [{ pos_x: 0, pos_y: 0 }, { pos_x: 1, pos_y: 0 }, { pos_x: 1, pos_y: 1 }] } }
+      : { data: { ...activeRun, iniciada_em: new Date().toISOString() } }) as never)
+    renderPage()
+    await screen.findByText('Em execução')
+    await waitFor(() => expect(document.querySelector('polyline'))
+      .toHaveAttribute('points', '20,140 60,140 60,100'))
+    expect(mockApi.get).toHaveBeenCalledWith('/api/sessions/42/telemetry', { params: { limit: 1000 } })
+  })
+
+  test('restarts the route at S when the robot pose jumps back to the start cell', async () => {
+    const socket = await renderReady(activeRun)
+    // Pose antiga (meta da corrida anterior) até a missão nova começar em (0,0)
+    act(() => socket.send({ position: { row: 3, col: 3 } }))
+    act(() => socket.send({ position: { row: 0, col: 0 } }))
+    act(() => socket.send({ position: { row: 0, col: 1 } }))
+    expect(document.querySelector('polyline')).toHaveAttribute('points', '20,140 60,140')
+    expect(screen.getByText('Células visitadas').parentElement).toHaveTextContent('2')
+  })
+
+  test('draws the walls mapped by the robot on its own maze grid, with north up', async () => {
+    const socket = await renderReady(activeRun)
+    act(() => socket.send({
+      position: { row: 3, col: 1 },
+      walls: [{ x: 0, y: 0, lado: 'norte' }],
+      maze_size: { columns: 8, rows: 4 },
+    }))
+    const mapa = document.querySelector('svg[viewBox^="-2 -2"]')!
+    expect(mapa).toHaveAttribute('viewBox', '-2 -2 324 164')
+    expect(mapa.querySelector('line')).toHaveAttribute('y1', '120')
+    // de (1,2) para (1,3): y cresceu, o robô foi para o norte e aponta para cima
+    expect(mapa.querySelector<SVGGElement>('g[style]')?.style.transform).toContain('rotate(0deg)')
+  })
 })
