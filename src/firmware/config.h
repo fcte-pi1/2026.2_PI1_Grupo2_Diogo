@@ -1,5 +1,44 @@
 #pragma once
 #include <Arduino.h>
+#include "robot_geometry.h"
+
+// ===== V5.0: GEOMETRIA MEDIDA DO ROBO (18/11/2026) =====
+// As SEIS medidas abaixo sao a unica fonte de geometria do firmware. Tudo o
+// que a navegacao precisa (ponto de giro, limite frontal, meta de cada reta)
+// e DERIVADO delas em robot_geometry.h. Antes disso o codigo carregava
+// estimativas soltas (laser lateral "a 53 mm do eixo", corredor "168 mm") que
+// nunca foram medidas e erravam o ponto de giro em quase um centimetro.
+// Ao trocar de chassi, remedir estas seis e nao mexer em mais nada.
+constexpr float ROBO_LARGURA_MM = 110.0f;          // lateral a lateral
+constexpr float ROBO_COMPRIMENTO_MM = 120.0f;      // traseira a frontal
+constexpr float ROBO_LATERAL_AO_NARIZ_MM = 40.0f;  // recuo da janela do U2/U4
+constexpr float ROBO_U3_AO_NARIZ_MM = 60.0f;       // recuo da janela do U3
+// Leitura REPORTADA pelo U3 com o robo tocando a parede. Nao e desajuste do
+// sensor: e o recuo fisico da janela dentro do chassi. O firmware nunca pode
+// deixar a leitura frontal cair abaixo deste valor.
+constexpr float ROBO_U3_TOCA_MM = 60.0f;
+// Ensaios no labirinto: a partir do instante em que o laser lateral perde a
+// parede, quanto o robo ainda anda ate o eixo ficar no centro da abertura.
+constexpr float ROBO_BORDA_GIRO_FRENTE_MM = 140.0f;
+constexpr float ROBO_BORDA_GIRO_RE_MM = 20.0f;
+inline GeometriaRobo geometriaRobo() {
+    GeometriaRobo g;
+    g.larguraMm = ROBO_LARGURA_MM;
+    g.comprimentoMm = ROBO_COMPRIMENTO_MM;
+    g.lateralAoNarizMm = ROBO_LATERAL_AO_NARIZ_MM;
+    g.u3AoNarizMm = ROBO_U3_AO_NARIZ_MM;
+    g.u3TocaMm = ROBO_U3_TOCA_MM;
+    g.bordaAteGiroFrenteMm = ROBO_BORDA_GIRO_FRENTE_MM;
+    g.bordaAteGiroReMm = ROBO_BORDA_GIRO_RE_MM;
+    return g;
+}
+// Derivadas em tempo de compilacao (as mesmas contas de robot_geometry.h).
+constexpr float ROBO_LATERAL_AO_EIXO_MM = 0.5f * (ROBO_BORDA_GIRO_FRENTE_MM - ROBO_BORDA_GIRO_RE_MM);
+constexpr float ROBO_MEIA_ABERTURA_MM = 0.5f * (ROBO_BORDA_GIRO_FRENTE_MM + ROBO_BORDA_GIRO_RE_MM);
+constexpr float ROBO_EIXO_AO_NARIZ_MM = ROBO_LATERAL_AO_NARIZ_MM + ROBO_LATERAL_AO_EIXO_MM;
+constexpr float ROBO_EIXO_A_TRASEIRA_MM = ROBO_COMPRIMENTO_MM - ROBO_EIXO_AO_NARIZ_MM;
+constexpr float ROBO_U3_AO_EIXO_MM = ROBO_EIXO_AO_NARIZ_MM - ROBO_U3_AO_NARIZ_MM;
+
 
 // === NOVA ELETRONICA - REMAPEAMENTO DE 03/11/2026 ===
 // CANAL A (AO1/AO2) = MOTOR ESQUERDO; encoder esquerdo C1=32 C2=33.
@@ -186,8 +225,10 @@ constexpr uint16_t FRENTE_LIMIAR_MAX_MM = 1000;
 constexpr uint16_t FRENTE_LIMIAR_PADRAO_MM = 250;
 constexpr uint32_t FRENTE_IDADE_MAX_MS = 150;
 constexpr float FRENTE_RPM_MAX_TESTE = 35.0f;
-// Com centralizacao a protecao frontal e obrigatoria e para a 5 cm da parede (leitura do U3).
-constexpr uint16_t FRENTE_LIMIAR_CENTRO_MM = 50;
+// Com centralizacao a protecao frontal e obrigatoria. O valor fixo de 50 mm
+// ficava ABAIXO da leitura do U3 com o robo encostado (ROBO_U3_TOCA_MM = 60):
+// o robo batia antes de a protecao disparar. Agora e sempre o toque + folga.
+constexpr uint16_t FRENTE_LIMIAR_CENTRO_MM = (uint16_t)(ROBO_U3_TOCA_MM + 15.0f);
 // Corredor sem parede ao alcance do U3: partir exige essas leituras "sem alvo" seguidas.
 constexpr uint8_t FRENTE_SEM_ALVO_PARTIDA = 3;
 constexpr uint32_t FRENTE_MEMORIA_PARTIDA_MS = 500;
@@ -259,7 +300,7 @@ constexpr bool NAV_AUTONOMIA_HABILITADA = true; // mudar para true apos checklis
 constexpr bool NAV_LATERAIS_CALIBRADOS = true; // confirmar offsets e posicionamento
 // Distancia da janela do LASER U3 ate o ponto MAIS AVANCADO do chassi (mm).
 // Valor negativo impede armar: medir com regua no robo novo. Nunca chutar.
-constexpr float NAV_U3_ATE_NARIZ_MM = 60.0f;
+constexpr float NAV_U3_ATE_NARIZ_MM = ROBO_U3_TOCA_MM;
 #endif
 constexpr float NAV_CELULA_MM = 180.0f; // distancia entre centros: aferir no labirinto real
 constexpr float NAV_RPM_RETO = 25.0f;
@@ -291,12 +332,15 @@ constexpr bool NAV_RE_HABILITADA = false;
 // (ver NAV_SENSOR_LATERAL_AO_CENTRO_MM) e a centralizacao corrige o desvio lateral.
 constexpr bool NAV_CENTRALIZAR_HABILITADA = true;
 constexpr bool NAV_AJUSTE_ABERTURA_HABILITADO = true;
-// Largura livre do corredor: so o VALOR INICIAL. Durante a missao o robo mede a
-// largura real (esquerda + direita) e passa a usar a medida.
-constexpr float NAV_ABERTURA_LARGURA_MM = 168.0f;
-// Medida do ROBO (nao do labirinto): lasers laterais 53 mm a frente do eixo.
-constexpr float NAV_U2_A_EIXO_MM = 53.0f;
-constexpr float NAV_U4_A_EIXO_MM = 53.0f;
+// Largura livre do corredor. NAO e mais o valor nominal do projeto (168 mm):
+// e a largura que o proprio robo mediu nos dois ensaios de borda, ja com o
+// escorregamento das rodas embutido. Durante a missao ele continua refinando
+// a medida com os dois lasers laterais.
+constexpr float NAV_ABERTURA_LARGURA_MM = 2.0f * ROBO_MEIA_ABERTURA_MM;
+// Medida do ROBO (nao do labirinto): quanto os lasers laterais ficam a FRENTE
+// do eixo. Derivado dos ensaios de borda, nao mais estimado.
+constexpr float NAV_U2_A_EIXO_MM = ROBO_LATERAL_AO_EIXO_MM;
+constexpr float NAV_U4_A_EIXO_MM = ROBO_LATERAL_AO_EIXO_MM;
 #endif
 // V4.9.3: medida do ROBO: distancia lateral entre a janela de cada laser
 // lateral e a linha central do robo (mm). Com ela o robo calcula a largura do
@@ -325,6 +369,9 @@ constexpr bool NAV_GIRO_CORRIGIR_IMU = true;
 constexpr float NAV_ALINHAR_GRAUS = 2.0f;
 constexpr float NAV_ALINHAR_MAX_GRAUS = 15.0f;
 constexpr uint8_t NAV_ALINHAR_TENTATIVAS = 2;
+// OBSOLETO na V5.0: substituido pelo reposicionamento calculado em
+// nav_pose_logic.h (navPoseAjusteAntesDoGiroMm), que leva o eixo ao centro da
+// abertura em vez de recuar um valor fixo. Mantido so para referencia.
 // Recuo ANTES de um giro de 90 graus (mm), so quando a celula de tras ja foi
 // percorrida. Serve para robo com eixo na traseira: o nariz varre um circulo
 // de raio R em volta do eixo; se R for maior que a metade livre do corredor,
@@ -336,3 +383,24 @@ constexpr float NAV_GIRO_RECUO_RPM = 25.0f;
 // V4.9.1: tempo maximo com o U3 sem evidencia durante o avanco antes de parar
 // (uma unica amostra ruim nao interrompe mais a missao).
 constexpr uint32_t NAV_FRENTE_INDEFINIDA_MAX_MS = 300;
+
+// ===== V5.0: POSICAO LONGITUDINAL DENTRO DA CELULA (nav_pose_logic.h) =====
+// O robo deixou de supor que toda reta comeca e termina no centro da celula.
+// Ele guarda o deslocamento do eixo em relacao ao centro e desconta na reta
+// seguinte, de modo que uma parada antecipada nao acumula erro nem invalida
+// a pose.
+// Missao que comeca com a TRASEIRA ENCOSTADA na parede (e o caso real: o robo
+// nao e colocado no centro do quadrado). Com false, parte do centro.
+constexpr bool NAV_PARTIDA_TRASEIRA_ENCOSTADA = true;
+// Folga que o robo mantem da parede da frente ao terminar uma reta (leitura do
+// U3 = ROBO_U3_TOCA_MM + esta folga).
+constexpr float NAV_PARADA_FOLGA_MM = 15.0f;
+// Margem dura: abaixo de ROBO_U3_TOCA_MM + isto, para na hora (emergencia).
+constexpr float NAV_EMERGENCIA_FOLGA_MM = 5.0f;
+// Encurtar a meta so vale a pena se ainda sobra este tanto para desacelerar.
+constexpr float NAV_ENCURTAR_MIN_RESTANTE_MM = 12.0f;
+// Reposicionamento longitudinal antes de um giro de 90 graus.
+constexpr float NAV_GIRO_OFFSET_TOL_MM = 5.0f;
+constexpr float NAV_GIRO_OFFSET_MAX_MM = 55.0f;
+// Offset fora desta margem alem da meia abertura = odometria perdida.
+constexpr float NAV_OFFSET_MARGEM_MM = 35.0f;

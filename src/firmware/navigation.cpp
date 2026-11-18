@@ -6,6 +6,8 @@
 #include "nav_laser_policy.h"
 #include "nav_opening.h"
 #include "nav_wall_arrival.h"
+#include "nav_pose_logic.h"
+#include "robot_geometry.h"
 #include "battery.h"
 #include "imu.h"
 #include "config.h"
@@ -31,12 +33,21 @@ float centerRefEsq=-1,centerRefDir=-1,wallStoppedMm=NAN,wallStoppedSync=NAN;
 uint16_t wallArrivals=0;
 // V4.9.2: rumo absoluto esperado (yaw da IMU) e manobras auxiliares.
 float expectedYaw=0, lastTurnTarget=NAN, lastAlignDeg=NAN;
-bool aligning=false, nudging=false, pendingBackoff=false;
+bool aligning=false, nudging=false;
 uint8_t alignTries=0;
 uint16_t alignCount=0, backoffCount=0;
 // V4.9.3: geometria do corredor APRENDIDA durante a missao e desvio lateral.
 float learnedHalf=-1, learnedWidth=-1, lateralOffset=NAN, lastSteerDeg=NAN;
 uint16_t steerCount=0;
+// V5.0: deslocamento do EIXO em relacao ao centro da celula atual, no
+// referencial do nariz (+ = eixo a frente do centro). E a grandeza que faltava:
+// sem ela toda reta era uma celula cega e qualquer parada antecipada virava
+// FAULT. Ver nav_pose_logic.h.
+float cellOffset=0, moveStartOffset=0, wallTrimMm=NAN;
+float repositionMm=0; // ajuste longitudinal pendente antes de um giro
+uint16_t trimCount=0, repositionCount=0;
+bool pendingReposition=false, repositioning=false;
+float lateralAtTurn=0;
 NavOpening openingLeft,openingRight;
 NavigationOptions options;
 // Diagnostico do ultimo evento frontal do deslocamento. Nao altera o laser.
@@ -99,10 +110,29 @@ bool inspect(uint8_t& known,uint8_t& wall){
  }
  return true;
 }
-float dangerLimitMm(){
+// V5.0: meia largura do corredor. Comeca na medida dos ensaios de borda e
+// passa a usar a largura que o robo mede com os dois lasers laterais.
+float halfOpeningMm(){return learnedWidth>0?0.5f*learnedWidth:ROBO_MEIA_ABERTURA_MM;}
+// Leitura do U3 com que o robo PARA uma reta normal (folga de trabalho).
+float stopReadingMm(){return ROBO_U3_TOCA_MM+NAV_PARADA_FOLGA_MM;}
+// V5.0: dois limites, nao um so.
+// dangerLimitMm  = "para agora": abaixo disso o robo encosta na parede.
+// approachLimitMm= "comeca a frear": distancia em que a parede ja obriga a
+//                  encurtar a meta, incluindo reacao e frenagem.
+// Antes havia um unico limite, com a frenagem somada: ele disparava a 91 mm,
+// mas a parada de trabalho e a 75 mm. O robo freava de emergencia em TODA
+// celula com parede a frente e a missao caia em FAULT.
+float dangerLimitMm(){return ROBO_U3_TOCA_MM+NAV_EMERGENCIA_FOLGA_MM;}
+float approachLimitMm(){
  const float v=NAV_RPM_RETO*3.14159265f*DIAMETRO_RODA_MM/60.0f;
- return NAV_U3_ATE_NARIZ_MM+NAV_FOLGA_FRONTAL_MM+v*FRENTE_REACAO_S+v*v/(2.0f*FRENTE_DESACEL_ESTIMADA_MM_S2);
+ return stopReadingMm()+v*FRENTE_REACAO_S+v*v/(2.0f*FRENTE_DESACEL_ESTIMADA_MM_S2);
 }
+// Offset mais avancado possivel nesta celula se houver parede na face da frente.
+float offsetMaxComParedeMm(){
+ return navPoseOffsetMaxComParedeMm(halfOpeningMm(),ROBO_U3_AO_EIXO_MM,ROBO_U3_TOCA_MM,NAV_PARADA_FOLGA_MM);
+}
+// Celula assinada no sentido da manobra: na re a celula de destino fica atras.
+float signedCellMm(){return reversing?-NAV_CELULA_MM:NAV_CELULA_MM;}
 // So usa uma distancia medida nesta mesma reta, dentro do prazo original.
 // A distancia restante desconta o avanco dos encoders e uma margem adicional.
 // Nao libera erro I2C, timeout, fase/sigma invalida ou leitura perto demais.
@@ -135,7 +165,7 @@ const char* checkFrontMove(const LeituraLaser& f,uint32_t now,float progress){
    frontMove.remaining=frontMove.measuredMm-(progress-frontMove.measuredProgress);
    // Uma parede medida que se aproximou do limite nao deve ser mascarada,
    // mesmo quando o perfil experimental ja existente esta ativo.
-   if(frontMove.remaining<=dangerLimitMm()+20.0f){
+   if(frontMove.remaining<=approachLimitMm()){
     frontMove.decision="ultima_distancia_sem_folga";return "U3_sem_evidencia_durante_avanco";
    }
    if(frontMove.measured&&now-frontMove.measuredMs<=NAV_IDADE_SENSOR_MS){
@@ -170,6 +200,19 @@ void measureLateral(uint32_t now){
  } else if(ok[0]&&learnedHalf>0) lateralOffset=v[0]-learnedHalf;
  else if(ok[1]&&learnedHalf>0) lateralOffset=learnedHalf-v[1];
 }
+// V5.0: a parede da frente encurta a meta da reta ANTES de virar emergencia.
+// O controlador entao desacelera sozinho e para na folga de trabalho, com a
+// pose intacta. So encurta (nunca estende) e so com leitura valida e recente.
+void trimTargetByWall(const LeituraLaser& f,uint32_t now){
+ if(reversing||!validFresh(f,now)||f.statusVL!=0||f.brutoMm<0)return;
+ if((float)f.brutoMm>approachLimitMm())return;          // parede ainda longe
+ const float p=navigationDriveProgressMm();
+ const float nova=navPoseMetaEncurtadaPorParedeMm((float)f.brutoMm,p,plannedMm,
+        ROBO_U3_TOCA_MM,NAV_PARADA_FOLGA_MM,NAV_ENCURTAR_MIN_RESTANTE_MM);
+ if(!isfinite(nova)||nova>plannedMm-2.0f)return;        // ganho pequeno demais
+ if(!navigationDriveAdjustStraight(nova))return;
+ plannedMm=nova;wallTrimMm=nova;++trimCount;adjustmentApplied=true;
+}
 void trackOpenings(uint32_t now){
  const float p=(reversing?-1.0f:1.0f)*navigationDriveProgressMm();
  if(!isfinite(p)||p<0)return;
@@ -196,7 +239,7 @@ void trackOpenings(uint32_t now){
   // O retorno sem sensor traseiro nao pode ser estendido por uma estimativa.
   if(!options.opening || adjustmentApplied || !mazeOpenAt(targetX,targetY,dirs[i]) ||
      // Na re so passa do nominal se o trecho de tras ja foi percorrido (sem sensor traseiro).
-     (reversing&&est>NAV_CELULA_MM&&!mazeTraversedAt(targetX,targetY,dirChar((h+2)&3))) || !navOpeningAdjustmentOk(est,NAV_CELULA_MM,p,NAV_AJUSTE_MAX_MM,NAV_AJUSTE_RESTANTE_MIN_MM))continue;
+     (reversing&&est>plannedMm&&!mazeTraversedAt(targetX,targetY,dirChar((h+2)&3))) || !navOpeningAdjustmentOk(est,plannedMm,p,NAV_AJUSTE_MAX_MM,NAV_AJUSTE_RESTANTE_MIN_MM))continue;
   if(navigationDriveAdjustStraight((reversing?-1.0f:1.0f)*est)){plannedMm=est;adjustmentApplied=true;}
  }
 }
@@ -208,7 +251,8 @@ void navigationNotifyStop(const char* reason){if(navigationRunning()){invalidate
 NavigationOptions navigationDefaultOptions(){
  NavigationOptions o;
  o.reverse=NAV_RE_HABILITADA;o.center=NAV_CENTRALIZAR_HABILITADA;o.opening=NAV_AJUSTE_ABERTURA_HABILITADO;
- o.corridorWidth=NAV_ABERTURA_LARGURA_MM;o.sensorLeftToAxle=NAV_U2_A_EIXO_MM;o.sensorRightToAxle=NAV_U4_A_EIXO_MM;return o;
+ o.corridorWidth=NAV_ABERTURA_LARGURA_MM;o.sensorLeftToAxle=NAV_U2_A_EIXO_MM;o.sensorRightToAxle=NAV_U4_A_EIXO_MM;
+ o.startBackToWall=NAV_PARTIDA_TRASEIRA_ENCOSTADA;return o;
 }
 bool navigationReverseAllowed(){return navigationRunning()&&options.reverse;}
 bool navigationCenterEnabled(){return navigationRunning()&&options.center;}
@@ -222,6 +266,8 @@ const char* navigationStartWithOptions(uint8_t w,uint8_t h,uint8_t gx,uint8_t gy
     !isfinite(requested.sensorLeftToAxle)||fabsf(requested.sensorLeftToAxle)>NAV_CELULA_MM/2||
     !isfinite(requested.sensorRightToAxle)||fabsf(requested.sensorRightToAxle)>NAV_CELULA_MM/2))return "geometria_abertura_nao_validada";
  if(NAV_U3_ATE_NARIZ_MM<0)return "medir_NAV_U3_ATE_NARIZ_MM";
+ // V5.0: as seis medidas do robo precisam ser coerentes entre si antes de armar.
+ if(!geomValida(geometriaRobo()))return "geometria_do_robo_incoerente_remedir";
  if(!(NAV_CELULA_MM>=150 && NAV_CELULA_MM<=200))return "passo_de_celula_invalido";
  if(!navigationDriveReady())return "CPR_driver_ou_freio_indisponivel";
  if(!batteryAvailable()||bateriaBaixa()||bateriaCritica())return "bateria_indisponivel_ou_baixa";
@@ -234,10 +280,19 @@ const char* navigationStartWithOptions(uint8_t w,uint8_t h,uint8_t gx,uint8_t gy
  reversing=false;centerRef=centerRefEsq=centerRefDir=-1;wallStoppedMm=wallStoppedSync=NAN;wallArrivals=0;edgeLeft=edgeRight=openingEstimate=NAN;plannedMm=0;adjustmentApplied=false;frontMove=FrontMoveEvidence{};
  if(!mazeSetPose(x,y,direction))return "erro_ao_inicializar_pose";
  expectedYaw=lerIMU().yawDireitaGraus;lastTurnTarget=lastAlignDeg=NAN;
- aligning=nudging=pendingBackoff=false;alignTries=0;alignCount=backoffCount=0;
+ aligning=nudging=pendingReposition=repositioning=false;alignTries=0;alignCount=backoffCount=0;
+ // V5.0: posicao longitudinal de partida. Com a traseira encostada o eixo fica
+ // (eixo a traseira - meia abertura) atras do centro: -60 mm neste robo.
+ cellOffset=requested.startBackToWall
+   ? navPoseOffsetTraseiraEncostadaMm(ROBO_MEIA_ABERTURA_MM,ROBO_EIXO_A_TRASEIRA_MM) : 0.0f;
+ moveStartOffset=cellOffset;repositionMm=0;lateralAtTurn=0;wallTrimMm=NAN;trimCount=repositionCount=0;
  learnedHalf=learnedWidth=-1;lateralOffset=lastSteerDeg=NAN;steerCount=0;
  options=requested;poseCertain=true;mazeMarkVisited(x,y);startMs=millis();errorText="";beginSensing();
- Serial.printf("[NAV] INICIADA %ux%u inicio=(%u,%u,%c) objetivo=(%u,%u)\n",w,h,x,y,direction,gx,gy);return nullptr;
+ Serial.printf("[NAV] INICIADA %ux%u inicio=(%u,%u,%c) objetivo=(%u,%u) offset=%.1f mm\n",w,h,x,y,direction,gx,gy,cellOffset);
+ Serial.printf("[NAV] geometria: eixo->nariz %.1f eixo->traseira %.1f U3->eixo %.1f meia abertura %.1f raio giro %.1f (cabe: %s)\n",
+   ROBO_EIXO_AO_NARIZ_MM,ROBO_EIXO_A_TRASEIRA_MM,ROBO_U3_AO_EIXO_MM,ROBO_MEIA_ABERTURA_MM,
+   geomRaioGiroMm(geometriaRobo()),geomGiroCabeNoCorredor(geometriaRobo())?"sim":"NAO - gira so em interseccao");
+ return nullptr;
 }
 void navigationTick(){
  if(!navigationRunning())return;
@@ -252,6 +307,7 @@ void navigationTick(){
   if(fabsf(lerIMU().yawDireitaGraus-yawStart)>NAV_YAW_RETO_MAX_GRAUS){fail("desvio_angular_reto");return;}
   if(!reversing){
    const auto f=lerLaser(LASER_U3);
+   trimTargetByWall(f,now);
    if(const char* reason=checkFrontMove(f,now,navigationDriveProgressMm())){
     // O corte ocorre no MESMO instante e no MESMO limiar de antes.
     // So uma distancia valida (nao "perto demais" nem erro) pode iniciar a
@@ -296,20 +352,29 @@ void navigationTick(){
   reversing=delta==2&&mazeTraversedFromPose(targetDirection);
   if(reversing&&!options.reverse){fail("retorno_re_pendente_validacao_traseira");return;}
   turnsRemaining=reversing?0:(delta==2?2:(delta==0?0:1));turnRight=delta!=3;
-  // V4.9.2: recuo curto antes de um giro de 90, so se a celula de tras ja foi
-  // percorrida (espaco livre comprovado). Ver NAV_GIRO_RECUO_MM no config.h.
-  pendingBackoff=turnsRemaining==1 && NAV_GIRO_RECUO_MM>0.5f && NAV_GIRO_RECUO_MM<=40.0f &&
-                 mazeTraversedFromPose(dirChar((dirValue(direction)+2)&3));
+  // V5.0: o giro tem de acontecer com o eixo no centro da abertura lateral,
+  // que e o centro da celula. Depois de uma parada contra a parede o eixo fica
+  // dezenas de milimetros atras disso, e girar ali jogava o robo contra o canto
+  // da entrada. Aqui calculamos o reposicionamento; o TURN_START o executa.
+  // Com parede a frente o alvo e limitado para o robo nao encostar.
+  // So dispensa o limite frontal quando a face a frente foi CONFIRMADA livre.
+  // Face indefinida conta como parede: avancar 60 mm no escuro bate o nariz.
+  const bool frenteLivreConfirmada=((known>>hd)&1u)&&!((wall>>hd)&1u);
+  repositionMm=turnsRemaining? navPoseAjusteAntesDoGiroMm(cellOffset,
+                 frenteLivreConfirmada?NAN:offsetMaxComParedeMm(),
+                 NAV_GIRO_OFFSET_TOL_MM,NAV_GIRO_OFFSET_MAX_MM) : 0.0f;
+  pendingReposition=turnsRemaining>0 && fabsf(repositionMm)>=1.0f;
   stage=turnsRemaining?Stage::TURN_START:Stage::MOVE_START;stageMs=now;return;
  }
  case Stage::TURN_START:
   if(!navigationDriveReady()){if(now-stageMs>3000)fail("freio_nao_liberou_para_giro");return;}
-  if(pendingBackoff){
-   pendingBackoff=false;
-   if(!navigationDriveStartNudge(-NAV_GIRO_RECUO_MM)){fail("nao_iniciou_recuo_antes_do_giro");return;}
-   nudging=true;++backoffCount;
+  if(pendingReposition){
+   pendingReposition=false;
+   if(!navigationDriveStartNudge(repositionMm)){fail("nao_iniciou_reposicionamento_antes_do_giro");return;}
+   nudging=true;repositioning=true;++backoffCount;++repositionCount;
    lastDriverId=navigationDriveResultId();stage=Stage::TURN_WAIT;stageMs=now;return;
   }
+  lateralAtTurn=isfinite(lateralOffset)?lateralOffset:0.0f;
   yawStart=lerIMU().yawDireitaGraus;
   // V4.9.2: alvo = rumo esperado depois do giro - yaw atual. Inclui o erro
   // acumulado, que a correcao pela IMU elimina ao final do giro.
@@ -327,7 +392,7 @@ void navigationTick(){
   else {
    const auto f=lerLaser(LASER_U3);
    const auto ev=classificarSensorNav(LASER_U3,now);
-   const bool semFolga=f.brutoMm>=0&&f.brutoMm<=dangerLimitMm()+20;
+   const bool semFolga=f.brutoMm>=0&&(float)f.brutoMm<=approachLimitMm();
    if(ev==EvidenciaParedeNav::PRESENTE||semFolga){
     // V4.9.1: o sensor ve parede onde o mapa dizia passagem: corrige o mapa
     // e replaneja a partir desta celula, em vez de abortar a missao.
@@ -367,7 +432,16 @@ void navigationTick(){
   alignTries=0;
   if(!reversing&&isfinite(lateralOffset)&&fabsf(lateralOffset)>NAV_DESVIO_MIN_MM){++steerCount;lastSteerDeg=expectedYaw-lerIMU().yawDireitaGraus;}
   lateralOffset=NAN; // medida vale so para a saida desta celula
-  yawStart=lerIMU().yawDireitaGraus;plannedMm=NAV_CELULA_MM;adjustmentApplied=false;
+  yawStart=lerIMU().yawDireitaGraus;
+  // V5.0: a reta anda o que FALTA ate o centro da proxima celula, descontando
+  // onde o eixo parou na celula atual. Com a traseira encostada na partida
+  // (offset -60 mm) a primeira reta e de 240 mm, nao de 180.
+  {
+   const float alvoAssinado=navPoseMetaRetaMm(cellOffset,signedCellMm(),0.0f);
+   plannedMm=fabsf(alvoAssinado);
+   if(plannedMm<RETO_DISTANCIA_MIN_MM){fail("meta_de_reta_curta_demais_para_o_controle");return;}
+  }
+  moveStartOffset=cellOffset;wallTrimMm=NAN;adjustmentApplied=false;
   edgeLeft=edgeRight=openingEstimate=NAN;openingLeft.reset(lerLaser(LASER_U2).total);openingRight.reset(lerLaser(LASER_U4).total);
   frontMove=FrontMoveEvidence{};
   if(!reversing)rememberFront(lerLaser(LASER_U3),now,0.0f);
@@ -389,12 +463,30 @@ void navigationTick(){
   if(now-afterSettleMs<350||!navigationDriveReady())return;
   if(navigationDriveResultId()==lastDriverId || navigationDriveResultOk()){fail("parada_frontal_sem_resultado");return;}
   if(!navigationDriveSettledStraight(wallStoppedMm,wallStoppedSync))return;
-  // Mesma tolerancia de posicao/sincronismo da chegada normal. A leitura
-  // frontal so provoca a parada; nao converte progresso incerto em celula.
-  if(!navWallArrivalAtTarget(wallStoppedMm,plannedMm,wallStoppedSync,
-          lerIMU().yawDireitaGraus-yawStart,RETO_META_TOL_MM,
+  // V5.0: a parada precisa ser LIMPA (rodas juntas, sem guinada). Nao precisa
+  // cair em cima da meta: a parede e que decide onde o robo para.
+  if(!navWallArrivalPoseOk(wallStoppedMm,wallStoppedSync,
+          lerIMU().yawDireitaGraus-yawStart,
           RETO_SYNC_LIMITE_CHEGADA_MM,NAV_YAW_RETO_MAX_GRAUS)){
-   fail("obstaculo_frontal_antes_da_celula_pose_incerta");return;
+   fail("parada_frontal_com_rodas_dessincronizadas");return;
+  }
+  // Parou antes de cruzar a fronteira: continua na MESMA celula. Isso nao e
+  // falha. Registra a parede que o barrou, guarda onde parou e replaneja.
+  if(!navWallArrivalCrossed(wallStoppedMm,moveStartOffset,halfOpeningMm())){
+   const float novo=navPoseOffsetAposAjusteMm(moveStartOffset,wallStoppedMm);
+   if(!navPoseOffsetPlausivel(novo,halfOpeningMm(),NAV_OFFSET_MARGEM_MM)){fail("pose_longitudinal_perdida");return;}
+   cellOffset=novo;
+   const uint8_t face=(uint8_t)(1u<<dirValue(direction));
+   mazeUpdate(x,y,face,face,0);
+   Serial.printf("[NAV] parede antes da fronteira: fica em (%u,%u), offset %.1f mm\n",x,y,cellOffset);
+   if(++frontReplans>4){fail("parede_a_frente_em_passagem_ja_percorrida");return;}
+   ++wallArrivals;beginSensing();return;
+  }
+  // Cruzou: esta na celula de destino, deslocada do centro pelo que a parede permitiu.
+  {
+   const float novo=navPoseOffsetAposAvancoMm(moveStartOffset,wallStoppedMm,signedCellMm());
+   if(!navPoseOffsetPlausivel(novo,halfOpeningMm(),NAV_OFFSET_MARGEM_MM)){fail("pose_longitudinal_perdida");return;}
+   cellOffset=novo;
   }
   if(!mazeMarkTraversedFromPose(targetDirection)){fail("erro_registro_travessia");return;}
   x=targetX;y=targetY;
@@ -413,15 +505,34 @@ void navigationTick(){
   if(now-afterSettleMs<350||!navigationDriveReady())return;
   if(lastMotionWasMove){
    if(fabsf(lerIMU().yawDireitaGraus-yawStart)>NAV_YAW_RETO_MAX_GRAUS){fail("desvio_angular_apos_parada");return;}
+   // V5.0: onde o eixo realmente parou dentro da nova celula. A reta seguinte
+   // desconta este valor, entao uma parada curta nao acumula erro.
+   {
+    const float perc=navigationDriveProgressMm();
+    if(!isfinite(perc)){fail("odometria_invalida_apos_reta");return;}
+    const float novo=navPoseOffsetAposAvancoMm(moveStartOffset,perc,signedCellMm());
+    if(!navPoseOffsetPlausivel(novo,halfOpeningMm(),NAV_OFFSET_MARGEM_MM)){fail("pose_longitudinal_perdida");return;}
+    cellOffset=novo;
+   }
    if(!mazeMarkTraversedFromPose(targetDirection)){fail("erro_registro_travessia");return;}
    x=targetX;y=targetY;mazeSetPose(x,y,direction);mazeMarkVisited(x,y);++steps;frontReplans=0;if(reversing)++reverseSteps;
    if(mazeIsGoal()){stage=Stage::DONE;errorText="objetivo_atingido";return;}
    beginSensing();return;
   }
-  if(nudging){nudging=false;stage=Stage::TURN_START;stageMs=now;return;}
+  if(nudging){
+   // O reposicionamento e um controle de POSICAO fechado por encoder: o
+   // deslocamento comandado e o que foi percorrido, dentro da tolerancia.
+   if(repositioning){cellOffset=navPoseOffsetAposAjusteMm(cellOffset,repositionMm);repositioning=false;}
+   nudging=false;stage=Stage::TURN_START;stageMs=now;return;
+  }
   if(aligning){aligning=false;stage=Stage::MOVE_START;stageMs=now;return;}
   // V4.9.2: confere contra o rumo ABSOLUTO esperado, nao so o giro relativo.
   if(fabsf(lerIMU().yawDireitaGraus-expectedYaw)>NAV_YAW_GIRO_TOL_GRAUS){fail("giro_IMU_fora_tolerancia");return;}
+  // V5.0: o giro de 90 graus TROCA os eixos da celula. O que era desvio
+  // lateral passa a ser o deslocamento longitudinal do novo rumo (e o antigo
+  // longitudinal vira lateral, que a centralizacao da proxima reta corrige).
+  cellOffset=turnRight?lateralAtTurn:-lateralAtTurn;
+  lateralOffset=NAN;
   direction=dirChar((dirValue(direction)+(turnRight?1:3))&3);mazeSetPose(x,y,direction);
   if(--turnsRemaining){stage=Stage::TURN_START;stageMs=now;return;}
   beginSensing();return;
@@ -442,6 +553,12 @@ String navigationStatusJson(){
   ",\"referenciaDirAprendidaMm\":"+nOrNull(centerRefDir>0?centerRefDir:NAN)+
   ",\"paradasFrontaisNaCelula\":"+String(wallArrivals)+
   ",\"posicaoParadaFrontalMm\":"+nOrNull(wallStoppedMm)+",\"syncParadaFrontalMm\":"+nOrNull(wallStoppedSync)+
+  ",\"offsetCelulaMm\":"+String(cellOffset,1)+",\"offsetInicioRetaMm\":"+String(moveStartOffset,1)+
+  ",\"metaEncurtadaParedeMm\":"+nOrNull(wallTrimMm)+",\"encurtamentosPorParede\":"+String(trimCount)+
+  ",\"reposicionamentosAntesDoGiro\":"+String(repositionCount)+",\"ultimoReposicionamentoMm\":"+String(repositionMm,1)+
+  ",\"leituraFrontalParadaMm\":"+String(stopReadingMm(),1)+",\"limiteAproximacaoMm\":"+String(approachLimitMm(),1)+
+  ",\"meiaAberturaMm\":"+String(halfOpeningMm(),1)+",\"raioGiroMm\":"+String(geomRaioGiroMm(geometriaRobo()),1)+
+  ",\"giroCabeNoCorredor\":"+String(geomGiroCabeNoCorredor(geometriaRobo())?"true":"false")+
   ",\"limiteFrontalMm\":"+String(dangerLimitMm(),1)+",\"autonomiaLiberada\":"+String(NAV_AUTONOMIA_HABILITADA?"true":"false")+
   ",\"lateraisCalibrados\":"+String(NAV_LATERAIS_CALIBRADOS?"true":"false")+",\"laserU3AteNarizMm\":"+String(NAV_U3_ATE_NARIZ_MM,1)+
   ",\"modoSemAlvoHabilitado\":"+String(NAV_SEM_ALVO_COMO_PASSAGEM?"true":"false")+",\"semAlvoU3Seguidas\":"+String(sensorHistorico[LASER_U3].semAlvoSeguidas())+

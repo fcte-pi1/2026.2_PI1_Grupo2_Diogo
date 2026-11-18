@@ -8,6 +8,10 @@ struct NavigationOptions {
  char initialDirection='N'; // N/L/S/O no referencial do mapa
  // V4.9.1: celula inicial configuravel (antes sempre (0,0)); origem no canto sudoeste.
  uint8_t startX=0, startY=0;
+ // V5.0: o robo e posto no labirinto com a TRASEIRA ENCOSTADA na parede, nao
+ // no centro do quadrado. Com true a navegacao ja parte sabendo que o eixo
+ // esta atras do centro e a primeira reta anda o tanto a mais.
+ bool startBackToWall=true;
 };
 NavigationOptions navigationDefaultOptions();
 bool navigationReverseAllowed();

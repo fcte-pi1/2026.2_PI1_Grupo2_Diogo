@@ -608,10 +608,15 @@ const char* atualizarControleMovimento() {
         return "sinal_encoder_direito_invertido";
 
     // Diagnostico de travamento: referencia solicitada mas SEM pulsos.
-    if (fabsf(velocidadeAlvoE) >= 10 && info.semPulsosMsE > CONTROLE_STALL_MS)
-        return "encoder_ou_motor_esquerdo_sem_movimento";
-    if (fabsf(velocidadeAlvoD) >= 10 && info.semPulsosMsD > CONTROLE_STALL_MS)
-        return "encoder_ou_motor_direito_sem_movimento";
+    // V5.0: distinguir as duas causas, que pedem acoes opostas na bancada.
+    // As DUAS rodas paradas ao mesmo tempo = o robo esbarrou em algo ou os
+    // motores nao tem torque; UMA roda parada enquanto a outra gira = problema
+    // daquele canal (encoder sem contagem, fio solto, meia-ponte queimada).
+    const bool travadaE = fabsf(velocidadeAlvoE) >= 10 && info.semPulsosMsE > CONTROLE_STALL_MS;
+    const bool travadaD = fabsf(velocidadeAlvoD) >= 10 && info.semPulsosMsD > CONTROLE_STALL_MS;
+    if (travadaE && travadaD) return "robo_travado_ou_sem_torque_nas_duas_rodas";
+    if (travadaE) return "encoder_ou_motor_esquerdo_sem_movimento";
+    if (travadaD) return "encoder_ou_motor_direito_sem_movimento";
     return nullptr;
 }
 
