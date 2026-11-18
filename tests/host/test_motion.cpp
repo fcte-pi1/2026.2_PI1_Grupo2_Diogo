@@ -1,4 +1,5 @@
 #include "motion_control.h"
+#include "config.h"
 #include "motors.h"
 #include "encoders.h"
 #include "imu.h"
@@ -46,7 +47,7 @@ int main(){
  if(std::string(result)!="reto_meta_atingida")return 6;
  desativarControleMovimento();
  if(!iniciarControleReto(180,25,815.55f,815.48f,true))return 7;
- if(ajustarMetaRetoNav(200)||ajustarMetaRetoNav(-175)||!ajustarMetaRetoNav(175))return 8;
+ if(ajustarMetaRetoNav(180+NAV_AJUSTE_MAX_MM+5)||ajustarMetaRetoNav(-175)||!ajustarMetaRetoNav(175))return 8;
  if(std::fabs(lerControleMovimento().retoAlvoMm-175)>0.01f)return 9;
  desativarControleMovimento();
  if(!iniciarControleReto(-180,20,815.55f,815.48f,true))return 10;

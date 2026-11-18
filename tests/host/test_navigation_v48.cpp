@@ -21,7 +21,7 @@ static uint8_t px=0,py=0;
 static Direction heading=NORTH;
 static float yaw=0,targetMm=0,progress=0;
 static bool weakFront=false,missingFront=false,forceMotionFail=false,timeoutFront=false,leftLiesOpen=false;
-static bool trackingCase=false,openNoTarget=false;
+static bool trackingCase=false,openNoTarget=false,edgeNoTarget=false;static float lateralBias=0;
 static int frontCase=0; // 1: perda breve; 2: distancia em reducao; 3: I2C; 4: obstaculo; 5: evento velho; 6: sigma
 static bool usedMemory=false;
 static std::string status(){return navigationStatusJson().c_str();}
@@ -34,8 +34,14 @@ LeituraLaser lerLaser(uint8_t sensor){
  if(moving&&!turning&&sensor==LASER_U3&&targetMm>0)present=false;
  // Modelo controlado da abertura na bifurcacao de retorno, com leitura VALIDA.
  if(trackingCase&&moving&&!turning&&targetMm<0&&px==0&&py==2&&sensor==LASER_U4&&fabsf(progress)>=90)present=false;
- l.brutoMm=present?60:300;l.filtradoMm=l.brutoMm;l.statusVL=0;
+ l.brutoMm=present?60:300;
+ // Robo deslocado para a direita: esquerda le mais, direita le menos.
+ if(present&&sensor==LASER_U2)l.brutoMm+=(int)lateralBias;
+ if(present&&sensor==LASER_U4)l.brutoMm-=(int)lateralBias;
+ l.filtradoMm=l.brutoMm;l.statusVL=0;
  l.parede=present?PAREDE_PRESENTE:PAREDE_AUSENTE;
+ // Abertura lateral real durante a re: sem retorno optico.
+ if(edgeNoTarget&&moving&&!turning&&!present&&sensor!=LASER_U3){l.brutoMm=LASER_SINAL_FRACO;l.statusVL=2;l.parede=PAREDE_INDEFINIDA;l.ultimaValidaMs=0;}
  // Corredor aberto real: o VL53L0X nao ve alvo e devolve sinal fraco.
  if(!present&&!moving&&sensor!=LASER_U3&&openNoTarget){l.brutoMm=LASER_SINAL_FRACO;l.statusVL=2;l.parede=PAREDE_INDEFINIDA;}
  if(weakFront&&sensor==LASER_U3){l.brutoMm=LASER_SINAL_FRACO;l.statusVL=2;l.parede=PAREDE_INDEFINIDA;}
@@ -108,7 +114,7 @@ static void tick(){
  navigationTick();if(has("folga_medida_recente"))usedMemory=true;nowMs+=20;
 }
 static void reset(uint8_t w,uint8_t h,uint8_t gx,uint8_t gy){
- assert(truth.init(w,h,gx,gy));moves=turns=reverses=adjustments=0;moving=turning=false;resultOk=true;weakFront=missingFront=forceMotionFail=trackingCase=timeoutFront=leftLiesOpen=openNoTarget=false;frontCase=0;usedMemory=false;px=py=0;heading=NORTH;yaw=0;nowMs+=10000;
+ assert(truth.init(w,h,gx,gy));moves=turns=reverses=adjustments=0;moving=turning=false;resultOk=true;weakFront=missingFront=forceMotionFail=trackingCase=timeoutFront=leftLiesOpen=openNoTarget=edgeNoTarget=false;lateralBias=0;frontCase=0;usedMemory=false;px=py=0;heading=NORTH;yaw=0;nowMs+=10000;
 }
 static void run(){for(int i=0;i<30000&&navigationRunning();++i)tick();assert(!navigationRunning());}
 static void expectGoal(){if(!has("OBJETIVO_ATINGIDO"))fprintf(stderr,"Unexpected nav status: %s\n",status().c_str());assert(has("OBJETIVO_ATINGIDO"));assert(px==truth.goalX&&py==truth.goalY);}
@@ -122,6 +128,18 @@ int main(){
  for(int x=0;x<7;++x)assert(truth.observe(x,1,EAST,false)); // bifurcacao em (0,1)
  for(int y=1;y<3;++y)assert(truth.observe(7,y,NORTH,false));
  assert(!navigationStart(8,4,7,3));run();expectGoal();assert(reverses==2&&turns==2&&moves==14);assert(adjustments>=1);puts("PASS: 8x4, beco, dois recuos, abertura e giro na bifurcacao, canto oposto");
+ // V4.9.3: a borda e encontrada mesmo quando a abertura le "sem alvo".
+ reset(8,4,7,3);trackingCase=true;edgeNoTarget=true;
+ for(int y=0;y<3;++y)assert(truth.observe(0,y,NORTH,false));
+ for(int x=0;x<7;++x)assert(truth.observe(x,1,EAST,false));
+ for(int y=1;y<3;++y)assert(truth.observe(7,y,NORTH,false));
+ assert(!navigationStart(8,4,7,3));run();expectGoal();assert(adjustments>=1);puts("PASS: re guiada pela borda com abertura sem retorno optico");
+ // V4.9.3: desvio lateral medido parado vira inclinacao de saida para o centro.
+ {reset(2,3,0,2);for(int y=0;y<2;++y)assert(truth.observe(0,y,NORTH,false));lateralBias=20;aligns=0;alignTotal=0;
+  assert(!navigationStart(2,3,0,2));run();expectGoal();
+  const float esperado=-asinf(20.0f/NAV_CELULA_MM)*57.29578f;
+  assert(aligns>=1&&fabsf(alignTotal-esperado)<0.2f);assert(has("\"correcoesDeDesvio\":2"));
+  puts("PASS: desvio de 20 mm para a direita corrigido saindo inclinado para a esquerda");}
  reset(2,2,1,0);assert(truth.observe(0,0,EAST,false));weakFront=true;assert(!navigationStart(2,2,1,0)); // start does not require distance
  for(int i=0;i<130;++i){tick();}weakFront=false;run();expectGoal();puts("PASS: sem alvo frontal nao impede observar e escolher alternativa conhecida");
  // V4.9.1: corredor sem retorno optico (sinal fraco repetido) e passagem.

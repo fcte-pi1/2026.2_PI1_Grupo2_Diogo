@@ -30,11 +30,11 @@ span.badge{font-weight:600;color:#93d8c1}
 <p class="small">Coloque o robô no centro da célula de início (X,Y), voltado para a direção escolhida. Origem (0,0) no canto sudoeste; Norte aponta para o lado da altura; Leste para o lado da largura.</p>
 <fieldset style="margin-top:14px"><legend>Perfil de navegação por missão (opcional)</legend>
 <label><input type="checkbox" id="reverse">Ré em percurso já atravessado (sem sensor traseiro)</label>
-<label><input type="checkbox" id="center">Correção lateral validada</label>
-<label><input type="checkbox" id="opening">Ajuste de abertura validado</label>
-<label>Largura livre (mm)<input id="widthFree" type="number" placeholder="medir" step="0.1"></label>
-<label>U2 até eixo (mm)<input id="leftAxle" type="number" placeholder="medir" step="0.1"></label>
-<label>U4 até eixo (mm)<input id="rightAxle" type="number" placeholder="medir" step="0.1"></label>
+<label><input type="checkbox" id="center" checked>Correção lateral (centralizar no corredor)</label>
+<label><input type="checkbox" id="opening" checked>Parar guiado pela borda da parede</label>
+<label>Largura livre inicial (mm)<input id="widthFree" type="number" placeholder="168" step="0.1"></label>
+<label>U2 até eixo (mm)<input id="leftAxle" type="number" value="53" step="0.1"></label>
+<label>U4 até eixo (mm)<input id="rightAxle" type="number" value="53" step="0.1"></label>
 <label><input type="checkbox" id="supervisor">Geometria, retorno e paradas validados presencialmente pelo responsável</label></fieldset>
 <p class="small">Sem sensor traseiro, o retorno depende de trecho previamente percorrido e ambiente estático. Os ajustes são experimentais e limitados; valores de eixo positivos à frente, negativos atrás. Não ligue os perfis sem validação.</p>
 <div class="actions"><button id="start" onclick="startMission()">Iniciar exploração</button><button class="stop" onclick="stopMission()">PARAR MOTORES</button><button onclick="refresh()">Atualizar</button></div>

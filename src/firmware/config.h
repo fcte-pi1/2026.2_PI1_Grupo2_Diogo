@@ -287,17 +287,31 @@ constexpr float NAV_U4_A_EIXO_MM = 0.0f;
 #else
 // Sem sensor traseiro: re somente em ambiente controlado e apos validacao presencial.
 constexpr bool NAV_RE_HABILITADA = false;
-constexpr bool NAV_CENTRALIZAR_HABILITADA = false;
-constexpr bool NAV_AJUSTE_ABERTURA_HABILITADO = false;
-// Geometria efetiva: largura livre do corredor; distancia longitudinal do laser ao eixo,
-// positiva se o laser esta a frente do eixo, negativa se atras. Nao inventar esses valores.
-constexpr float NAV_ABERTURA_LARGURA_MM = 0.0f;
-constexpr float NAV_U2_A_EIXO_MM = -999.0f;
-constexpr float NAV_U4_A_EIXO_MM = -999.0f;
+// V4.9.3: ligados por padrao. A parada passa a ser guiada pela borda da parede
+// (ver NAV_SENSOR_LATERAL_AO_CENTRO_MM) e a centralizacao corrige o desvio lateral.
+constexpr bool NAV_CENTRALIZAR_HABILITADA = true;
+constexpr bool NAV_AJUSTE_ABERTURA_HABILITADO = true;
+// Largura livre do corredor: so o VALOR INICIAL. Durante a missao o robo mede a
+// largura real (esquerda + direita) e passa a usar a medida.
+constexpr float NAV_ABERTURA_LARGURA_MM = 168.0f;
+// Medida do ROBO (nao do labirinto): lasers laterais 53 mm a frente do eixo.
+constexpr float NAV_U2_A_EIXO_MM = 53.0f;
+constexpr float NAV_U4_A_EIXO_MM = 53.0f;
 #endif
+// V4.9.3: medida do ROBO: distancia lateral entre a janela de cada laser
+// lateral e a linha central do robo (mm). Com ela o robo calcula a largura do
+// corredor sozinho: largura = leituraE + leituraD + 2*este valor.
+// -1 = ainda nao medido: usa NAV_ABERTURA_LARGURA_MM como largura.
+constexpr float NAV_SENSOR_LATERAL_AO_CENTRO_MM = -1.0f;
+// Desvio lateral medido parado na celula: acima deste valor o robo sai da celula
+// levemente inclinado para voltar ao centro durante a reta seguinte.
+constexpr float NAV_DESVIO_MIN_MM = 6.0f;
+constexpr float NAV_DESVIO_MAX_GRAUS = 10.0f;
 constexpr float NAV_RPM_RE = 20.0f;
-constexpr float NAV_AJUSTE_MAX_MM = 12.0f;
-constexpr float NAV_AJUSTE_RESTANTE_MIN_MM = 25.0f;
+// V4.9.3: a parada pela borda da parede pode corrigir ate 40 mm a distancia
+// nominal da celula (antes 12 mm, pouco para o labirinto de teste).
+constexpr float NAV_AJUSTE_MAX_MM = 40.0f;
+constexpr float NAV_AJUSTE_RESTANTE_MIN_MM = 15.0f;
 constexpr float NAV_YAW_RETO_MAX_GRAUS = 12.0f;
 constexpr float NAV_YAW_GIRO_TOL_GRAUS = 12.0f;
 // ===== V4.9.2: RUMO ABSOLUTO PELA IMU =====

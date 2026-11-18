@@ -34,6 +34,9 @@ float expectedYaw=0, lastTurnTarget=NAN, lastAlignDeg=NAN;
 bool aligning=false, nudging=false, pendingBackoff=false;
 uint8_t alignTries=0;
 uint16_t alignCount=0, backoffCount=0;
+// V4.9.3: geometria do corredor APRENDIDA durante a missao e desvio lateral.
+float learnedHalf=-1, learnedWidth=-1, lateralOffset=NAN, lastSteerDeg=NAN;
+uint16_t steerCount=0;
 NavOpening openingLeft,openingRight;
 NavigationOptions options;
 // Diagnostico do ultimo evento frontal do deslocamento. Nao altera o laser.
@@ -143,6 +146,30 @@ const char* checkFrontMove(const LeituraLaser& f,uint32_t now,float progress){
  }
  frontMove.decision="evidencia_insuficiente";return "U3_sem_evidencia_durante_avanco";
 }
+float openingWidth(){return learnedWidth>0?learnedWidth:options.corridorWidth;}
+// Mede, parado na celula, o desvio lateral em relacao ao centro do corredor.
+// Positivo = robo deslocado para a DIREITA. Duas paredes: (E-D)/2 e aprende a
+// distancia de cada sensor a parede com o robo centrado (meia largura medida).
+// Uma parede: usa essa meia largura aprendida. Nenhuma: desconhecido.
+void measureLateral(uint32_t now){
+ lateralOffset=NAN;
+ float v[2];bool ok[2];const uint8_t ids[2]={LASER_U2,LASER_U4};
+ for(uint8_t i=0;i<2;++i){const auto d=lerLaser(ids[i]);
+  const int mm=d.filtradoMm>=0?d.filtradoMm:d.brutoMm;
+  ok[i]=validFresh(d,now)&&d.statusVL==0&&d.parede==PAREDE_PRESENTE&&mm>=0&&mm<=CENTRO_PAREDE_MAX_MM;
+  v[i]=(float)mm;
+ }
+ if(ok[0]&&ok[1]){
+  const float half=0.5f*(v[0]+v[1]);
+  learnedHalf=learnedHalf<0?half:learnedHalf+0.3f*(half-learnedHalf);
+  if(NAV_SENSOR_LATERAL_AO_CENTRO_MM>0){
+   const float w=2.0f*(learnedHalf+NAV_SENSOR_LATERAL_AO_CENTRO_MM);
+   if(w>=100.0f&&w<=NAV_CELULA_MM)learnedWidth=w;
+  }
+  lateralOffset=0.5f*(v[0]-v[1]);
+ } else if(ok[0]&&learnedHalf>0) lateralOffset=v[0]-learnedHalf;
+ else if(ok[1]&&learnedHalf>0) lateralOffset=learnedHalf-v[1];
+}
 void trackOpenings(uint32_t now){
  const float p=(reversing?-1.0f:1.0f)*navigationDriveProgressMm();
  if(!isfinite(p)||p<0)return;
@@ -153,19 +180,23 @@ void trackOpenings(uint32_t now){
  const char dirs[2]={dirChar((h+3)&3),dirChar((h+1)&3)};
  for(uint8_t i=0;i<2;++i){
   const auto d=lerLaser(ids[i]);auto& tracker=*trackers[i];
-  // Nunca usa sinal fraco, timeout, leitura antiga ou filtro atrasado para a borda.
-  if(tracker.update(d.total,validFresh(d,now),d.brutoMm>=0&&d.brutoMm<=LASER_PAREDE_PRESENTE_MM,
-        d.brutoMm>=LASER_PAREDE_AUSENTE_MM,p)){
+  // V4.9.3: "sem alvo" (corredor aberto sem retorno optico) conta como abertura;
+  // antes zerava o rastreador e a borda nunca era encontrada. Timeout/I2C nao.
+  const bool noTarget=eventFresh(d,now)&&laserSemAlvoNav(d.brutoMm);
+  if(tracker.update(d.total,validFresh(d,now)||noTarget,d.brutoMm>=0&&d.brutoMm<=LASER_PAREDE_PRESENTE_MM,
+        noTarget||d.brutoMm>=LASER_PAREDE_AUSENTE_MM,p)){
    if(i==0)edgeLeft=tracker.edgeMm();else edgeRight=tracker.edgeMm();
   }
+  const float wOpen=openingWidth();
   if(!tracker.found() || !isfinite(offsets[i]) || fabsf(offsets[i])>NAV_CELULA_MM/2 ||
-     options.corridorWidth<=0||options.corridorWidth>NAV_CELULA_MM)continue;
-  const float est=tracker.centerMm(options.corridorWidth,(reversing?-1.0f:1.0f)*offsets[i]);
+     wOpen<=0||wOpen>NAV_CELULA_MM)continue;
+  const float est=tracker.centerMm(wOpen,(reversing?-1.0f:1.0f)*offsets[i]);
   openingEstimate=est;
   // Ajuste somente em abertura mapeada do destino, e perto da meta nominal.
   // O retorno sem sensor traseiro nao pode ser estendido por uma estimativa.
   if(!options.opening || adjustmentApplied || !mazeOpenAt(targetX,targetY,dirs[i]) ||
-     (reversing&&est>NAV_CELULA_MM) || !navOpeningAdjustmentOk(est,NAV_CELULA_MM,p,NAV_AJUSTE_MAX_MM,NAV_AJUSTE_RESTANTE_MIN_MM))continue;
+     // Na re so passa do nominal se o trecho de tras ja foi percorrido (sem sensor traseiro).
+     (reversing&&est>NAV_CELULA_MM&&!mazeTraversedAt(targetX,targetY,dirChar((h+2)&3))) || !navOpeningAdjustmentOk(est,NAV_CELULA_MM,p,NAV_AJUSTE_MAX_MM,NAV_AJUSTE_RESTANTE_MIN_MM))continue;
   if(navigationDriveAdjustStraight((reversing?-1.0f:1.0f)*est)){plannedMm=est;adjustmentApplied=true;}
  }
 }
@@ -204,6 +235,7 @@ const char* navigationStartWithOptions(uint8_t w,uint8_t h,uint8_t gx,uint8_t gy
  if(!mazeSetPose(x,y,direction))return "erro_ao_inicializar_pose";
  expectedYaw=lerIMU().yawDireitaGraus;lastTurnTarget=lastAlignDeg=NAN;
  aligning=nudging=pendingBackoff=false;alignTries=0;alignCount=backoffCount=0;
+ learnedHalf=learnedWidth=-1;lateralOffset=lastSteerDeg=NAN;steerCount=0;
  options=requested;poseCertain=true;mazeMarkVisited(x,y);startMs=millis();errorText="";beginSensing();
  Serial.printf("[NAV] INICIADA %ux%u inicio=(%u,%u,%c) objetivo=(%u,%u)\n",w,h,x,y,direction,gx,gy);return nullptr;
 }
@@ -256,6 +288,7 @@ void navigationTick(){
   // V4.9.1: leitura que discorda do mapa nao trava mais a missao; a mais
   // recente prevalece (borda externa e passagens percorridas sao preservadas).
   if(!mazeUpdate(x,y,known,wall,inferred)){fail("posicao_fora_do_mapa");return;}
+  measureLateral(now); // V4.9.3: inclusive logo depois de um giro
   mazeMarkVisited(x,y);
   uint8_t nx,ny;if(!mazeNextDirection(targetDirection,nx,ny)){fail("sem_passagem_confirmada_ate_objetivo");return;}
   targetX=nx;targetY=ny;
@@ -315,7 +348,16 @@ void navigationTick(){
   // V4.9.2: antes de andar, alinha o rumo com o esperado (erro de giros,
   // escorregamento ou do posicionamento inicial). Nao vale para a re.
   if(!reversing && NAV_GIRO_CORRIGIR_IMU && alignTries<NAV_ALINHAR_TENTATIVAS){
-   const float err=expectedYaw-lerIMU().yawDireitaGraus;
+   // V4.9.3: com desvio lateral medido, sai da celula levemente inclinado para
+   // o centro: na reta de uma celula o robo volta ao meio do corredor. A
+   // proxima reta (ou giro) volta ao rumo esperado.
+   float steer=0;
+   if(isfinite(lateralOffset)&&fabsf(lateralOffset)>NAV_DESVIO_MIN_MM){
+    const float smax=sinf(NAV_DESVIO_MAX_GRAUS*0.0174533f);
+    float r=lateralOffset/NAV_CELULA_MM;if(r>smax)r=smax;if(r<-smax)r=-smax;
+    steer=asinf(r)*57.29578f;
+   }
+   const float err=(expectedYaw-steer)-lerIMU().yawDireitaGraus;
    if(fabsf(err)>NAV_ALINHAR_GRAUS && fabsf(err)<=NAV_ALINHAR_MAX_GRAUS){
     if(!navigationDriveStartAlign(err)){fail("nao_iniciou_alinhamento");return;}
     aligning=true;++alignTries;++alignCount;lastAlignDeg=err;
@@ -323,6 +365,8 @@ void navigationTick(){
    }
   }
   alignTries=0;
+  if(!reversing&&isfinite(lateralOffset)&&fabsf(lateralOffset)>NAV_DESVIO_MIN_MM){++steerCount;lastSteerDeg=expectedYaw-lerIMU().yawDireitaGraus;}
+  lateralOffset=NAN; // medida vale so para a saida desta celula
   yawStart=lerIMU().yawDireitaGraus;plannedMm=NAV_CELULA_MM;adjustmentApplied=false;
   edgeLeft=edgeRight=openingEstimate=NAN;openingLeft.reset(lerLaser(LASER_U2).total);openingRight.reset(lerLaser(LASER_U4).total);
   frontMove=FrontMoveEvidence{};
@@ -404,7 +448,12 @@ String navigationStatusJson(){
   ",\"celulasComFaceInferida\":"+String(inferredFaces)+
   ",\"rumoEsperadoGraus\":"+String(expectedYaw,1)+",\"erroRumoGraus\":"+String(expectedYaw-lerIMU().yawDireitaGraus,1)+
   ",\"alvoUltimoGiroGraus\":"+nOrNull(lastTurnTarget)+",\"alinhamentos\":"+String(alignCount)+
-  ",\"ultimoAlinhamentoGraus\":"+nOrNull(lastAlignDeg)+",\"recuosAntesDoGiro\":"+String(backoffCount)+
+  ",\"ultimoAlinhamentoGraus\":"+nOrNull(lastAlignDeg)+
+  ",\"desvioLateralMm\":"+nOrNull(lateralOffset)+",\"correcoesDeDesvio\":"+String(steerCount)+
+  ",\"ultimaInclinacaoCorrecaoGraus\":"+nOrNull(lastSteerDeg)+
+  ",\"meiaLarguraAprendidaMm\":"+nOrNull(learnedHalf>0?learnedHalf:NAN)+
+  ",\"larguraCorredorUsadaMm\":"+nOrNull(openingWidth()>0?openingWidth():NAN)+
+  ",\"larguraCorredorAprendida\":"+String(learnedWidth>0?"true":"false")+",\"recuosAntesDoGiro\":"+String(backoffCount)+
   ",\"u3CodigoAvanco\":"+String(frontMove.raw)+",\"u3RangeStatusAvanco\":"+String(frontMove.range)+
   ",\"u3IdadeEventoAvancoMs\":"+String(frontMove.eventAge)+",\"u3IdadeValidaAvancoMs\":"+String(frontMove.validAge)+
   ",\"u3ProgressoAvancoMm\":"+nOrNull(frontMove.progress)+",\"u3FolgaEstimadaMm\":"+nOrNull(frontMove.remaining)+

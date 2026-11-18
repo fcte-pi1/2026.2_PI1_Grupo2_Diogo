@@ -976,8 +976,11 @@ void setupTelemetry() {
             opts.reverse=server.arg("re_supervisionada")=="1";
             opts.center=server.arg("centralizar")=="1";
             opts.opening=server.arg("ajuste_abertura")=="1";
-            if((opts.opening || !server.arg("largura_livre").isEmpty() || !server.arg("u2_eixo").isEmpty() || !server.arg("u4_eixo").isEmpty()) && (!floatValido("largura_livre",opts.corridorWidth)||
-               !floatValido("u2_eixo",opts.sensorLeftToAxle)||!floatValido("u4_eixo",opts.sensorRightToAxle)))
+            // V4.9.3: campos vazios mantem o padrao do config.h. A largura e so o
+            // valor inicial: o robo mede a largura real durante a missao.
+            if((!server.arg("largura_livre").isEmpty() && !floatValido("largura_livre",opts.corridorWidth))||
+               (!server.arg("u2_eixo").isEmpty() && !floatValido("u2_eixo",opts.sensorLeftToAxle))||
+               (!server.arg("u4_eixo").isEmpty() && !floatValido("u4_eixo",opts.sensorRightToAxle)))
                 return respostaErro(400,"geometria_abertura_nao_validada");
             if((opts.reverse||opts.center||opts.opening)&&server.arg("validacao_supervisor")!="1")
                 return respostaErro(400,"perfil_exige_validacao_presencial");
