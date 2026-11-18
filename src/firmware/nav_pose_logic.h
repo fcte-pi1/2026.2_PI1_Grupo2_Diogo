@@ -83,17 +83,22 @@ inline float navPoseMetaEncurtadaPorParedeMm(float leitura, float progresso, flo
     if (metaNova < progresso + minimoRestante) return NAN; // tarde demais: freia por obstaculo
     return metaNova;
 }
-// Giro no lugar: o eixo precisa estar no centro da abertura lateral, que e o
-// centro da celula. Devolve o deslocamento de correcao, ou 0 se ja esta bom.
+// Giro no lugar: o eixo deveria estar no centro da abertura lateral, que e o
+// centro da celula. Devolve o AVANCO de correcao, ou 0 se ja esta bom.
 // Nunca manda avancar alem do limite imposto por uma parede a frente.
+// V5.2: NUNCA devolve re. A versao anterior recuava quando o robo parava mais
+// perto da parede que a folga de trabalho, e isso era justamente o contrario
+// do que o robo precisa: ele gira encostado (a parte que excede passa por
+// cima da parede), e cada milimetro longe dela vira erro na celula seguinte.
+// Se o eixo passou do centro, o excesso vira desvio LATERAL depois do giro, e
+// a centralizacao da reta seguinte corrige sem manobra extra.
 inline float navPoseAjusteAntesDoGiroMm(float offset, float offsetMaximo,
                                         float tolerancia, float maximoAjuste) {
     if (!isfinite(offset)) return 0.0f;
     float alvo = 0.0f;
     if (isfinite(offsetMaximo) && alvo > offsetMaximo) alvo = offsetMaximo;
     float d = alvo - offset;
-    if (fabsf(d) <= tolerancia) return 0.0f;
+    if (d <= tolerancia) return 0.0f;      // ja esta no alvo ou a frente dele: gira ali
     if (d > maximoAjuste) d = maximoAjuste;
-    if (d < -maximoAjuste) d = -maximoAjuste;
     return d;
 }

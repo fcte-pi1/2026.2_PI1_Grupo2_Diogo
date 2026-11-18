@@ -30,6 +30,22 @@ private:
   uint32_t desde = 0;
 };
 
+// V5.2: trilha efetiva = distancia entre rodas que faz a conta do encoder
+// bater com o giro REAL medido pela IMU (inclui o escorregamento do piso).
+// arco = pi * trilha * angulo / 360   =>   trilha = arco * 360 / (pi * angulo)
+inline float trilhaEfetivaMedidaMm(float arcoMedioMm, float anguloRealGraus) {
+  if (!isfinite(arcoMedioMm) || !isfinite(anguloRealGraus) || fabsf(anguloRealGraus) < 1.0f)
+    return NAN;
+  return arcoMedioMm * 360.0f / (3.14159265f * fabsf(anguloRealGraus));
+}
+// Media exponencial; medida fora da faixa fisica e ignorada (mantem a atual).
+inline float atualizarTrilhaEfetiva(float atualMm, float medidaMm, float alfa,
+                                    float minMm, float maxMm) {
+  if (!isfinite(medidaMm) || medidaMm < minMm || medidaMm > maxMm) return atualMm;
+  if (!isfinite(atualMm)) return medidaMm;
+  return atualMm + alfa * (medidaMm - atualMm);
+}
+
 enum class DecisaoCorrecao {
   DENTRO_DA_TOLERANCIA,   // não precisa corrigir
   CORRIGIR,               // girar o erro medido

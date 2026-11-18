@@ -95,14 +95,17 @@ void test_ajuste_antes_do_giro() {
   const float m = geomMeiaAberturaMm(g), u3 = geomU3AoEixoMm(g);
   // Parou 35 mm atras: avanca 35 mm para girar no centro da abertura.
   TEST_ASSERT_FLOAT_WITHIN(0.01f, 35.0f, navPoseAjusteAntesDoGiroMm(-35.0f, NAN, 3.0f, 60.0f));
-  // Passou do centro: recua.
-  TEST_ASSERT_FLOAT_WITHIN(0.01f, -12.0f, navPoseAjusteAntesDoGiroMm(12.0f, NAN, 3.0f, 60.0f));
+  // Passou do centro: NAO recua (V5.2). Gira ali; vira desvio lateral.
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, navPoseAjusteAntesDoGiroMm(12.0f, NAN, 3.0f, 60.0f));
   // Dentro da tolerancia nao mexe.
   TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, navPoseAjusteAntesDoGiroMm(-2.0f, NAN, 3.0f, 60.0f));
   // Com parede a frente o alvo nao pode passar do limite seguro.
   const float lim = navPoseOffsetMaxComParedeMm(m, u3, g.u3TocaMm, FOLGA); // -35
   TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, navPoseAjusteAntesDoGiroMm(-35.0f, lim, 3.0f, 60.0f));
   TEST_ASSERT_FLOAT_WITHIN(0.01f, 15.0f, navPoseAjusteAntesDoGiroMm(-50.0f, lim, 3.0f, 60.0f));
+  // V5.2: parou MAIS PERTO da parede que a folga (freio de emergencia): gira
+  // ali mesmo. Antes devolvia -10 mm, a re desnecessaria vista na pista.
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, navPoseAjusteAntesDoGiroMm(-25.0f, lim, 3.0f, 60.0f));
 }
 
 void test_plausibilidade_do_offset() {

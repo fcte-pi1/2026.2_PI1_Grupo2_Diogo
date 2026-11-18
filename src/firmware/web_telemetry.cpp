@@ -66,6 +66,9 @@ static float giroYawRef = 0;           // yaw no inicio do giro
 static uint8_t giroCorrecoes = 0;
 static float giroErroAntes = NAN;      // erro medido parado, antes de qualquer correcao
 static float giroErroMedido = NAN;     // erro na ultima medicao parado
+// V5.2: diagnostico da trilha aprendida (ver aprenderTrilhaGiro).
+static float giroTrilhaMedidaMm = NAN, giroAnguloRealGraus = NAN;
+static uint16_t giroTrilhaAmostras = 0;
 static uint32_t giroAssentandoDesde = 0;
 static DetectorParado giroParado(GIRO_CORRECAO_PARADO_DPS, GIRO_CORRECAO_PARADO_MS);
 // A correcao do giro nao sobrescreve a partida do giro principal.
@@ -353,6 +356,10 @@ static void handleStatus() {
     json += ",\"giroCorrecoes\":" + String(giroCorrecoes);
     json += ",\"giroErroAntesCorrecao\":" + numeroOuNull(giroErroAntes);
     json += ",\"giroErroMedido\":" + numeroOuNull(giroErroMedido);
+    json += ",\"giroTrilhaAtualMm\":" + numeroOuNull(lerTrilhaGiroMm());
+    json += ",\"giroTrilhaMedidaMm\":" + numeroOuNull(giroTrilhaMedidaMm);
+    json += ",\"giroAnguloRealGraus\":" + numeroOuNull(giroAnguloRealGraus);
+    json += ",\"giroTrilhaAmostras\":" + String(giroTrilhaAmostras);
     json += ",\"giroErroTotal\":" + numeroOuNull((giroAlvoGraus != 0 && imu.confiavel) ? giroAlvoGraus - (imu.yawDireitaGraus - giroYawRef) : NAN);
     json += ",\"syncPausaE\":" + String(ctrl.pausaSyncE ? "true" : "false");
     json += ",\"syncPausaD\":" + String(ctrl.pausaSyncD ? "true" : "false");
@@ -1028,6 +1035,34 @@ static bool giroTerminouBem(const char* motivo) {
     return strcmp(motivo, "giro_encoder_concluido") == 0 || strcmp(motivo, "giro_imu_concluido") == 0;
 }
 
+// V5.2: com o robo PARADO depois do giro principal, compara o arco que as
+// rodas percorreram com o angulo que a IMU mediu e corrige a trilha usada no
+// proximo giro. Assim o 90 graus por encoder se calibra sozinho no piso real.
+static void aprenderTrilhaGiro(const DadosIMU& imu) {
+    const ControleInfo c = lerControleMovimento();
+    if (cprE <= 0 || cprD <= 0 || c.alvoE == 0) return;
+    const float sentido = c.alvoE > 0 ? 1.0f : -1.0f;
+    const DadosEncoder e = lerEncoders();
+    const float cir = 3.14159265f * DIAMETRO_RODA_MM;
+    // Inclui o que a roda andou por inercia depois do corte, como a IMU.
+    const float arcoE = sentido * (float)(e.esq - c.inicioE) * cir / cprE;
+    const float arcoD = -sentido * (float)(e.dir - c.inicioD) * cir / cprD;
+    const float angulo = imu.yawDireitaGraus - giroYawRef;
+    giroAnguloRealGraus = angulo;
+    if (fabsf(angulo) < GIRO_TRILHA_ANGULO_MIN_GRAUS || fabsf(angulo) > GIRO_TRILHA_ANGULO_MAX_GRAUS) return;
+    if (arcoE <= 0 || arcoD <= 0) return;  // uma roda andou ao contrario: medida nao serve
+    giroTrilhaMedidaMm = trilhaEfetivaMedidaMm(0.5f * (arcoE + arcoD), angulo);
+    const float antes = lerTrilhaGiroMm();
+    const float depois = atualizarTrilhaEfetiva(antes, giroTrilhaMedidaMm, GIRO_TRILHA_ALFA,
+                                                GIRO_TRILHA_MIN_MM, GIRO_TRILHA_MAX_MM);
+    if (depois != antes) {
+        definirTrilhaGiroMm(depois);
+        ++giroTrilhaAmostras;
+        Serial.printf("[GIRO] real %.1f graus, arco %.1f mm -> trilha %.1f (medida %.1f)\n",
+                      angulo, 0.5f * (arcoE + arcoD), depois, giroTrilhaMedidaMm);
+    }
+}
+
 // Corta os motores e espera o robo terminar de girar por inercia.
 static void iniciarAssentamentoGiro(uint32_t agora) {
     if (freioAtivoHabilitado) frearAtivoMotores(); else pararMotores();
@@ -1053,7 +1088,7 @@ static void atualizarAssentamentoGiro(uint32_t agora) {
     }
     const float erro = giroAlvoGraus - (imu.yawDireitaGraus - giroYawRef);
     giroErroMedido = erro;
-    if (giroCorrecoes == 0) giroErroAntes = erro;
+    if (giroCorrecoes == 0) { giroErroAntes = erro; aprenderTrilhaGiro(imu); }
     switch (decidirCorrecaoGiro(erro, GIRO_CORRECAO_TOLERANCIA_GRAUS, GIRO_CORRECAO_ERRO_MAX_GRAUS,
                                 giroCorrecoes, GIRO_CORRECAO_MAX_TENTATIVAS)) {
         case DecisaoCorrecao::DENTRO_DA_TOLERANCIA:

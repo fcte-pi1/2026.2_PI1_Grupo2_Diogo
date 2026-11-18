@@ -68,6 +68,29 @@ void test_parado_funciona_no_estouro_do_millis() {
   TEST_ASSERT_TRUE(p.atualizar(0.0f, 0x00000050u));   // 112 ms depois
 }
 
+// V5.2: trilha efetiva aprendida pela IMU.
+void test_trilha_medida_bate_com_o_nominal_quando_o_giro_e_perfeito() {
+  // 90 graus com trilha 100 mm: arco = pi*100/4 = 78.54 mm.
+  TEST_ASSERT_FLOAT_WITHIN(0.1f, 100.0f, trilhaEfetivaMedidaMm(78.54f, 90.0f));
+}
+void test_giro_que_passa_do_alvo_encolhe_a_trilha() {
+  // Mesmo arco, mas o robo girou 100 graus: a trilha real e menor.
+  const float t = trilhaEfetivaMedidaMm(78.54f, 100.0f);
+  TEST_ASSERT_FLOAT_WITHIN(0.1f, 90.0f, t);
+  // Com a trilha aprendida, o arco do proximo giro de 90 da 90 graus reais.
+  const float arco = 3.14159265f * t * 90.0f / 360.0f;
+  TEST_ASSERT_FLOAT_WITHIN(0.1f, 90.0f, arco * 360.0f / (3.14159265f * t));
+}
+void test_giro_que_fica_curto_alarga_a_trilha() {
+  TEST_ASSERT_FLOAT_WITHIN(0.1f, 112.5f, trilhaEfetivaMedidaMm(78.54f, 80.0f));
+}
+void test_atualizacao_e_media_e_descarta_absurdos() {
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 95.0f, atualizarTrilhaEfetiva(100.0f, 90.0f, 0.5f, 60.0f, 160.0f));
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 100.0f, atualizarTrilhaEfetiva(100.0f, 300.0f, 0.5f, 60.0f, 160.0f));
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 100.0f, atualizarTrilhaEfetiva(100.0f, NAN, 0.5f, 60.0f, 160.0f));
+  TEST_ASSERT_TRUE(isnan(trilhaEfetivaMedidaMm(78.54f, 0.2f)));
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_erro_dentro_da_tolerancia_nao_corrige);
@@ -80,5 +103,9 @@ int main() {
   RUN_TEST(test_giro_para_qualquer_lado_conta_como_movimento);
   RUN_TEST(test_reiniciar_esquece_o_tempo_parado);
   RUN_TEST(test_parado_funciona_no_estouro_do_millis);
+  RUN_TEST(test_trilha_medida_bate_com_o_nominal_quando_o_giro_e_perfeito);
+  RUN_TEST(test_giro_que_passa_do_alvo_encolhe_a_trilha);
+  RUN_TEST(test_giro_que_fica_curto_alarga_a_trilha);
+  RUN_TEST(test_atualizacao_e_media_e_descarta_absurdos);
   return UNITY_END();
 }

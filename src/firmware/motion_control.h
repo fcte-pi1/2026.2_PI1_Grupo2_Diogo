@@ -76,6 +76,9 @@ void informarLateraisReto(LateralLida esquerda, LateralLida direita);
 const char* atualizarControleMovimento();
 void desativarControleMovimento();
 ControleInfo lerControleMovimento();
+// V5.2: trilha efetiva do giro (aprendida pela IMU). Comeca em ENTRE_RODAS_MM.
+void definirTrilhaGiroMm(float mm);
+float lerTrilhaGiroMm();
 
 // Giro positivo = direita, negativo = esquerda; angulo fixo +/-90 deg.
 bool iniciarControleGiro(bool direita, bool usaImu, float limiteRpm,

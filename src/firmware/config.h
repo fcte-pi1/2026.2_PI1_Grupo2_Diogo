@@ -111,6 +111,9 @@ constexpr uint32_t PARTIDA_AJUDA_RAMPA_ATE_MS = 700;
 // Teto da ajuda escalonada. Fica abaixo de PWM_LIMITE_CONTROLE (130). So e
 // alcancado se a roda continuar presa; ao primeiro pulso a ajuda e cancelada.
 constexpr int PWM_AJUDA_MAXIMA = 115;
+// V5.2: nos giros curtos pela IMU (correcao de 1 a 30 graus e alinhamento) a
+// ajuda cheia dava um tranco que passava do alvo e esgotava as correcoes.
+constexpr int PWM_AJUDA_MAXIMA_CORRECAO = 80;
 // Partida conjunta (#152). O piso precisa ficar acima dos 12 RPM que a ajuda exige.
 constexpr int64_t PARTIDA_PULSOS_MIN = 3;
 constexpr float PARTIDA_RPM_PISO = 18.0f;
@@ -174,8 +177,12 @@ constexpr float GIRO_MARGEM_CURSO_MIN_MM = 6.0f;
 // se passar da tolerancia, faz um giro curto pela IMU. Valores iniciais:
 // ajustar na bancada com gabarito externo.
 constexpr float GIRO_CORRECAO_TOLERANCIA_GRAUS = 1.0f; // erro aceito sem corrigir
-constexpr float GIRO_CORRECAO_ERRO_MAX_GRAUS = 15.0f;  // acima disso nao tenta corrigir
-constexpr uint8_t GIRO_CORRECAO_MAX_TENTATIVAS = 2;
+// V5.2: 15 -> 30 graus e 2 -> 3 tentativas. No chao o giro por encoder erra
+// mais que na bancada (escorregamento do apoio dianteiro); com 15 graus o robo
+// desistia de corrigir justamente quando mais precisava. A trilha aprendida
+// (abaixo) reduz esse erro a partir do segundo giro.
+constexpr float GIRO_CORRECAO_ERRO_MAX_GRAUS = 30.0f;  // acima disso nao tenta corrigir
+constexpr uint8_t GIRO_CORRECAO_MAX_TENTATIVAS = 3;
 constexpr float GIRO_CORRECAO_RPM = 20.0f;
 constexpr float GIRO_CORRECAO_PARADA_GRAUS = 0.4f;     // corta o PWM faltando isso para o alvo
 constexpr float GIRO_CORRECAO_PARADO_DPS = 1.0f;       // robo parado: taxa abaixo disso...
@@ -192,8 +199,27 @@ constexpr float GIRO_SUAVE_CORRECAO_RPM_MAX = 8.0f;
 constexpr float GIRO_SUAVE_TAXA_CORRECAO_RPM_S = 75.0f;
 constexpr float GIRO_SUAVE_DESACEL_INICIO_MM = 18.0f;
 constexpr float GIRO_SUAVE_RPM_PERTO_META = 25.0f;
-constexpr float GIRO_SUAVE_FALHA_MM = 6.0f;
-constexpr uint32_t GIRO_SUAVE_FALHA_MS = 250;
+// V5.2: 6 mm/250 ms -> 12 mm/400 ms. Valores de bancada (eixo marcado no chao).
+// No labirinto uma roda patina mais que a outra a cada partida. 12 mm de
+// diferenca desloca o centro do robo ~6 mm, contra 25 mm de folga lateral; o
+// ANGULO continua conferido pela IMU no fim. Abaixo disso o giro falhava por
+// uma diferenca que nao afeta a navegacao.
+constexpr float GIRO_SUAVE_FALHA_MM = 12.0f;
+constexpr uint32_t GIRO_SUAVE_FALHA_MS = 400;
+// V5.2: dessincronia aceita no FIM do giro suave (antes usava GIRO_SYNC_PAUSA_MM,
+// 3,2 mm, e caia em "giro_fim_com_dessincronia"). 8 mm = ~4 mm de translacao.
+constexpr float GIRO_SUAVE_FIM_SYNC_MAX_MM = 8.0f;
+// V5.2: TRILHA EFETIVA APRENDIDA. O giro principal e por encoder e usa a
+// distancia entre rodas para converter 90 graus em arco de roda. Com
+// ENTRE_RODAS_MM nominal e o escorregamento real, o robo girava de 80 a 110
+// graus. Depois de cada giro, com o robo parado, a IMU mede o angulo REAL e o
+// firmware corrige a trilha usada no giro seguinte. E o "90 graus" que se
+// calibra sozinho, com o escorregamento do piso embutido.
+constexpr float GIRO_TRILHA_ALFA = 0.5f;          // peso da medida nova
+constexpr float GIRO_TRILHA_MIN_MM = 60.0f;       // fora disso a medida e descartada
+constexpr float GIRO_TRILHA_MAX_MM = 160.0f;
+constexpr float GIRO_TRILHA_ANGULO_MIN_GRAUS = 45.0f;  // so aprende com giro "de verdade"
+constexpr float GIRO_TRILHA_ANGULO_MAX_GRAUS = 135.0f;
 constexpr float GIRO_SUAVE_META_TOLERANCIA_MM = 0.7f;
 
 
@@ -411,9 +437,14 @@ constexpr uint32_t NAV_FRENTE_INDEFINIDA_MAX_MS = 300;
 constexpr bool NAV_PARTIDA_TRASEIRA_ENCOSTADA = true;
 // Folga que o robo mantem da parede da frente ao terminar uma reta (leitura do
 // U3 = ROBO_U3_TOCA_MM + esta folga).
-constexpr float NAV_PARADA_FOLGA_MM = 15.0f;
+// V5.2: 15 -> 5 mm. O robo gira encostado na parede (a parte que excede passa
+// por cima dos 5 cm), e quanto mais longe dela ele gira, mais erro leva para a
+// celula seguinte. 5 mm cobre o ruido do VL53L0X nessa distancia (~3 mm) sem
+// empurrar a parede, o que travaria as rodas e cairia em "sem_movimento".
+constexpr float NAV_PARADA_FOLGA_MM = 5.0f;
 // Margem dura: abaixo de ROBO_U3_TOCA_MM + isto, para na hora (emergencia).
-constexpr float NAV_EMERGENCIA_FOLGA_MM = 5.0f;
+// V5.2: 5 -> 2 mm, para ficar abaixo da nova parada de trabalho.
+constexpr float NAV_EMERGENCIA_FOLGA_MM = 2.0f;
 // Encurtar a meta so vale a pena se ainda sobra este tanto para desacelerar.
 constexpr float NAV_ENCURTAR_MIN_RESTANTE_MM = 12.0f;
 // Reposicionamento longitudinal antes de um giro de 90 graus.

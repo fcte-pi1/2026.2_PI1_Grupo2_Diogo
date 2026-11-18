@@ -13,6 +13,9 @@ namespace {
 ControleInfo info;
 float cprE_ = 0, cprD_ = 0;
 float velocidadeAlvoE = 0, velocidadeAlvoD = 0;
+// V5.2: trilha usada para converter angulo em arco de roda no giro. Comeca no
+// nominal e e corrigida pela IMU depois de cada giro (ver web_telemetry.cpp).
+float trilhaGiroMm = ENTRE_RODAS_MM;
 uint32_t anteriorMs = 0;
 struct EstadoPI {
     float integral = 0;
@@ -147,14 +150,15 @@ int minimoAjudaPartida(bool modoPosicao, int64_t distanciaRestante) {
     return PWM_AJUDA_PARTIDA;
 }
 
-int aplicarRoda(const ComandoRoda &c, EstadoPI &estado, bool esquerda, bool ajuda, int minimoAjuda) {
+int aplicarRoda(const ComandoRoda &c, EstadoPI &estado, bool esquerda, bool ajuda, int minimoAjuda,
+                int maximoAjuda) {
     if (c.freio) {
         if (esquerda) frearMotorEsq(); else frearMotorDir();
         return 0;
     }
     float comando = c.comando;
     if (ajuda) {
-        const int ajudaPwm = ajudaPartidaEscalonada(c.inativoMs, minimoAjuda, PWM_AJUDA_MAXIMA,
+        const int ajudaPwm = ajudaPartidaEscalonada(c.inativoMs, minimoAjuda, maximoAjuda,
                                                     PARTIDA_SEM_PULSOS_MS, PARTIDA_AJUDA_RAMPA_ATE_MS);
         if (comando < ajudaPwm) {
             comando = (float)ajudaPwm;
@@ -217,7 +221,7 @@ bool iniciarControleGiroAngulo(float anguloGraus, bool usaImu, float limiteRpm,
     const bool direita = anguloGraus > 0;
     sentidoGiro = direita ? +1 : -1;
     // Arco de cada roda para o robo girar o angulo pedido sobre o proprio eixo.
-    const float distancia = 3.14159265358979323846f * ENTRE_RODAS_MM * fabsf(anguloGraus) / 360.0f;
+    const float distancia = 3.14159265358979323846f * trilhaGiroMm * fabsf(anguloGraus) / 360.0f;
     alvoFisicoMm = distancia;
     limiteCursoGiroMm = fmaxf(distancia * GIRO_LIMITE_DESLOCAMENTO_REL,
                               distancia + GIRO_MARGEM_CURSO_MIN_MM);
@@ -442,7 +446,7 @@ const char* atualizarControleMovimento() {
                 // No modo encoder o ALVO EH A MEDIA do deslocamento das rodas.
                 const float faltaMedia = alvoFisicoMm - (viagemE + viagemD) * 0.5f;
                 if (faltaMedia <= GIRO_SUAVE_META_TOLERANCIA_MM) {
-                    if (fabsf(info.syncErroMm) > GIRO_SYNC_PAUSA_MM)
+                    if (fabsf(info.syncErroMm) > GIRO_SUAVE_FIM_SYNC_MAX_MM)
                         return "giro_fim_com_dessincronia";
                     return "giro_encoder_concluido";
                 }
@@ -472,7 +476,7 @@ const char* atualizarControleMovimento() {
             // Freia ao atingir o angulo dentro da tolerancia, sem trocar
             // de sentido; resultado final e conferido depois do freio.
             if (falta <= paradaGiroGraus) {
-                if (fabsf(info.syncErroMm) > GIRO_SYNC_PAUSA_MM)
+                if (fabsf(info.syncErroMm) > (info.sincronismoSuave ? GIRO_SUAVE_FIM_SYNC_MAX_MM : GIRO_SYNC_PAUSA_MM))
                     return "imu_alvo_com_dessincronia";
                 return "giro_imu_concluido";
             }
@@ -596,8 +600,10 @@ const char* atualizarControleMovimento() {
         ajudaD = ajudaPartidaConjunta(cmdD.precisaAjuda, cmdE.precisaAjuda,
                                       cursoPartidaD - cursoPartidaE, PARTIDA_ADIANTAMENTO_MAX_MM);
     }
-    info.pwmE = aplicarRoda(cmdE, estadoE, true, ajudaE, minimoAjudaPartida(modoPosicao, restanteE));
-    info.pwmD = aplicarRoda(cmdD, estadoD, false, ajudaD, minimoAjudaPartida(modoPosicao, restanteD));
+    // V5.2: giro curto pela IMU (correcao/alinhamento) usa um teto menor de ajuda.
+    const int tetoAjuda = giroI ? PWM_AJUDA_MAXIMA_CORRECAO : PWM_AJUDA_MAXIMA;
+    info.pwmE = aplicarRoda(cmdE, estadoE, true, ajudaE, minimoAjudaPartida(modoPosicao, restanteE), tetoAjuda);
+    info.pwmD = aplicarRoda(cmdD, estadoD, false, ajudaD, minimoAjudaPartida(modoPosicao, restanteD), tetoAjuda);
     if (girando && info.pausaSyncE) info.pwmE = 0;
     if (girando && info.pausaSyncD) info.pwmD = 0;
     info.ajudaPartidaE = estadoE.ajudaAtiva;
@@ -638,3 +644,5 @@ void desativarControleMovimento() {
 }
 
 ControleInfo lerControleMovimento() { return info; }
+void definirTrilhaGiroMm(float mm) { if (isfinite(mm) && mm > 0) trilhaGiroMm = mm; }
+float lerTrilhaGiroMm() { return trilhaGiroMm; }
