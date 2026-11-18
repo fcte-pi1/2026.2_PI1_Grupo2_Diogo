@@ -86,6 +86,21 @@ void test_reiniciar_limpa_o_registro() {
   TEST_ASSERT_EQUAL_FLOAT(0.0f, r.ler().diferencaMaxMm);
 }
 
+// V5.1: rampa da ajuda de partida.
+void test_ajuda_escalonada_comeca_no_minimo() {
+  TEST_ASSERT_EQUAL_INT(65, ajudaPartidaEscalonada(100, 65, 115, 140, 700));
+  TEST_ASSERT_EQUAL_INT(65, ajudaPartidaEscalonada(140, 65, 115, 140, 700));
+}
+void test_ajuda_escalonada_sobe_no_meio_e_segura_no_teto() {
+  TEST_ASSERT_EQUAL_INT(90, ajudaPartidaEscalonada(420, 65, 115, 140, 700));
+  TEST_ASSERT_EQUAL_INT(115, ajudaPartidaEscalonada(700, 65, 115, 140, 700));
+  TEST_ASSERT_EQUAL_INT(115, ajudaPartidaEscalonada(1100, 65, 115, 140, 700));
+}
+void test_ajuda_escalonada_nunca_reduz_o_minimo() {
+  // Teto abaixo do minimo (configuracao errada): fica no minimo.
+  TEST_ASSERT_EQUAL_INT(65, ajudaPartidaEscalonada(600, 65, 40, 140, 700));
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_roda_parte_com_pulsos_nos_dois_sentidos);
@@ -98,5 +113,8 @@ int main() {
   RUN_TEST(test_registro_guarda_diferenca_dentro_da_janela);
   RUN_TEST(test_registro_congela_depois_da_janela);
   RUN_TEST(test_reiniciar_limpa_o_registro);
+  RUN_TEST(test_ajuda_escalonada_comeca_no_minimo);
+  RUN_TEST(test_ajuda_escalonada_sobe_no_meio_e_segura_no_teto);
+  RUN_TEST(test_ajuda_escalonada_nunca_reduz_o_minimo);
   return UNITY_END();
 }

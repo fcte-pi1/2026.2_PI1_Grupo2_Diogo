@@ -97,6 +97,7 @@ struct ComandoRoda {
     bool frente = true;
     float comando = 0;  // antes da ajuda de partida
     bool precisaAjuda = false;
+    uint32_t inativoMs = 0; // tempo sem pulsos: escalona a ajuda (V5.1)
 };
 
 // Ref e real na convencao assinada: positivo = frente.
@@ -132,6 +133,7 @@ ComandoRoda calcularRoda(float ref, float real, float dt, EstadoPI &estado, uint
     // Se nao houver pulsos por 140 ms, ajuda curta de torque para vencer
     // o atrito ESTATICO; cancela imediatamente quando ha novos pulsos.
     uint32_t inativoMs = agora - estado.ultimoPulsoMs;
+    c.inativoMs = inativoMs;
     c.precisaAjuda = inativoMs >= PARTIDA_SEM_PULSOS_MS &&
                      inativoMs <= PARTIDA_AJUDA_ATE_MS && rpmDesejada >= 12.0f;
     return c;
@@ -151,9 +153,13 @@ int aplicarRoda(const ComandoRoda &c, EstadoPI &estado, bool esquerda, bool ajud
         return 0;
     }
     float comando = c.comando;
-    if (ajuda && comando < minimoAjuda) {
-        comando = (float)minimoAjuda;
-        estado.ajudaAtiva = true;
+    if (ajuda) {
+        const int ajudaPwm = ajudaPartidaEscalonada(c.inativoMs, minimoAjuda, PWM_AJUDA_MAXIMA,
+                                                    PARTIDA_SEM_PULSOS_MS, PARTIDA_AJUDA_RAMPA_ATE_MS);
+        if (comando < ajudaPwm) {
+            comando = (float)ajudaPwm;
+            estado.ajudaAtiva = true;
+        }
     }
     int pwm = (int)lroundf(comando);
     if (esquerda) setMotorEsq(pwm, c.frente);

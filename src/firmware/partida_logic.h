@@ -21,6 +21,18 @@ inline bool ajudaPartidaConjunta(bool precisaPropria, bool precisaOutra,
   return precisaPropria || (precisaOutra && adiantamentoMm <= limiteMm);
 }
 
+// V5.1: ajuda de partida ESCALONADA. Comeca em 'minimo' e sobe em linha reta
+// ate 'maximo' enquanto a roda continuar sem pulsos. A roda que solta com pouco
+// nao leva tranco (menos ultrapassagem no giro); a que esta presa de verdade
+// recebe torque cheio antes de o firmware desistir dela.
+inline int ajudaPartidaEscalonada(uint32_t inativoMs, int minimo, int maximo,
+                                  uint32_t inicioMs, uint32_t fimRampaMs) {
+  if (maximo <= minimo || fimRampaMs <= inicioMs || inativoMs <= inicioMs) return minimo;
+  if (inativoMs >= fimRampaMs) return maximo;
+  const float f = (float)(inativoMs - inicioMs) / (float)(fimRampaMs - inicioMs);
+  return minimo + (int)lroundf(f * (float)(maximo - minimo));
+}
+
 struct DadosPartida {
   int32_t partidaEMs = -1;      // -1 = não saiu
   int32_t partidaDMs = -1;

@@ -100,7 +100,17 @@ constexpr int PWM_AJUDA_PARTIDA = 65;
 constexpr int PWM_AJUDA_PARTIDA_CURTA = 55;
 constexpr int PWM_AJUDA_APROXIMACAO = 43;
 constexpr uint32_t PARTIDA_SEM_PULSOS_MS = 140;
-constexpr uint32_t PARTIDA_AJUDA_ATE_MS = 850;
+// V5.1: a ajuda acabava em 850 ms, mas a falha por travamento so dispara em
+// CONTROLE_STALL_MS (1200 ms). Nos ultimos 350 ms a roda presa ficava SEM ajuda,
+// so com o PI, que nesse tempo nao passava de ~66 de PWM (26% de duty). No ar
+// isso basta; no chao, com os 285 g do robo, nao. Agora a ajuda cobre a janela
+// inteira e SOBE em rampa (ver ajudaPartidaEscalonada em partida_logic.h).
+constexpr uint32_t PARTIDA_AJUDA_ATE_MS = 1150;
+// Ate aqui a ajuda sobe do valor de partida ate PWM_AJUDA_MAXIMA; depois segura.
+constexpr uint32_t PARTIDA_AJUDA_RAMPA_ATE_MS = 700;
+// Teto da ajuda escalonada. Fica abaixo de PWM_LIMITE_CONTROLE (130). So e
+// alcancado se a roda continuar presa; ao primeiro pulso a ajuda e cancelada.
+constexpr int PWM_AJUDA_MAXIMA = 115;
 // Partida conjunta (#152). O piso precisa ficar acima dos 12 RPM que a ajuda exige.
 constexpr int64_t PARTIDA_PULSOS_MIN = 3;
 constexpr float PARTIDA_RPM_PISO = 18.0f;
@@ -114,6 +124,9 @@ constexpr float LIMITE_INTEGRAL_PWM = 70.0f;
 constexpr int POSICAO_TOLERANCIA_CONTAGENS = 4;
 constexpr int POSICAO_META_MAX_CONTAGENS = 2000;
 constexpr uint32_t CONTROLE_STALL_MS = 1200;
+static_assert(PARTIDA_AJUDA_ATE_MS < CONTROLE_STALL_MS,
+              "a ajuda de partida precisa agir antes de a falha por travamento disparar");
+static_assert(PARTIDA_AJUDA_RAMPA_ATE_MS < PARTIDA_AJUDA_ATE_MS, "rampa da ajuda maior que a janela");
 constexpr uint32_t FREIO_MEDICAO_FINAL_MS = 1000;
 // Freio ativo (#163): desligado ate comparar com o coast na bancada.
 constexpr bool FREIO_ATIVO_PADRAO = false;
@@ -303,8 +316,12 @@ constexpr bool NAV_LATERAIS_CALIBRADOS = true; // confirmar offsets e posicionam
 constexpr float NAV_U3_ATE_NARIZ_MM = ROBO_U3_TOCA_MM;
 #endif
 constexpr float NAV_CELULA_MM = 180.0f; // distancia entre centros: aferir no labirinto real
-constexpr float NAV_RPM_RETO = 25.0f;
-constexpr float NAV_RPM_GIRO = 25.0f;
+// V5.1: 25 -> 35 RPM (~62 mm/s). E o teto atual de FRENTE_RPM_MAX_TESTE; acima
+// disso a reta e recusada. Mais RPM tambem eleva o feedforward de PWM.
+constexpr float NAV_RPM_RETO = 35.0f;
+// V5.1: 25 -> 30 RPM. Subida menor que a da reta: um dos erros vistos foi o
+// giro passando do alvo, e mais velocidade no giro aumenta a ultrapassagem.
+constexpr float NAV_RPM_GIRO = 30.0f;
 constexpr float NAV_FOLGA_FRONTAL_MM = 15.0f;
 constexpr uint32_t NAV_IDADE_SENSOR_MS = 160;
 constexpr uint32_t NAV_TEMPO_SENSORES_MS = 2000;
@@ -379,7 +396,7 @@ constexpr uint8_t NAV_ALINHAR_TENTATIVAS = 2;
 //   R_medido + 5 mm - (largura livre do corredor / 2)
 // 0 = desligado. Faixa aceita 0..40 mm. Ajustar por ensaio.
 constexpr float NAV_GIRO_RECUO_MM = 0.0f;
-constexpr float NAV_GIRO_RECUO_RPM = 25.0f;
+constexpr float NAV_GIRO_RECUO_RPM = 30.0f; // V5.1: usado pelo reposicionamento antes do giro
 // V4.9.1: tempo maximo com o U3 sem evidencia durante o avanco antes de parar
 // (uma unica amostra ruim nao interrompe mais a missao).
 constexpr uint32_t NAV_FRENTE_INDEFINIDA_MAX_MS = 300;
