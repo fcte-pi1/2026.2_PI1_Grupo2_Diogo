@@ -304,7 +304,7 @@ void navigationTick(){
     const float mm=(float)(f.filtradoMm>=0?f.filtradoMm:f.brutoMm);
     lastFrontReadMm=mm;
     const bool podeRecuar=mazeTraversedFromPose(dirChar((dirValue(direction)+2)&3));
-    const float c=navCorrecaoCentroFrente(mm,NAV_U3_AO_EIXO_MM,NAV_CELULA_MM/2.0f,NAV_U3_ATE_NARIZ_MM,
+    const float c=navCorrecaoCentroFrente(mm,NAV_CENTRO_FRENTE_ALVO_MM,NAV_U3_ATE_NARIZ_MM,
         NAV_CENTRO_FRENTE_FOLGA_NARIZ_MM,NAV_CENTRO_FRENTE_MIN_MM,NAV_CENTRO_FRENTE_MAX_MM,podeRecuar);
     if(isfinite(c)&&c!=0.0f){
      if(navigationDriveStartNudge(c)){
@@ -465,8 +465,8 @@ String navigationStatusJson(){
   ",\"reHabilitada\":"+String(options.reverse?"true":"false")+",\"centralizacaoHabilitada\":"+String(options.center?"true":"false")+
   ",\"ajusteAberturaHabilitado\":"+String(options.opening?"true":"false")+",\"ajusteAplicado\":"+String(adjustmentApplied?"true":"false")+
   ",\"bordaEsqMm\":"+nOrNull(edgeLeft)+",\"bordaDirMm\":"+nOrNull(edgeRight)+",\"centroEstimadoMm\":"+nOrNull(openingEstimate)+
-  ",\"centroFrenteHabilitado\":"+String(NAV_U3_AO_EIXO_MM>=0?"true":"false")+",\"ajustesCentroFrente\":"+String(centerNudgeCount)+
-  ",\"ultimoAjusteCentroMm\":"+nOrNull(lastCenterNudgeMm)+",\"ultimaLeituraFrenteMm\":"+nOrNull(lastFrontReadMm)+
+  ",\"centroFrenteHabilitado\":"+String(NAV_CENTRO_FRENTE_ALVO_MM>=0?"true":"false")+",\"ajustesCentroFrente\":"+String(centerNudgeCount)+
+  ",\"ultimoAjusteCentroMm\":"+nOrNull(lastCenterNudgeMm)+",\"ultimaLeituraFrenteMm\":"+nOrNull(lastFrontReadMm)+",\"eixoAteParedeFrenteMm\":"+nOrNull(isfinite(lastFrontReadMm)?lastFrontReadMm+NAV_U3_AO_EIXO_MM:NAN)+
   ",\"metaDeslocamentoMm\":"+String(plannedMm,1)+",\"referenciaLateralMm\":"+nOrNull(centerRef>0?centerRef:NAN)+
   ",\"referenciaEsqAprendidaMm\":"+nOrNull(centerRefEsq>0?centerRefEsq:NAN)+
   ",\"referenciaDirAprendidaMm\":"+nOrNull(centerRefDir>0?centerRefDir:NAN)+
