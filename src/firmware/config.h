@@ -74,7 +74,9 @@ constexpr float FF_PWM_POR_RPM = 0.44f;
 constexpr float LIMITE_INTEGRAL_PWM = 70.0f;
 constexpr int POSICAO_TOLERANCIA_CONTAGENS = 4;
 constexpr int POSICAO_META_MAX_CONTAGENS = 2000;
-constexpr uint32_t CONTROLE_STALL_MS = 1200;
+// Tempo sem nenhum pulso do encoder, com a roda mandada girar, ate parar por travamento.
+// Era 1200; aumentado para 2500 apos uma falha da roda direita ao partir no reto, logo depois de um giro.
+constexpr uint32_t CONTROLE_STALL_MS = 2500;
 constexpr uint32_t FREIO_MEDICAO_FINAL_MS = 1000;
 // Freio ativo (#163): desligado ate comparar com o coast na bancada.
 constexpr bool FREIO_ATIVO_PADRAO = false;
