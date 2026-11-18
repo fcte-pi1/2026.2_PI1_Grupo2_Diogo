@@ -267,16 +267,17 @@ constexpr float NAV_RPM_GIRO = 25.0f;
 constexpr float NAV_FOLGA_FRONTAL_MM = 15.0f;
 // V4.10: parada pelo laser frontal (ver nav_centro_frente.h).
 // Medida do ROBO: distancia do laser U3 ao eixo das rodas (mm, positivo = U3 a frente do eixo).
-// Com o nariz 60 mm a frente do U3 (NAV_U3_ATE_NARIZ_MM), o nariz fica a 105 mm do eixo: com o
-// eixo no centro da celula o nariz entraria 15 mm na parede da frente. Por isso o alvo abaixo
-// NAO e "eixo no centro".
+// Celula de 180 mm com parede de 12 mm centrada na divisa: o vao livre e de 168 mm, e do centro da
+// celula ate a SUPERFICIE da parede (o que o laser mede) sao 84 mm. Com o nariz 60 mm a frente
+// do U3 (NAV_U3_ATE_NARIZ_MM), o nariz fica a 105 mm do eixo: com o eixo no centro da celula o
+// nariz entraria 21 mm na parede da frente. Por isso o alvo abaixo NAO e "eixo no centro".
 #if defined(NAV_HOST_SIM) && !defined(ARDUINO)
 constexpr float NAV_U3_AO_EIXO_MM = 10.0f; // so o executavel de testes nativos
 constexpr float NAV_CENTRO_FRENTE_ALVO_MM = 80.0f;
 #else
 constexpr float NAV_U3_AO_EIXO_MM = 45.0f; // medido no robo (regua)
 // Leitura do U3 desejada ao parar com parede a frente. Primeiro valor de ensaio: nariz a 25 mm da
-// parede e eixo a 130 mm dela (40 mm antes do centro). Ajustar ate o giro passar livre; menor =
+// parede e eixo a 130 mm dela (46 mm antes do centro, que fica a 84 mm da parede). Ajustar ate o giro passar livre; menor =
 // mais perto da parede. -1 = correcao desligada.
 constexpr float NAV_CENTRO_FRENTE_ALVO_MM = 85.0f;
 #endif
