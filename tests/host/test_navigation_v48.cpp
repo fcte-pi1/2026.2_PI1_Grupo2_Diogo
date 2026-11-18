@@ -24,6 +24,7 @@ static bool weakFront=false,missingFront=false,forceMotionFail=false,timeoutFron
 static bool trackingCase=false,openNoTarget=false,edgeNoTarget=false;static float lateralBias=0;
 static int frontCase=0; // 1: perda breve; 2: distancia em reducao; 3: I2C; 4: obstaculo; 5: evento velho; 6: sigma
 static bool usedMemory=false;
+static int frontStoppedRead=60;static float lastNudgeMm=0;
 static std::string status(){return navigationStatusJson().c_str();}
 static bool has(const char* s){return status().find(s)!=std::string::npos;}
 static Direction sensorDir(uint8_t s){return s==LASER_U2?Grid::left(heading):s==LASER_U4?Grid::right(heading):heading;}
@@ -35,6 +36,7 @@ LeituraLaser lerLaser(uint8_t sensor){
  // Modelo controlado da abertura na bifurcacao de retorno, com leitura VALIDA.
  if(trackingCase&&moving&&!turning&&targetMm<0&&px==0&&py==2&&sensor==LASER_U4&&fabsf(progress)>=90)present=false;
  l.brutoMm=present?60:300;
+ if(present&&!moving&&sensor==LASER_U3)l.brutoMm=frontStoppedRead; // U3 parado com parede a frente
  // Robo deslocado para a direita: esquerda le mais, direita le menos.
  if(present&&sensor==LASER_U2)l.brutoMm+=(int)lateralBias;
  if(present&&sensor==LASER_U4)l.brutoMm-=(int)lateralBias;
@@ -93,7 +95,8 @@ bool navigationDriveAdjustStraight(float mm){assert(moving&&!turning&&fabsf(mm-t
 static float turnTarget=0,driftPerMove=0,alignTotal=0,lastTurnAlvo=0;static int aligns=0,nudges=0;static bool aligningFake=false;
 bool navigationDriveStartTurn(bool right,float rpm,float alvo){assert(rpm>0&&fabsf(fabsf(alvo)-90)<=15);moving=true;turning=true;aligningFake=false;resultOk=true;rightTurn=right;turnTarget=alvo;lastTurnAlvo=alvo;startDriveMs=nowMs;++turns;return true;}
 bool navigationDriveStartAlign(float g){assert(!moving&&fabsf(g)<=15);moving=true;turning=true;aligningFake=true;resultOk=true;turnTarget=g;alignTotal+=g;startDriveMs=nowMs;++aligns;return true;}
-bool navigationDriveStartNudge(float mm){assert(!moving&&mm<0&&mm>=-40);++nudges;resultOk=true;++resultId;return true;}
+// Como o driver real: fica em andamento e so incrementa o resultado ao terminar (tick).
+bool navigationDriveStartNudge(float mm){assert(!moving&&fabsf(mm)>=1&&fabsf(mm)<=60);lastNudgeMm=mm;++nudges;moving=true;turning=true;aligningFake=true;turnTarget=0;resultOk=true;startDriveMs=nowMs;return true;}
 uint32_t navigationDriveResultId(){return resultId;}
 bool navigationDriveResultOk(){return resultOk;}
 const char* navigationDriveResultReason(){return "simulacao_falhou";}
@@ -114,7 +117,7 @@ static void tick(){
  navigationTick();if(has("folga_medida_recente"))usedMemory=true;nowMs+=20;
 }
 static void reset(uint8_t w,uint8_t h,uint8_t gx,uint8_t gy){
- assert(truth.init(w,h,gx,gy));moves=turns=reverses=adjustments=0;moving=turning=false;resultOk=true;weakFront=missingFront=forceMotionFail=trackingCase=timeoutFront=leftLiesOpen=openNoTarget=edgeNoTarget=false;lateralBias=0;frontCase=0;usedMemory=false;px=py=0;heading=NORTH;yaw=0;nowMs+=10000;
+ assert(truth.init(w,h,gx,gy));moves=turns=reverses=adjustments=0;moving=turning=false;resultOk=true;weakFront=missingFront=forceMotionFail=trackingCase=timeoutFront=leftLiesOpen=openNoTarget=edgeNoTarget=false;lateralBias=0;frontCase=0;frontStoppedRead=60;lastNudgeMm=0;nudges=0;usedMemory=false;px=py=0;heading=NORTH;yaw=0;nowMs+=10000;
 }
 static void run(){for(int i=0;i<30000&&navigationRunning();++i)tick();assert(!navigationRunning());}
 static void expectGoal(){if(!has("OBJETIVO_ATINGIDO"))fprintf(stderr,"Unexpected nav status: %s\n",status().c_str());assert(has("OBJETIVO_ATINGIDO"));assert(px==truth.goalX&&py==truth.goalY);}
@@ -183,4 +186,15 @@ int main(){
  assert(reverses==2&&has("\"paradasFrontaisNaCelula\":1"));
  puts("PASS: parada frontal confirmada em celula, recuo no beco e rota alternativa");
 
+
+ // V4.10: parou curto com parede a frente (U3 le 100, alvo 80): anda 20 mm para frente uma unica vez.
+ reset(2,2,1,0);assert(truth.observe(0,0,EAST,false));frontStoppedRead=100;assert(!navigationStart(2,2,1,0));run();expectGoal();
+ assert(nudges==1&&fabsf(lastNudgeMm-20.0f)<0.01f&&turns==1);assert(has("\"ajustesCentroFrente\":1"));
+ puts("PASS: parada curta com parede a frente e corrigida para o centro antes do giro");
+ // Ja no centro (U3 le 80): nao mexe.
+ reset(2,2,1,0);assert(truth.observe(0,0,EAST,false));frontStoppedRead=80;assert(!navigationStart(2,2,1,0));run();expectGoal();
+ assert(nudges==0&&has("\"ajustesCentroFrente\":0"));puts("PASS: ja no centro, sem correcao");
+ // Leitura absurda (nao e a parede desta celula): nao mexe.
+ reset(2,2,1,0);assert(truth.observe(0,0,EAST,false));frontStoppedRead=200;assert(!navigationStart(2,2,1,0));run();expectGoal();
+ assert(nudges==0);puts("PASS: leitura fora da faixa nao vira correcao");
 }

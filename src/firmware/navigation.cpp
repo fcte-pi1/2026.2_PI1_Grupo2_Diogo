@@ -6,6 +6,7 @@
 #include "nav_laser_policy.h"
 #include "nav_opening.h"
 #include "nav_wall_arrival.h"
+#include "nav_centro_frente.h"
 #include "battery.h"
 #include "imu.h"
 #include "config.h"
@@ -32,6 +33,10 @@ uint16_t wallArrivals=0;
 // V4.9.2: rumo absoluto esperado (yaw da IMU) e manobras auxiliares.
 float expectedYaw=0, lastTurnTarget=NAN, lastAlignDeg=NAN;
 bool aligning=false, nudging=false, pendingBackoff=false;
+// V4.10: centro da celula pelo laser frontal (uma correcao por celula).
+bool centerNudged=false, centering=false;
+float lastCenterNudgeMm=NAN, lastFrontReadMm=NAN;
+uint16_t centerNudgeCount=0;
 uint8_t alignTries=0;
 uint16_t alignCount=0, backoffCount=0;
 // V4.9.3: geometria do corredor APRENDIDA durante a missao e desvio lateral.
@@ -231,6 +236,7 @@ const char* navigationStartWithOptions(uint8_t w,uint8_t h,uint8_t gx,uint8_t gy
  if(requested.startX>=w||requested.startY>=h)return "posicao_inicial_invalida";
  if(requested.startX==gx&&requested.startY==gy)return "inicio_igual_ao_objetivo";
  x=targetX=requested.startX;y=targetY=requested.startY;direction=targetDirection=requested.initialDirection;steps=reverseSteps=0;inferredFaces=0;frontReplans=0;
+ centerNudged=false;centering=false;centerNudgeCount=0;lastCenterNudgeMm=lastFrontReadMm=NAN;
  reversing=false;centerRef=centerRefEsq=centerRefDir=-1;wallStoppedMm=wallStoppedSync=NAN;wallArrivals=0;edgeLeft=edgeRight=openingEstimate=NAN;plannedMm=0;adjustmentApplied=false;frontMove=FrontMoveEvidence{};
  if(!mazeSetPose(x,y,direction))return "erro_ao_inicializar_pose";
  expectedYaw=lerIMU().yawDireitaGraus;lastTurnTarget=lastAlignDeg=NAN;
@@ -289,6 +295,25 @@ void navigationTick(){
   // recente prevalece (borda externa e passagens percorridas sao preservadas).
   if(!mazeUpdate(x,y,known,wall,inferred)){fail("posicao_fora_do_mapa");return;}
   measureLateral(now); // V4.9.3: inclusive logo depois de um giro
+  // V4.10: com parede a frente, leva o EIXO ao centro da celula antes de qualquer giro.
+  if(!centerNudged){
+   centerNudged=true;
+   const auto f=lerLaser(LASER_U3);
+   lastFrontReadMm=NAN;lastCenterNudgeMm=NAN;
+   if(validFresh(f,now)&&f.statusVL==0){
+    const float mm=(float)(f.filtradoMm>=0?f.filtradoMm:f.brutoMm);
+    lastFrontReadMm=mm;
+    const bool podeRecuar=mazeTraversedFromPose(dirChar((dirValue(direction)+2)&3));
+    const float c=navCorrecaoCentroFrente(mm,NAV_U3_AO_EIXO_MM,NAV_CELULA_MM/2.0f,NAV_U3_ATE_NARIZ_MM,
+        NAV_CENTRO_FRENTE_FOLGA_NARIZ_MM,NAV_CENTRO_FRENTE_MIN_MM,NAV_CENTRO_FRENTE_MAX_MM,podeRecuar);
+    if(isfinite(c)&&c!=0.0f){
+     if(navigationDriveStartNudge(c)){
+      lastCenterNudgeMm=c;++centerNudgeCount;centering=true;
+      lastDriverId=navigationDriveResultId();stage=Stage::TURN_WAIT;stageMs=now;return;
+     }
+    }
+   }
+  }
   mazeMarkVisited(x,y);
   uint8_t nx,ny;if(!mazeNextDirection(targetDirection,nx,ny)){fail("sem_passagem_confirmada_ate_objetivo");return;}
   targetX=nx;targetY=ny;
@@ -400,6 +425,7 @@ void navigationTick(){
   x=targetX;y=targetY;
   if(!mazeSetPose(x,y,direction)){fail("erro_pose_apos_parada_frontal");return;}
   mazeMarkVisited(x,y);++steps;++wallArrivals;frontReplans=0;
+  centerNudged=false;
   if(navigationDriveCenterRefMm()>0)centerRef=navigationDriveCenterRefMm();
   if(navigationDriveCenterRefEsqMm()>0&&navigationDriveCenterRefDirMm()>0){
    centerRefEsq=navigationDriveCenterRefEsqMm();centerRefDir=navigationDriveCenterRefDirMm();
@@ -415,9 +441,11 @@ void navigationTick(){
    if(fabsf(lerIMU().yawDireitaGraus-yawStart)>NAV_YAW_RETO_MAX_GRAUS){fail("desvio_angular_apos_parada");return;}
    if(!mazeMarkTraversedFromPose(targetDirection)){fail("erro_registro_travessia");return;}
    x=targetX;y=targetY;mazeSetPose(x,y,direction);mazeMarkVisited(x,y);++steps;frontReplans=0;if(reversing)++reverseSteps;
+   centerNudged=false;
    if(mazeIsGoal()){stage=Stage::DONE;errorText="objetivo_atingido";return;}
    beginSensing();return;
   }
+  if(centering){centering=false;beginSensing();return;}
   if(nudging){nudging=false;stage=Stage::TURN_START;stageMs=now;return;}
   if(aligning){aligning=false;stage=Stage::MOVE_START;stageMs=now;return;}
   // V4.9.2: confere contra o rumo ABSOLUTO esperado, nao so o giro relativo.
@@ -437,6 +465,8 @@ String navigationStatusJson(){
   ",\"reHabilitada\":"+String(options.reverse?"true":"false")+",\"centralizacaoHabilitada\":"+String(options.center?"true":"false")+
   ",\"ajusteAberturaHabilitado\":"+String(options.opening?"true":"false")+",\"ajusteAplicado\":"+String(adjustmentApplied?"true":"false")+
   ",\"bordaEsqMm\":"+nOrNull(edgeLeft)+",\"bordaDirMm\":"+nOrNull(edgeRight)+",\"centroEstimadoMm\":"+nOrNull(openingEstimate)+
+  ",\"centroFrenteHabilitado\":"+String(NAV_U3_AO_EIXO_MM>=0?"true":"false")+",\"ajustesCentroFrente\":"+String(centerNudgeCount)+
+  ",\"ultimoAjusteCentroMm\":"+nOrNull(lastCenterNudgeMm)+",\"ultimaLeituraFrenteMm\":"+nOrNull(lastFrontReadMm)+
   ",\"metaDeslocamentoMm\":"+String(plannedMm,1)+",\"referenciaLateralMm\":"+nOrNull(centerRef>0?centerRef:NAN)+
   ",\"referenciaEsqAprendidaMm\":"+nOrNull(centerRefEsq>0?centerRefEsq:NAN)+
   ",\"referenciaDirAprendidaMm\":"+nOrNull(centerRefDir>0?centerRefDir:NAN)+

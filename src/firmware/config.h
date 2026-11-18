@@ -265,6 +265,20 @@ constexpr float NAV_CELULA_MM = 180.0f; // distancia entre centros: aferir no la
 constexpr float NAV_RPM_RETO = 25.0f;
 constexpr float NAV_RPM_GIRO = 25.0f;
 constexpr float NAV_FOLGA_FRONTAL_MM = 15.0f;
+// V4.10: centro da celula pelo laser frontal (ver nav_centro_frente.h).
+// Distancia do laser U3 ao EIXO das rodas (mm, positivo = U3 a frente do eixo). Medir com
+// regua no robo. -1 = nao medido: a correcao fica DESLIGADA (nunca chutar).
+#if defined(NAV_HOST_SIM) && !defined(ARDUINO)
+constexpr float NAV_U3_AO_EIXO_MM = 10.0f; // so o executavel de testes nativos
+#else
+constexpr float NAV_U3_AO_EIXO_MM = -1.0f;
+#endif
+constexpr float NAV_CENTRO_FRENTE_MIN_MM = 4.0f;   // erro menor que isto nao corrige
+constexpr float NAV_CENTRO_FRENTE_MAX_MM = 35.0f;  // erro maior: a leitura nao e da parede desta celula
+constexpr float NAV_CENTRO_FRENTE_FOLGA_NARIZ_MM = 12.0f; // folga minima do nariz a parede no alvo
+// Escala da odometria do reto: distancia real / distancia medida pelos encoders. O diametro da
+// roda e nominal; medir o percurso real em varias celulas e ajustar aqui. 1.0 = sem correcao.
+constexpr float ODOM_ESCALA_RETO = 1.0f;
 constexpr uint32_t NAV_IDADE_SENSOR_MS = 160;
 constexpr uint32_t NAV_TEMPO_SENSORES_MS = 2000;
 constexpr uint32_t NAV_TEMPO_MISSAO_MS = 600000;

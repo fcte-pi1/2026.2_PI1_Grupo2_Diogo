@@ -9,6 +9,7 @@ run maze src/firmware/maze_state.cpp
 run maze_planner_v48
 run nav_laser_policy
 run nav_opening
+run nav_centro_frente
 run navigation_v48 -DNAV_HOST_SIM src/firmware/maze_state.cpp src/firmware/navigation.cpp
 run motion src/firmware/motion_control.cpp
 run giro src/firmware/motion_control.cpp

@@ -339,3 +339,15 @@ O `/api/status` mostra o modo escolhido (`freioModo`), o modo usado na última p
   - **primeiro, com as rodas suspensas:** num teste PWM com freio ativo, a roda deve travar no fim e soltar logo depois, sem nenhum tranco para a frente ou para trás;
   - 10 paradas com coast e 10 com freio ativo no mesmo teste, comparando `freioDelta300E/D` e `freioDelta1000E/D` (critério: a distância de parada diminui e se repete);
   - com o freio ligado, rever as tolerâncias de parada do reto e do giro e repetir os ensaios do #153 e da parada frontal do #155.
+
+## Parada no centro da célula (V4.10)
+
+O robô gira em volta do eixo das rodas, então é o **eixo** que precisa ficar no centro da célula antes de um giro. Parar curto faz o nariz ou a traseira varrerem a parede no giro. Duas correções, ambas ajustadas por ensaio:
+
+**1. Correção pelo laser frontal (`nav_centro_frente.h`).** Ao chegar numa célula com parede à frente, o U3 deve ler `meia célula − NAV_U3_AO_EIXO_MM`. Se o erro estiver entre `NAV_CENTRO_FRENTE_MIN_MM` (4) e `NAV_CENTRO_FRENTE_MAX_MM` (35), o robô faz um deslocamento curto (`navigationDriveStartNudge`) para zerar o erro, uma vez por célula, antes de qualquer giro. Recuar só é permitido se a célula de trás já foi percorrida (não há sensor traseiro). Fica **desligada** enquanto `NAV_U3_AO_EIXO_MM` for negativo.
+
+Para ligar: medir com régua a distância do U3 ao eixo das rodas (positivo = U3 à frente do eixo) e colocar em `NAV_U3_AO_EIXO_MM`. Se a geometria for impossível (no alvo o nariz ficaria a menos de `NAV_CENTRO_FRENTE_FOLGA_NARIZ_MM` da parede, o que com 60 mm até o nariz e célula de 180 mm acontece com U3 a mais de 18 mm à frente do eixo), a correção nunca arma. O `/api/status` mostra `centroFrenteHabilitado`, `ajustesCentroFrente`, `ultimoAjusteCentroMm` e `ultimaLeituraFrenteMm`.
+
+**2. Escala da odometria do reto (`ODOM_ESCALA_RETO`).** O diâmetro da roda é nominal. Mandar andar uma distância longa (por exemplo 5 células sem parede), medir o percurso real com régua e colocar `real / medido` em `ODOM_ESCALA_RETO`. Vale para todos os retos, inclusive as 180 mm de cada célula.
+
+Testes no PC: `tests/host/test_nav_centro_frente.cpp` (a regra) e três casos novos em `tests/host/test_navigation_v48.cpp` (parou curto, já no centro, leitura fora da faixa).

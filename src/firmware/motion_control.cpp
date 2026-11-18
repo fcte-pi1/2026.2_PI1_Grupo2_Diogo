@@ -306,8 +306,8 @@ const char* atualizarControleMovimento() {
     const bool reto = info.tipo == TipoControle::RETO;
     if (reto) {
         const float circ = 3.14159265358979323846f * DIAMETRO_RODA_MM;
-        const float deslocE = (float)info.progressoE * circ / cprE_;
-        const float deslocD = (float)info.progressoD * circ / cprD_;
+        const float deslocE = (float)info.progressoE * circ / cprE_ * ODOM_ESCALA_RETO;
+        const float deslocD = (float)info.progressoD * circ / cprD_ * ODOM_ESCALA_RETO;
         const float progressoAssinado = 0.5f * (deslocE + deslocD);
         const float cursoE = sentidoReto * deslocE;
         const float cursoD = sentidoReto * deslocD;
