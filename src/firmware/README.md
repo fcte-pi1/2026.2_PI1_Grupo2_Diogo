@@ -147,3 +147,11 @@ Sete testes no computador (`test/test_imu_logic`): média e desvio de um conjunt
 
 - **Implementado e testado no computador.**
 - **Falta a bancada:** o critério de aceite da #119 é o ângulo ficar estável e próximo de zero por 60 s com o robô parado. A meta proposta é deriva menor que 1° em 60 s. Também falta conferir o bias e o desvio impressos na serial e ajustar a zona morta e o limite de movimento, se preciso.
+
+## Giro de 90°: parada por pulsos ou ângulo
+
+O `girar90Graus` termina no que vier primeiro: os pulsos dos encoders chegarem ao alvo ou o giroscópio medir 90° (com tolerância `GIRO_TOLERANCIA_GRAUS`, 2°). Os pulsos protegem contra uma IMU ruim; o ângulo corrige o caso em que uma roda escorrega e os encoders contam mais do que o robô girou. Se a IMU não calibrou (`imuCalibrada()` falso), só os pulsos decidem. A serial informa o motivo da parada (`pulsos`, `angulo` ou `timeout`).
+
+A decisão fica em `giro_logic.h` e é testada no computador em `test/test_giro_logic` (7 testes).
+
+**Falta a bancada:** comparar o erro final do giro (ângulo da IMU em 20 giros para cada lado) com o critério antigo, só por pulsos.

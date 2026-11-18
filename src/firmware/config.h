@@ -35,6 +35,9 @@
 #define IMU_LIMITE_MOVIMENTO_DPS  0.5f  // Desvio acima disso indica robô em movimento
 #define IMU_ZONA_MORTA_DPS        0.25f
 
+// Giro de 90 graus: tolerância do critério de parada pelo ângulo da IMU
+#define GIRO_TOLERANCIA_GRAUS 2.0f
+
 // Sensor de energia INA219 (U12)
 #define INA219_ADDR 0x40
 

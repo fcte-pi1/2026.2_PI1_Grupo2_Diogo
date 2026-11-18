@@ -3,6 +3,7 @@
 #include "motors.h"
 #include "imu.h"
 #include "power.h"
+#include "giro_logic.h"
 
 static volatile long countA = 0;
 static volatile long countB = 0;
@@ -107,6 +108,8 @@ void girar90Graus(bool paraDireita) {
     bool concluido = false;
     unsigned long timeout = millis() + 2000; // Timeout de segurança (2 segundos)
     unsigned long ultimaLeitura = millis();
+    const float yawInicial = getYawAngle(); // Referência do giro, sem zerar o yaw da telemetria
+    ParadaGiro motivo = ParadaGiro::EmAndamento;
 
     while (!concluido && millis() < timeout) {
         // O giro bloqueia o loop principal, então a IMU e a bateria são lidas aqui
@@ -124,7 +127,11 @@ void girar90Graus(bool paraDireita) {
 
         float erro = targetTicks - mediaPulsos;
 
-        if (erro <= 2.0f) { // Tolerância de paragem (2 pulsos)
+        // Para no que vier primeiro: pulsos (tolerância de 2) ou 90 graus medidos pela IMU
+        motivo = avaliarParadaGiro(mediaPulsos, targetTicks, 2.0f,
+                                   getYawAngle() - yawInicial, 90.0f, GIRO_TOLERANCIA_GRAUS,
+                                   imuCalibrada());
+        if (motivo != ParadaGiro::EmAndamento) {
             concluido = true;
             break;
         }
@@ -155,6 +162,7 @@ void girar90Graus(bool paraDireita) {
     }
 
     float anguloMedidoIMU = getYawAngle();
-    Serial.printf("[GIRO 90] Concluido! Pulsos A: %ld | B: %ld | Angulo IMU: %.2f deg\n", 
-                  countA, countB, anguloMedidoIMU);
+    Serial.printf("[GIRO 90] Concluido por %s! Pulsos A: %ld | B: %ld | Angulo IMU: %.2f deg\n",
+                  motivo == ParadaGiro::Angulo ? "angulo" : (motivo == ParadaGiro::Pulsos ? "pulsos" : "timeout"),
+                  countA, countB, anguloMedidoIMU - yawInicial);
 }
