@@ -19,6 +19,7 @@
 #include "giro_logic.h"
 #include "frente_logic.h"
 #include "freio_logic.h"
+#include "parada_logic.h"
 #include <string.h>
 #include "maze_state.h"
 #include "navigation.h"
@@ -54,6 +55,7 @@ static bool freioAtivoHabilitado = FREIO_ATIVO_PADRAO;
 static bool freioSegurando = false;
 static LiberacaoFreio liberacaoFreio(FREIO_ATIVO_PARADO_MS, FREIO_ATIVO_MAX_MS);
 static const char* freioUltimaParada = "NENHUMA";
+static ParadaConfirmada paradaNav(NAV_PARADO_MS, FREIO_MEDICAO_FINAL_MS, GIRO_CORRECAO_PARADO_DPS);
 
 // Correcao do angulo depois do giro de 90 graus (issue #153). O modo continua
 // GIRO durante todas as fases, entao heartbeat, limite de tempo e corte de
@@ -183,6 +185,8 @@ static void encerrarTeste(const char* motivo) {
     if (estavaMotorizado) {
         // PRIMEIRO captura contagens; depois manda o TB6612 frear.
         iniciarMedicaoFreio();
+        const DadosEncoder p = lerEncoders();
+        paradaNav.iniciar(millis(), p.esq, p.dir);
     }
     const bool freioAtivo = estavaMotorizado && freioAtivoHabilitado &&
                             paradaUsaFreioAtivo(motivo, modo == Modo::PWM || modo == Modo::RPM);
@@ -566,6 +570,7 @@ static bool podeIniciarControle() {
 }
 
 static void iniciarRelogioMotorizado(int duracao, Modo novoModo) {
+    if (aguardandoMedicaoFreio()) cancelarMedicaoFreio();
     testeInicio = millis();
     ultimoHeartbeat = testeInicio;
     duracaoTeste = static_cast<uint32_t>(duracao);
@@ -578,7 +583,7 @@ static void iniciarRelogioMotorizado(int duracao, Modo novoModo) {
 // Mantem tambem o timeout, bateria e frenagem existentes.
 bool navigationDriveReady(){
     return motorHardwareReady() && cprE>0 && cprD>0 &&
-           modo==Modo::PARADO && !aguardandoMedicaoFreio() && !freioSegurando &&
+           modo==Modo::PARADO && (!aguardandoMedicaoFreio() || paradaNav.ok()) && !freioSegurando &&
            !capturaLaserAtiva() && !bateriaCritica() && batteryAvailable();
 }
 bool navigationDriveStartStraight(float mm,float rpm){
@@ -610,8 +615,9 @@ bool navigationDriveSettledStraight(float& progressMm,float& syncMm){
     const DadosFreio f=lerMedicaoFreio();
     const DadosEncoder e=lerEncoders();
     const ControleInfo info=lerControleMovimento();
-    // Exige medicao final do freio e que as rodas nao continuem se movendo.
-    if(!f.valido || !f.tem1000 || e.esq!=f.em1000E || e.dir!=f.em1000D ||
+    // navigationDriveReady() ja exige rodas paradas; depois da medicao de 1 s
+    // elas tambem nao podem ter se movido.
+    if(!f.valido || (f.tem1000 && (e.esq!=f.em1000E || e.dir!=f.em1000D)) ||
        !isfinite(e.cpsEsq) || !isfinite(e.cpsDir) ||
        fabsf(e.cpsEsq)>1.0f || fabsf(e.cpsDir)>1.0f || !info.retoSyncAtivo)return false;
     const float circ=3.14159265f*DIAMETRO_RODA_MM;
@@ -620,6 +626,13 @@ bool navigationDriveSettledStraight(float& progressMm,float& syncMm){
     progressMm=0.5f*(de+dd);
     syncMm=de-dd-info.centroAlvoMm; // apenas avanco positivo neste estado
     return isfinite(progressMm)&&isfinite(syncMm);
+}
+float navigationDriveFinalProgressMm(){
+    if(!(cprE>0) || !(cprD>0))return NAN;
+    const DadosEncoder e=lerEncoders();
+    const ControleInfo info=lerControleMovimento();
+    const float circ=3.14159265f*DIAMETRO_RODA_MM;
+    return 0.5f*((float)(e.esq-info.inicioE)*circ/cprE+(float)(e.dir-info.inicioD)*circ/cprD);
 }
 bool navigationDriveStartTurn(bool right,float rpm,float alvoGraus){
     if(!navigationDriveReady())return false;
@@ -1139,6 +1152,11 @@ static void atualizarAssentamentoGiro(uint32_t agora) {
 void loopTelemetry() {
     atualizarVelocidade(cprE, cprD, modoMotorizado());
     atualizarMedicaoFreio();
+    if (modo == Modo::PARADO && aguardandoMedicaoFreio()) {
+        const DadosEncoder e = lerEncoders();
+        const DadosIMU imu = lerIMU();
+        paradaNav.atualizar(millis(), e.esq, e.dir, imu.confiavel, imu.taxaDireitaDps);
+    }
     {
         const LeituraLaser f = lerLaser(LASER_U3);
         if (modo == Modo::RETO || modo == Modo::PARADO)

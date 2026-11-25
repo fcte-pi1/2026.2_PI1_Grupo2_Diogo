@@ -17,3 +17,4 @@ void iniciarMedicaoFreio();
 void atualizarMedicaoFreio();
 DadosFreio lerMedicaoFreio();
 bool aguardandoMedicaoFreio();
+void cancelarMedicaoFreio(); // outro movimento comecou antes do fim da medicao
