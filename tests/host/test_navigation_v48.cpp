@@ -17,6 +17,7 @@ static Grid truth;
 static uint32_t resultId=0, startDriveMs=0;
 static bool moving=false,turning=false,rightTurn=true,resultOk=true;
 static uint32_t stoppedMs=0;
+static float coastFake=0,metas[32];static int nMetas=0; // deslize simulado e metas pedidas
 static int moves=0,turns=0,reverses=0,adjustments=0;
 static uint8_t px=0,py=0;
 static Direction heading=NORTH;
@@ -75,10 +76,10 @@ bool navigationDriveStartStraight(float mm,float rpm){
  const auto d=mm>0?heading:Grid::opposite(heading);assert(truth.open(px,py,d));
  // O filtro do laser precisa ter esquecido a celula anterior.
  if(mm>0)assert(nowMs/60-stoppedMs/60>=NAV_AMOSTRAS_APOS_PARADA);
- moving=true;turning=false;resultOk=true;startDriveMs=nowMs;targetMm=mm;progress=0;++moves;if(mm<0)++reverses;return true;
+ moving=true;turning=false;resultOk=true;startDriveMs=nowMs;targetMm=mm;progress=0;++moves;if(nMetas<32)metas[nMetas++]=mm;if(mm<0)++reverses;return true;
 }
 float navigationDriveProgressMm(){return progress;}
-float navigationDriveFinalProgressMm(){return progress;}
+float navigationDriveFinalProgressMm(){return progress+(progress>0?coastFake:-coastFake);}
 float navigationDriveCenterRefMm(){return 38;}
 void navigationDriveSetCenterRef(float mm){assert(mm>0);}
 float navigationDriveCenterRefEsqMm(){return 38;}
@@ -121,7 +122,7 @@ static void tick(){
  navigationTick();if(has("folga_medida_recente"))usedMemory=true;nowMs+=20;
 }
 static void reset(uint8_t w,uint8_t h,uint8_t gx,uint8_t gy){
- assert(truth.init(w,h,gx,gy));moves=turns=reverses=adjustments=0;moving=turning=nudgingFake=false;resultOk=true;weakFront=missingFront=forceMotionFail=trackingCase=timeoutFront=leftLiesOpen=openNoTarget=edgeNoTarget=false;lateralBias=0;frontCase=0;usedMemory=false;px=py=0;heading=NORTH;yaw=0;nowMs+=10000;stoppedMs=nowMs;
+ assert(truth.init(w,h,gx,gy));moves=turns=reverses=adjustments=0;moving=turning=nudgingFake=false;resultOk=true;weakFront=missingFront=forceMotionFail=trackingCase=timeoutFront=leftLiesOpen=openNoTarget=edgeNoTarget=false;lateralBias=0;coastFake=0;nMetas=0;frontCase=0;usedMemory=false;px=py=0;heading=NORTH;yaw=0;nowMs+=10000;stoppedMs=nowMs;
 }
 static void run(){for(int i=0;i<30000&&navigationRunning();++i)tick();assert(!navigationRunning());}
 static void expectGoal(){if(!has("OBJETIVO_ATINGIDO"))fprintf(stderr,"Unexpected nav status: %s\n",status().c_str());assert(has("OBJETIVO_ATINGIDO"));assert(px==truth.goalX&&py==truth.goalY);}
@@ -135,6 +136,21 @@ int main(){
  for(int x=0;x<7;++x)assert(truth.observe(x,1,EAST,false)); // bifurcacao em (0,1)
  for(int y=1;y<3;++y)assert(truth.observe(7,y,NORTH,false));
  assert(!navigationStart(8,4,7,3));run();expectGoal();assert(reverses==2&&turns==2&&moves==14);assert(adjustments>=1);puts("PASS: 8x4, beco, dois recuos, abertura e giro na bifurcacao, canto oposto");
+ // O deslize de uma reta e descontado na seguinte, sem acumular.
+ {reset(2,5,0,4);for(int y=0;y<4;++y)assert(truth.observe(0,y,NORTH,false));coastFake=6;
+  auto o=navigationDefaultOptions();o.startBackToWall=false;
+  assert(!navigationStartWithOptions(2,5,0,4,o));run();expectGoal();
+  assert(nMetas==4&&fabsf(metas[0]-180)<0.1f);for(int i=1;i<4;++i)assert(metas[i]>170&&metas[i]<=174); // o mock passa ate 2,8 mm da meta
+  puts("PASS: deslize descontado na reta seguinte");}
+ // Beco: a re e medida pela parede da frente (leitura 60 = eixo 20 mm atras do centro).
+ {reset(8,4,7,3);trackingCase=true;coastFake=8;
+  for(int y=0;y<3;++y)assert(truth.observe(0,y,NORTH,false));
+  for(int x=0;x<7;++x)assert(truth.observe(x,1,EAST,false));
+  for(int y=1;y<3;++y)assert(truth.observe(7,y,NORTH,false));
+  assert(!navigationStart(8,4,7,3));run();expectGoal();
+  int re=0;while(re<nMetas&&metas[re]>0)++re;
+  assert(re<nMetas&&fabsf(metas[re]+160)<0.1f&&has("\"reancoragensNaParede\":1"));
+  puts("PASS: re no beco medida pela parede da frente");}
  // V4.9.3: a borda e encontrada mesmo quando a abertura le "sem alvo".
  reset(8,4,7,3);trackingCase=true;edgeNoTarget=true;
  for(int y=0;y<3;++y)assert(truth.observe(0,y,NORTH,false));
