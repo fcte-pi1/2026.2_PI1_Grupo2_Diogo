@@ -19,7 +19,7 @@ main{max-width:1090px;margin:auto}h1{font-size:clamp(1.35rem,3vw,2.3rem);margin:
 <div class="top"><span id="online" class="tag bad">Sem conexão</span><span id="modo" class="tag">—</span><span id="energia" class="tag">INA219: —</span></div>
 <p>Conecte ao Wi-Fi <strong>Xaropinho-WiFi</strong>. Para o primeiro ensaio, apoie o robô com as rodas livres e tenha acesso à chave da bateria.</p>
 <div class="card"><div class="top"><button class="danger" onclick="parar()">■ FREAR / CANCELAR TESTE</button><button class="secondary" onclick="zerar()">Zerar contadores</button><button class="secondary" onclick="baixarCSV()">Baixar telemetria CSV</button></div><p id="mensagem" class="notice">Sem dados ainda.</p></div>
-<nav class="abas" aria-label="Areas de teste"><button id="btAbaCal" class="ativo" onclick="mostrarAba('calibracao')">Encoders e calibração</button><button id="btAbaMov" class="secondary" onclick="mostrarAba('movimento')">MOVIMENTO E GIRO 90°</button><button id="btAbaReto" class="secondary" onclick="mostrarAba('reto')">Reto V4.5</button><button id="btAbaLaser" class="secondary" onclick="mostrarAba('sensores')">Lasers V4.4</button></nav>
+<nav class="abas" aria-label="Areas de teste"><button id="btAbaCal" class="ativo" onclick="mostrarAba('calibracao')">Encoders e calibração</button><button id="btAbaMov" class="secondary" onclick="mostrarAba('movimento')">MOVIMENTO E GIRO 90°</button><button id="btAbaReto" class="secondary" onclick="mostrarAba('reto')">Reto V4.5</button><button id="btAbaLaser" class="secondary" onclick="mostrarAba('sensores')">Lasers V4.4</button><button id="btAbaBuzzer" class="secondary" onclick="mostrarAba('buzzer')">Sons / Buzzer</button></nav>
 <div id="abaCalibracao" class="aba-pagina">
 <div class="grid">
 <section class="card"><h2>Motor esquerdo</h2><div class="metrics"><div><span class="label">Contagem acumulada</span><span class="metric" id="contE">—</span></div><div><span class="label">Velocidade (CPS)</span><span class="metric" id="cpsE">—</span></div><div><span class="label">RPM estimado</span><span class="metric" id="rpmE">—</span></div><div><span class="label">PWM aplicado</span><span class="metric" id="pwmE">0</span></div></div></section>
@@ -126,6 +126,18 @@ main{max-width:1090px;margin:auto}h1{font-size:clamp(1.35rem,3vw,2.3rem);margin:
 <section class="card"><h2>Roteiro da primeira rodada</h2><p>1) Confirme 0x40, 0x68, 0x30, 0x31 e 0x32 no scanner. 2) Aproxime uma placa, um sensor de cada vez, e identifique U2/U3/U4. 3) Meça 25, 30, 40, 50, 100, 150 e 200 mm; faça 100 amostras por distância e sensor. 4) Aproxime/afaste uma placa para observar o atraso da filtragem. 5) Salve o CSV de cada ensaio. Sem movimento nesta fase.</p>
 <div class="notice warn">Não habilitamos ainda a parada frontal nem a centralização pelas paredes. Nenhum controle de movimento usa os resultados dos lasers nesta versão.</div></section>
 </div>
+<div id="abaBuzzer" class="aba-pagina" hidden>
+<section class="card"><h2>Teste de efeitos sonoros — GPIO 16 (RX2)</h2>
+<p>Os botões reproduzem os sons no buzzer físico do robô, sem iniciar missão, movimentar motores ou simular falha real da bateria. Use somente com o robô parado.</p>
+<div class="grid">
+<section class="card"><h2>Inicialização</h2><p>Quatro notas ascendentes.</p><button onclick="testarBuzzer('boot')">▶ Testar inicialização</button></section>
+<section class="card"><h2>Bateria baixa</h2><p>Três notas descendentes. Automático: a cada 30 s.</p><button onclick="testarBuzzer('low')">▶ Testar bateria baixa</button></section>
+<section class="card"><h2>Bateria crítica</h2><p>Três bipes rápidos. Automático: a cada 5 s.</p><button onclick="testarBuzzer('critical')">▶ Testar bateria crítica</button></section>
+<section class="card"><h2>Início da missão</h2><p>Fanfarra de partida.</p><button onclick="testarBuzzer('start')">▶ Testar início da missão</button></section>
+<section class="card"><h2>Marcha a ré</h2><p>Três bipes no teste; contínuo durante a ré real.</p><button onclick="testarBuzzer('reverse')">▶ Testar ré</button></section>
+<section class="card"><h2>Missão concluída</h2><p>Melodia de vitória.</p><button onclick="testarBuzzer('victory')">▶ Testar vitória</button></section>
+</div><div class="actions"><button class="secondary" onclick="pararBuzzerTeste()">■ Parar teste sonoro</button></div>
+<p><small>Alertas reais de bateria têm prioridade e não podem ser silenciados pelo botão de teste.</small></p></section></div>
 </main><script>
 const $=id=>document.getElementById(id);
 let ultimo=null,travado=false,amostras=[],historico=[],historicoRPM=[],historicoPosicao=[],historicoGiro=[];
@@ -140,6 +152,8 @@ async function post(url,dados={}){
     msg(x.mensagem||'OK');await atualizar();return true;
   }catch(e){msg('Falha: '+e.message,true);return false}
 }
+function testarBuzzer(efeito){return post('/api/buzzer/test',{efeito})}
+function pararBuzzerTeste(){return post('/api/buzzer/stop')}
 function parar(){return post('/api/pwm/stop')}
 function zerar(){if(!confirm('As rodas estão completamente paradas?'))return;post('/api/encoders/reset')}
 function manualIniciar(){return post('/api/manual/start',{lado:$('ladoManual').value})}
@@ -292,6 +306,8 @@ function mostrarAba(aba){
   $('btAbaLaser').className=aba==='sensores'?'ativo':'secondary';
   $('btAbaReto').className=aba==='reto'?'ativo':'secondary';
   $('abaReto').hidden=aba!=='reto';
+  $('abaBuzzer').hidden=aba!=='buzzer';
+  $('btAbaBuzzer').className=aba==='buzzer'?'ativo':'secondary';
   if(aba==='sensores')atualizarLasersTela();
 }
 function fmtLaser(v){return typeof v==='number'&&Number.isFinite(v)?String(v):'—'}

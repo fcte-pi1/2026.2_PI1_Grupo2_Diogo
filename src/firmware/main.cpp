@@ -13,6 +13,7 @@
 #include "telemetry_remote.h"
 #include "maze_state.h"
 #include "navigation.h"
+#include "buzzer.h"
 
 WebServer server(80);
 
@@ -55,6 +56,7 @@ void setup() {
     iniciarTelemetriaRemota();
     Serial.println("Painel: http://192.168.4.1/");
     Serial.println("Serial: digite 's' para frear imediatamente.");
+    initBuzzer(); // opcional; falha nao altera a inicializacao original
 }
 
 void loop() {
@@ -73,4 +75,5 @@ void loop() {
         char c = static_cast<char>(Serial.read());
         if (c == 's' || c == 'S') pararTesteDeEmergencia("parado_por_usb");
     }
+    updateBuzzer(); // depois de todos os controles e comandos de seguranca
 }

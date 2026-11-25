@@ -1,5 +1,6 @@
 #include "motors.h"
 #include "config.h"
+#include "buzzer.h"
 #include <esp_arduino_version.h>
 
 // NOVA ESTRUTURA: canal A -> motor ESQUERDO (AO1/AO2);
@@ -85,6 +86,7 @@ void prepararMotoresControle() {
     digitalWrite(PIN_BIN2, LOW);
     digitalWrite(PIN_STBY, HIGH);
     standbyHabilitado = true;
+    buzzerObserveMotor(true,false); buzzerObserveMotor(false,false);
 }
 
 // V4.4.1 - DIAGNOSTICO DE PARADA SEGURA
@@ -101,6 +103,7 @@ void setMotorEsq(int pwm, bool frente) {
     if (pwm == 0) {
         digitalWrite(PIN_AIN1, LOW);
         digitalWrite(PIN_AIN2, LOW);
+        buzzerObserveMotor(true,false);
         return; // nao reabilita o driver por um comando 0
     }
     const bool in1 = frente ? ESQ_FRENTE_IN1_ALTO : !ESQ_FRENTE_IN1_ALTO;
@@ -109,6 +112,7 @@ void setMotorEsq(int pwm, bool frente) {
     pwmCanalA(static_cast<uint8_t>(pwm));
     digitalWrite(PIN_STBY, HIGH); // so habilita apos configurar as entradas
     standbyHabilitado = true;
+    buzzerObserveMotor(true,!frente);
 }
 
 // Motor direito LOGICO -> canal B (BO1/BO2).
@@ -119,6 +123,7 @@ void setMotorDir(int pwm, bool frente) {
     if (pwm == 0) {
         digitalWrite(PIN_BIN1, LOW);
         digitalWrite(PIN_BIN2, LOW);
+        buzzerObserveMotor(false,false);
         return;
     }
     const bool in1 = frente ? DIR_FRENTE_IN1_ALTO : !DIR_FRENTE_IN1_ALTO;
@@ -127,6 +132,7 @@ void setMotorDir(int pwm, bool frente) {
     pwmCanalB(static_cast<uint8_t>(pwm));
     digitalWrite(PIN_STBY, HIGH);
     standbyHabilitado = true;
+    buzzerObserveMotor(false,!frente);
 }
 
 void pararMotores() {
@@ -139,6 +145,7 @@ void pararMotores() {
     digitalWrite(PIN_AIN2, LOW);
     digitalWrite(PIN_BIN1, LOW);
     digitalWrite(PIN_BIN2, LOW);
+    buzzerObserveMotor(true,false); buzzerObserveMotor(false,false);
 }
 
 // Nas paradas individuais do controle PI, nao impor PWM maximo.
@@ -147,12 +154,14 @@ void frearMotorEsq() {
     pwmCanalA(0);
     digitalWrite(PIN_AIN1, LOW);
     digitalWrite(PIN_AIN2, LOW);
+    buzzerObserveMotor(true,false);
 }
 
 void frearMotorDir() {
     pwmCanalB(0);
     digitalWrite(PIN_BIN1, LOW);
     digitalWrite(PIN_BIN2, LOW);
+    buzzerObserveMotor(false,false);
 }
 
 void frearMotoresTudo() {
@@ -170,4 +179,5 @@ void frearAtivoMotores() {
     digitalWrite(PIN_BIN2, HIGH);
     digitalWrite(PIN_STBY, HIGH);
     standbyHabilitado = true;
+    buzzerObserveMotor(true,false); buzzerObserveMotor(false,false);
 }

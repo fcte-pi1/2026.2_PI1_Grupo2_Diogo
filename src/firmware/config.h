@@ -59,6 +59,7 @@ constexpr float ROBO_U3_AO_EIXO_MM = ROBO_EIXO_AO_NARIZ_MM - ROBO_U3_AO_NARIZ_MM
 #define ENC_DIR_A 14
 #define ENC_DIR_B 13
 
+#define PIN_BUZZER 16 // RX2, buzzer passivo (PWM independente)
 #define PIN_SDA 21
 #define PIN_SCL 22
 

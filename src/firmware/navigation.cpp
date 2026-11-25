@@ -245,6 +245,7 @@ void trackOpenings(uint32_t now){
 }
 String nOrNull(float f){return isfinite(f)?String(f,1):String("null");}
 }
+bool navigationCompleted(){return stage==Stage::DONE;}
 bool navigationRunning(){return stage!=Stage::IDLE && stage!=Stage::DONE && stage!=Stage::FAULT;}
 bool navigationNeedsFrontPoll(){return stage==Stage::MOVE_WAIT && !reversing;}
 void navigationNotifyStop(const char* reason){if(navigationRunning()){invalidateIfMoving();stage=Stage::FAULT;errorText=reason;}}

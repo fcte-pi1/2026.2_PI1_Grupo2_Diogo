@@ -23,6 +23,7 @@
 #include "maze_state.h"
 #include "navigation.h"
 #include "mission_web_page.h"
+#include "buzzer.h"
 
 extern WebServer server;
 static Preferences prefs;
@@ -954,6 +955,27 @@ void setupTelemetry() {
     server.on("/api/i2c/scan", HTTP_GET, handleScanI2C);
     server.on("/api/imu/reiniciar", HTTP_POST, handleReiniciarImu);
     server.on("/api/status", HTTP_GET, handleStatus);
+    server.on("/api/buzzer/test", HTTP_POST, []() {
+        if (!buzzerReady()) return respostaErro(503, "Buzzer indisponivel");
+        if (navigationRunning() || !bancadaParada() || capturaLaserAtiva())
+            return respostaErro(409, "Teste sonoro somente com robo parado e sem captura");
+        const String e = server.arg("efeito");
+        using E = buzzer::Effect;
+        E effect = E::None;
+        if(e=="boot") effect=E::Boot;
+        else if(e=="low") effect=E::Low;
+        else if(e=="critical") effect=E::Critical;
+        else if(e=="start") effect=E::Start;
+        else if(e=="reverse") effect=E::Reverse;
+        else if(e=="victory") effect=E::Victory;
+        else return respostaErro(400, "Efeito sonoro invalido");
+        if(!buzzerTest(effect)) return respostaErro(409, "Alerta real de bateria em andamento");
+        respostaOk("Efeito sonoro solicitado; nenhum motor foi acionado");
+    });
+    server.on("/api/buzzer/stop", HTTP_POST, []() {
+        buzzerCancelTest();
+        respostaOk("Teste sonoro cancelado; alertas automaticos continuam ativos");
+    });
     server.on("/api/telemetria/remota", HTTP_GET, []() {
         server.send(200, "application/json", remotoDiagnosticoJson());
     });
