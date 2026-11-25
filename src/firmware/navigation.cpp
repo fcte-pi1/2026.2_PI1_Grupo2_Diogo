@@ -21,6 +21,8 @@ uint32_t startMs=0,stageMs=0,lastDriverId=0;
 uint32_t sensorCounts[3]={0,0,0};
 uint32_t stopCounts[3]={0,0,0}; // leituras de cada laser quando o robo parou
 float coastMm=NAN; // deslize depois do corte na ultima reta
+float coastSum=0;  // deslizes somados desde o ultimo giro (ja incluidos em cellOffset)
+uint16_t wallAnchors=0;
 HistoricoLaserNav sensorHistorico[3];
 uint16_t steps=0,reverseSteps=0;
 uint8_t x=0,y=0,targetX=0,targetY=0,turnsRemaining=0;
@@ -218,6 +220,15 @@ void trimTargetByWall(const LeituraLaser& f,uint32_t now){
  if(!navigationDriveAdjustStraight(nova))return;
  plannedMm=nova;wallTrimMm=nova;++trimCount;adjustmentApplied=true;
 }
+// Antes da re: a parede da frente diz onde o robo realmente parou.
+void anchorByFrontWall(uint8_t wall,uint32_t now){
+ const auto f=lerLaser(LASER_U3);
+ if(!((wall>>dirValue(direction))&1u)||!validFresh(f,now)||f.statusVL!=0||
+    f.filtradoMm<0||f.filtradoMm>LASER_PAREDE_PRESENTE_MM)return;
+ const float o=navPoseOffsetPelaLeituraFrontalMm((float)f.filtradoMm,halfOpeningMm(),ROBO_U3_AO_EIXO_MM);
+ if(fabsf(o-cellOffset)>NAV_AJUSTE_MAX_MM)return;
+ cellOffset=o;coastSum=0;++wallAnchors;
+}
 void trackOpenings(uint32_t now){
  const float p=(reversing?-1.0f:1.0f)*navigationDriveProgressMm();
  if(!isfinite(p)||p<0)return;
@@ -293,7 +304,7 @@ const char* navigationStartWithOptions(uint8_t w,uint8_t h,uint8_t gx,uint8_t gy
    ? navPoseOffsetTraseiraEncostadaMm(ROBO_MEIA_ABERTURA_MM,ROBO_EIXO_A_TRASEIRA_MM) : 0.0f;
  moveStartOffset=cellOffset;repositionMm=0;lateralAtTurn=0;wallTrimMm=NAN;trimCount=repositionCount=0;
  learnedHalf=learnedWidth=-1;lateralOffset=lastSteerDeg=NAN;steerCount=0;
- options=requested;poseCertain=true;mazeMarkVisited(x,y);startMs=millis();errorText="";coastMm=NAN;markStopped();beginSensing();
+ options=requested;poseCertain=true;mazeMarkVisited(x,y);startMs=millis();errorText="";coastMm=NAN;coastSum=0;wallAnchors=0;markStopped();beginSensing();
  Serial.printf("[NAV] INICIADA %ux%u inicio=(%u,%u,%c) objetivo=(%u,%u) offset=%.1f mm\n",w,h,x,y,direction,gx,gy,cellOffset);
  Serial.printf("[NAV] geometria: eixo->nariz %.1f eixo->traseira %.1f U3->eixo %.1f meia abertura %.1f raio giro %.1f (cabe: %s)\n",
    ROBO_EIXO_AO_NARIZ_MM,ROBO_EIXO_A_TRASEIRA_MM,ROBO_U3_AO_EIXO_MM,ROBO_MEIA_ABERTURA_MM,
@@ -357,6 +368,7 @@ void navigationTick(){
   const uint8_t delta=(dirValue(targetDirection)+4u-dirValue(direction))&3u;
   reversing=delta==2&&mazeTraversedFromPose(targetDirection);
   if(reversing&&!options.reverse){fail("retorno_re_pendente_validacao_traseira");return;}
+  if(reversing)anchorByFrontWall(wall,now);
   turnsRemaining=reversing?0:(delta==2?2:(delta==0?0:1));turnRight=delta!=3;
   // V5.0: o giro tem de acontecer com o eixo no centro da abertura lateral,
   // que e o centro da celula. Depois de uma parada contra a parede o eixo fica
@@ -366,7 +378,8 @@ void navigationTick(){
   // So dispensa o limite frontal quando a face a frente foi CONFIRMADA livre.
   // Face indefinida conta como parede: avancar 60 mm no escuro bate o nariz.
   const bool frenteLivreConfirmada=((known>>hd)&1u)&&!((wall>>hd)&1u);
-  repositionMm=turnsRemaining? navPoseAjusteAntesDoGiroMm(cellOffset,
+  // Com parede a frente o ponto de giro foi ajustado sem contar o deslize: mantido assim.
+  repositionMm=turnsRemaining? navPoseAjusteAntesDoGiroMm(frenteLivreConfirmada?cellOffset:cellOffset-coastSum,
                  frenteLivreConfirmada?NAN:offsetMaxComParedeMm(),
                  NAV_GIRO_OFFSET_TOL_MM,NAV_GIRO_OFFSET_MAX_MM) : 0.0f;
   pendingReposition=turnsRemaining>0 && fabsf(repositionMm)>=1.0f;
@@ -515,13 +528,12 @@ void navigationTick(){
    // V5.0: onde o eixo realmente parou dentro da nova celula. A reta seguinte
    // desconta este valor, entao uma parada curta nao acumula erro.
    {
-    const float percFinal=navigationDriveFinalProgressMm();
-    coastMm=percFinal-navigationDriveProgressMm();
-    const float perc=NAV_CONTAR_INERCIA?percFinal:navigationDriveProgressMm();
-    if(!isfinite(perc)){fail("odometria_invalida_apos_reta");return;}
+    const float perc=navigationDriveFinalProgressMm();
+    coastMm=perc-navigationDriveProgressMm();
+    if(!isfinite(perc)||!isfinite(coastMm)){fail("odometria_invalida_apos_reta");return;}
     const float novo=navPoseOffsetAposAvancoMm(moveStartOffset,perc,signedCellMm());
     if(!navPoseOffsetPlausivel(novo,halfOpeningMm(),NAV_OFFSET_MARGEM_MM)){fail("pose_longitudinal_perdida");return;}
-    cellOffset=novo;
+    cellOffset=novo;coastSum+=coastMm;
    }
    if(!mazeMarkTraversedFromPose(targetDirection)){fail("erro_registro_travessia");return;}
    x=targetX;y=targetY;mazeSetPose(x,y,direction);mazeMarkVisited(x,y);++steps;frontReplans=0;if(reversing)++reverseSteps;
@@ -540,7 +552,7 @@ void navigationTick(){
   // V5.0: o giro de 90 graus TROCA os eixos da celula. O que era desvio
   // lateral passa a ser o deslocamento longitudinal do novo rumo (e o antigo
   // longitudinal vira lateral, que a centralizacao da proxima reta corrige).
-  cellOffset=turnRight?lateralAtTurn:-lateralAtTurn;
+  cellOffset=turnRight?lateralAtTurn:-lateralAtTurn;coastSum=0;
   lateralOffset=NAN;
   direction=dirChar((dirValue(direction)+(turnRight?1:3))&3);mazeSetPose(x,y,direction);
   if(--turnsRemaining){stage=Stage::TURN_START;stageMs=now;return;}
@@ -562,7 +574,7 @@ String navigationStatusJson(){
   ",\"referenciaDirAprendidaMm\":"+nOrNull(centerRefDir>0?centerRefDir:NAN)+
   ",\"paradasFrontaisNaCelula\":"+String(wallArrivals)+
   ",\"posicaoParadaFrontalMm\":"+nOrNull(wallStoppedMm)+",\"syncParadaFrontalMm\":"+nOrNull(wallStoppedSync)+
-  ",\"inerciaRetaMm\":"+nOrNull(coastMm)+
+  ",\"inerciaRetaMm\":"+nOrNull(coastMm)+",\"inerciaAcumuladaMm\":"+String(coastSum,1)+",\"reancoragensNaParede\":"+String(wallAnchors)+
   ",\"offsetCelulaMm\":"+String(cellOffset,1)+",\"offsetInicioRetaMm\":"+String(moveStartOffset,1)+
   ",\"metaEncurtadaParedeMm\":"+nOrNull(wallTrimMm)+",\"encurtamentosPorParede\":"+String(trimCount)+
   ",\"reposicionamentosAntesDoGiro\":"+String(repositionCount)+",\"ultimoReposicionamentoMm\":"+String(repositionMm,1)+

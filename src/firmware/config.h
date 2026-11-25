@@ -343,9 +343,11 @@ constexpr bool NAV_LATERAIS_CALIBRADOS = true; // confirmar offsets e posicionam
 constexpr float NAV_U3_ATE_NARIZ_MM = ROBO_U3_TOCA_MM;
 #endif
 constexpr float NAV_CELULA_MM = 180.0f; // distancia entre centros: aferir no labirinto real
-// V5.1: 25 -> 35 RPM (~62 mm/s). E o teto atual de FRENTE_RPM_MAX_TESTE; acima
-// disso a reta e recusada. Mais RPM tambem eleva o feedforward de PWM.
-constexpr float NAV_RPM_RETO = 35.0f;
+// Reta da missao: 40 RPM (~71 mm/s). Teto proprio da navegacao, separado do
+// FRENTE_RPM_MAX_TESTE da bancada; acima dele a reta e recusada.
+constexpr float NAV_RPM_RETO = 40.0f;
+constexpr float NAV_RPM_RETO_MAX = 45.0f;
+static_assert(NAV_RPM_RETO <= NAV_RPM_RETO_MAX && NAV_RPM_RETO_MAX <= RETO_RPM_MAX, "RPM da reta acima do teto");
 // V5.1: 25 -> 30 RPM. Subida menor que a da reta: um dos erros vistos foi o
 // giro passando do alvo, e mais velocidade no giro aumenta a ultrapassagem.
 constexpr float NAV_RPM_GIRO = 30.0f;
@@ -461,6 +463,3 @@ static_assert(NAV_PARADO_MS < FREIO_MEDICAO_FINAL_MS, "a parada confirmada preci
 // Leituras de cada laser depois da parada antes de decidir. O filtro guarda a
 // celula anterior: com menos de 9 uma parede ainda pode aparecer como abertura.
 constexpr uint8_t NAV_AMOSTRAS_APOS_PARADA = 10;
-// true = soma ao offset da celula o que o robo deslizou depois do corte do
-// motor. Desligado ate comparar inerciaRetaMm (status da missao) com a regua.
-constexpr bool NAV_CONTAR_INERCIA = false;
