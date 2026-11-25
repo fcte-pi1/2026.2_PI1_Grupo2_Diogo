@@ -38,4 +38,5 @@ void atualizarMedicaoFreio() {
 }
 
 DadosFreio lerMedicaoFreio() { return ultimo; }
+void cancelarMedicaoFreio() { ultimo = DadosFreio{}; }
 bool aguardandoMedicaoFreio() { return ultimo.valido && !ultimo.tem1000; }

@@ -16,6 +16,7 @@ FakeSerial Serial;
 static Grid truth;
 static uint32_t resultId=0, startDriveMs=0;
 static bool moving=false,turning=false,rightTurn=true,resultOk=true;
+static uint32_t stoppedMs=0;
 static int moves=0,turns=0,reverses=0,adjustments=0;
 static uint8_t px=0,py=0;
 static Direction heading=NORTH;
@@ -69,11 +70,15 @@ bool bateriaCritica(){return false;}
 DadosIMU lerIMU(){DadosIMU d;d.confiavel=true;d.yawDireitaGraus=yaw;return d;}
 bool navigationDriveReady(){return !moving;}
 bool navigationDriveStartStraight(float mm,float rpm){
- assert(fabsf(mm)==NAV_CELULA_MM&&rpm>0);
+ // A meta desconta o offset na celula: 240 mm na saida encostada, 180 no centro.
+ assert(fabsf(mm)>=RETO_DISTANCIA_MIN_MM&&fabsf(mm)<=NAV_CELULA_MM+2*NAV_AJUSTE_MAX_MM&&rpm>0);
  const auto d=mm>0?heading:Grid::opposite(heading);assert(truth.open(px,py,d));
+ // O filtro do laser precisa ter esquecido a celula anterior.
+ if(mm>0)assert(nowMs/60-stoppedMs/60>=NAV_AMOSTRAS_APOS_PARADA);
  moving=true;turning=false;resultOk=true;startDriveMs=nowMs;targetMm=mm;progress=0;++moves;if(mm<0)++reverses;return true;
 }
 float navigationDriveProgressMm(){return progress;}
+float navigationDriveFinalProgressMm(){return progress;}
 float navigationDriveCenterRefMm(){return 38;}
 void navigationDriveSetCenterRef(float mm){assert(mm>0);}
 float navigationDriveCenterRefEsqMm(){return 38;}
@@ -90,10 +95,10 @@ bool navigationDriveStopAtWall(){
 }
 bool navigationDriveSettledStraight(float& p,float& sync){if(moving)return false;p=progress;sync=0;return true;}
 bool navigationDriveAdjustStraight(float mm){assert(moving&&!turning&&fabsf(mm-targetMm)<=NAV_AJUSTE_MAX_MM);targetMm=mm;++adjustments;return true;}
-static float turnTarget=0,driftPerMove=0,alignTotal=0,lastTurnAlvo=0;static int aligns=0,nudges=0;static bool aligningFake=false;
+static float turnTarget=0,driftPerMove=0,alignTotal=0,lastTurnAlvo=0;static int aligns=0,nudges=0;static bool aligningFake=false,nudgingFake=false;
 bool navigationDriveStartTurn(bool right,float rpm,float alvo){assert(rpm>0&&fabsf(fabsf(alvo)-90)<=15);moving=true;turning=true;aligningFake=false;resultOk=true;rightTurn=right;turnTarget=alvo;lastTurnAlvo=alvo;startDriveMs=nowMs;++turns;return true;}
 bool navigationDriveStartAlign(float g){assert(!moving&&fabsf(g)<=15);moving=true;turning=true;aligningFake=true;resultOk=true;turnTarget=g;alignTotal+=g;startDriveMs=nowMs;++aligns;return true;}
-bool navigationDriveStartNudge(float mm){assert(!moving&&mm<0&&mm>=-40);++nudges;resultOk=true;++resultId;return true;}
+bool navigationDriveStartNudge(float mm){assert(!moving&&fabsf(mm)>=1&&fabsf(mm)<=60);++nudges;moving=turning=nudgingFake=resultOk=true;startDriveMs=nowMs;return true;}
 uint32_t navigationDriveResultId(){return resultId;}
 bool navigationDriveResultOk(){return resultOk;}
 const char* navigationDriveResultReason(){return "simulacao_falhou";}
@@ -102,6 +107,7 @@ void pararTesteDeEmergencia(const char* why){moving=false;navigationNotifyStop(w
 static void tick(){
  if(moving){
   if(forceMotionFail&&nowMs-startDriveMs>200){moving=false;resultOk=false;++resultId;}
+  else if(nudgingFake){if(nowMs-startDriveMs>200){nudgingFake=moving=false;++resultId;}}
   else if(turning&&nowMs-startDriveMs>350){
    // Giro com correcao pela IMU: termina no alvo pedido pela navegacao.
    if(!aligningFake)heading=rightTurn?Grid::right(heading):Grid::left(heading);
@@ -111,10 +117,11 @@ static void tick(){
    if(p>=fabsf(targetMm)){const auto d=targetMm>0?heading:Grid::opposite(heading);px+=Grid::dx(d);py+=Grid::dy(d);moving=false;yaw+=driftPerMove;++resultId;}
   }
  }
+ if(moving)stoppedMs=nowMs;
  navigationTick();if(has("folga_medida_recente"))usedMemory=true;nowMs+=20;
 }
 static void reset(uint8_t w,uint8_t h,uint8_t gx,uint8_t gy){
- assert(truth.init(w,h,gx,gy));moves=turns=reverses=adjustments=0;moving=turning=false;resultOk=true;weakFront=missingFront=forceMotionFail=trackingCase=timeoutFront=leftLiesOpen=openNoTarget=edgeNoTarget=false;lateralBias=0;frontCase=0;usedMemory=false;px=py=0;heading=NORTH;yaw=0;nowMs+=10000;
+ assert(truth.init(w,h,gx,gy));moves=turns=reverses=adjustments=0;moving=turning=nudgingFake=false;resultOk=true;weakFront=missingFront=forceMotionFail=trackingCase=timeoutFront=leftLiesOpen=openNoTarget=edgeNoTarget=false;lateralBias=0;frontCase=0;usedMemory=false;px=py=0;heading=NORTH;yaw=0;nowMs+=10000;stoppedMs=nowMs;
 }
 static void run(){for(int i=0;i<30000&&navigationRunning();++i)tick();assert(!navigationRunning());}
 static void expectGoal(){if(!has("OBJETIVO_ATINGIDO"))fprintf(stderr,"Unexpected nav status: %s\n",status().c_str());assert(has("OBJETIVO_ATINGIDO"));assert(px==truth.goalX&&py==truth.goalY);}
@@ -171,7 +178,8 @@ int main(){
  reset(2,2,0,1);assert(truth.observe(0,0,NORTH,false));frontCase=1;assert(!navigationStart(2,2,0,1));run();expectGoal();assert(usedMemory);puts("PASS: sinal fraco transitorio com folga medida recente");
  reset(2,2,0,1);assert(truth.observe(0,0,NORTH,false));frontCase=2;assert(!navigationStart(2,2,0,1));run();assert(usedMemory&&has("U3_sem_evidencia_durante_avanco")&&has("\"poseConfiavel\":false"));puts("PASS: sinal fraco persistente sem folga comprovada para");
  reset(2,2,0,1);assert(truth.observe(0,0,NORTH,false));frontCase=3;assert(!navigationStart(2,2,0,1));run();assert(!usedMemory&&has("\"u3CodigoAvanco\":-6"));puts("PASS: I2C para imediatamente mesmo com memoria");
- reset(2,2,0,1);assert(truth.observe(0,0,NORTH,false));frontCase=4;assert(!navigationStart(2,2,0,1));run();assert(!usedMemory&&has("obstaculo_frontal_antes_da_celula_pose_incerta")&&has("\"poseConfiavel\":false")&&reverses==0);puts("PASS: obstaculo prevalece sobre memoria");
+ reset(2,2,0,1);assert(truth.observe(0,0,NORTH,false));frontCase=4;assert(!navigationStart(2,2,0,1));run();// Parada limpa antes da fronteira: continua na celula e replaneja, com limite de tentativas.
+ assert(!usedMemory&&moves>1&&!has("\"paradasFrontaisNaCelula\":0")&&reverses==0);puts("PASS: obstaculo prevalece sobre memoria");
  reset(2,2,0,1);assert(truth.observe(0,0,NORTH,false));frontCase=5;assert(!navigationStart(2,2,0,1));run();assert(!usedMemory&&has("evento_antigo_ou_indisponivel"));puts("PASS: evento antigo para imediatamente");
  reset(2,2,0,1);assert(truth.observe(0,0,NORTH,false));frontCase=6;assert(!navigationStart(2,2,0,1));run();assert(!usedMemory&&has("\"u3RangeStatusAvanco\":1"));puts("PASS: sigma invalido nao usa memoria");
 

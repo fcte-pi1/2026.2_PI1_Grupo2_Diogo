@@ -453,3 +453,14 @@ constexpr float NAV_GIRO_OFFSET_TOL_MM = 5.0f;
 constexpr float NAV_GIRO_OFFSET_MAX_MM = 55.0f;
 // Offset fora desta margem alem da meia abertura = odometria perdida.
 constexpr float NAV_OFFSET_MARGEM_MM = 35.0f;
+
+// Espera entre movimentos da missao: libera com o robo parado por este tempo,
+// sem esperar a medicao de freio de 1 s da bancada (que fica como teto).
+constexpr uint32_t NAV_PARADO_MS = 150;
+static_assert(NAV_PARADO_MS < FREIO_MEDICAO_FINAL_MS, "a parada confirmada precisa vir antes do teto");
+// Leituras de cada laser depois da parada antes de decidir. O filtro guarda a
+// celula anterior: com menos de 9 uma parede ainda pode aparecer como abertura.
+constexpr uint8_t NAV_AMOSTRAS_APOS_PARADA = 10;
+// true = soma ao offset da celula o que o robo deslizou depois do corte do
+// motor. Desligado ate comparar inerciaRetaMm (status da missao) com a regua.
+constexpr bool NAV_CONTAR_INERCIA = false;

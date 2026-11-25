@@ -19,6 +19,8 @@ Stage stage=Stage::IDLE;
 const char* errorText="parado";
 uint32_t startMs=0,stageMs=0,lastDriverId=0;
 uint32_t sensorCounts[3]={0,0,0};
+uint32_t stopCounts[3]={0,0,0}; // leituras de cada laser quando o robo parou
+float coastMm=NAN; // deslize depois do corte na ultima reta
 HistoricoLaserNav sensorHistorico[3];
 uint16_t steps=0,reverseSteps=0;
 uint8_t x=0,y=0,targetX=0,targetY=0,turnsRemaining=0;
@@ -78,6 +80,9 @@ void invalidateIfMoving(){
   poseCertain=false;mazeInvalidatePose();
  }
 }
+void markStopped(){for(uint8_t i=0;i<3;++i)stopCounts[i]=lerLaser(i).total;}
+// O filtro do laser ja esqueceu a celula anterior?
+bool sensorSettled(uint8_t i){return (uint32_t)(lerLaser(i).total-stopCounts[i])>=NAV_AMOSTRAS_APOS_PARADA;}
 void beginSensing(){
  stage=Stage::SENSE;stageMs=millis();
  for(uint8_t i=0;i<3;++i){sensorCounts[i]=lerLaser(i).total;sensorHistorico[i].reiniciar(sensorCounts[i]);}
@@ -288,7 +293,7 @@ const char* navigationStartWithOptions(uint8_t w,uint8_t h,uint8_t gx,uint8_t gy
    ? navPoseOffsetTraseiraEncostadaMm(ROBO_MEIA_ABERTURA_MM,ROBO_EIXO_A_TRASEIRA_MM) : 0.0f;
  moveStartOffset=cellOffset;repositionMm=0;lateralAtTurn=0;wallTrimMm=NAN;trimCount=repositionCount=0;
  learnedHalf=learnedWidth=-1;lateralOffset=lastSteerDeg=NAN;steerCount=0;
- options=requested;poseCertain=true;mazeMarkVisited(x,y);startMs=millis();errorText="";beginSensing();
+ options=requested;poseCertain=true;mazeMarkVisited(x,y);startMs=millis();errorText="";coastMm=NAN;markStopped();beginSensing();
  Serial.printf("[NAV] INICIADA %ux%u inicio=(%u,%u,%c) objetivo=(%u,%u) offset=%.1f mm\n",w,h,x,y,direction,gx,gy,cellOffset);
  Serial.printf("[NAV] geometria: eixo->nariz %.1f eixo->traseira %.1f U3->eixo %.1f meia abertura %.1f raio giro %.1f (cabe: %s)\n",
    ROBO_EIXO_AO_NARIZ_MM,ROBO_EIXO_A_TRASEIRA_MM,ROBO_U3_AO_EIXO_MM,ROBO_MEIA_ABERTURA_MM,
@@ -315,7 +320,7 @@ void navigationTick(){
     // verificacao de chegada. Nenhum movimento enquanto a pose e verificada.
     if(f.brutoMm>=0&&f.statusVL==0&&validFresh(f,now)&&f.brutoMm<=dangerLimitMm()){
      if(!navigationDriveStopAtWall()){fail(reason);return;}
-     stage=Stage::WALL_SETTLE;afterSettleMs=now;return;
+     markStopped();stage=Stage::WALL_SETTLE;afterSettleMs=now;return;
     }
     fail(reason);return;
    }
@@ -329,7 +334,7 @@ void navigationTick(){
  switch(stage){
  case Stage::SENSE: {
   if(mazeIsGoal()){stage=Stage::DONE;errorText="objetivo_atingido";return;}
-  bool enough=true;for(uint8_t i=0;i<3;++i)if((uint32_t)(lerLaser(i).total-sensorCounts[i])<3u)enough=false;
+  bool enough=true;for(uint8_t i=0;i<3;++i)if((uint32_t)(lerLaser(i).total-sensorCounts[i])<3u||!sensorSettled(i))enough=false;
   if(!enough && now-stageMs<NAV_TEMPO_SENSORES_MS)return;
   uint8_t known,wall;inspect(known,wall);
   const uint8_t hd=dirValue(direction);
@@ -386,11 +391,12 @@ void navigationTick(){
  case Stage::TURN_WAIT:
   if(navigationDriveResultId()==lastDriverId)return;
   if(!navigationDriveResultOk()){fail(navigationDriveResultReason());return;}
-  lastMotionWasMove=false;afterSettleMs=now;stage=Stage::SETTLE;return;
+  markStopped();lastMotionWasMove=false;afterSettleMs=now;stage=Stage::SETTLE;return;
  case Stage::MOVE_START: {
   if(!mazeOpenFromPose(targetDirection)){fail("parede_desconhecida_ou_presente");return;}
   if(reversing){if(!options.reverse||!mazeTraversedFromPose(targetDirection)){fail("re_sem_caminho_percorrido");return;}}
   else {
+   if(!sensorSettled(LASER_U3)&&now-stageMs<NAV_TEMPO_SENSORES_MS)return;
    const auto f=lerLaser(LASER_U3);
    const auto ev=classificarSensorNav(LASER_U3,now);
    const bool semFolga=f.brutoMm>=0&&(float)f.brutoMm<=approachLimitMm();
@@ -458,7 +464,7 @@ void navigationTick(){
   if(!reversing&&navigationDriveCenterRefEsqMm()>0&&navigationDriveCenterRefDirMm()>0){
    centerRefEsq=navigationDriveCenterRefEsqMm();centerRefDir=navigationDriveCenterRefDirMm();
   }
-  lastMotionWasMove=true;afterSettleMs=now;stage=Stage::SETTLE;return;
+  markStopped();lastMotionWasMove=true;afterSettleMs=now;stage=Stage::SETTLE;return;
  case Stage::WALL_SETTLE: {
   if(now-afterSettleMs>4000){fail("obstaculo_frontal_pose_nao_confirmada");return;}
   if(now-afterSettleMs<350||!navigationDriveReady())return;
@@ -509,7 +515,9 @@ void navigationTick(){
    // V5.0: onde o eixo realmente parou dentro da nova celula. A reta seguinte
    // desconta este valor, entao uma parada curta nao acumula erro.
    {
-    const float perc=navigationDriveProgressMm();
+    const float percFinal=navigationDriveFinalProgressMm();
+    coastMm=percFinal-navigationDriveProgressMm();
+    const float perc=NAV_CONTAR_INERCIA?percFinal:navigationDriveProgressMm();
     if(!isfinite(perc)){fail("odometria_invalida_apos_reta");return;}
     const float novo=navPoseOffsetAposAvancoMm(moveStartOffset,perc,signedCellMm());
     if(!navPoseOffsetPlausivel(novo,halfOpeningMm(),NAV_OFFSET_MARGEM_MM)){fail("pose_longitudinal_perdida");return;}
@@ -554,6 +562,7 @@ String navigationStatusJson(){
   ",\"referenciaDirAprendidaMm\":"+nOrNull(centerRefDir>0?centerRefDir:NAN)+
   ",\"paradasFrontaisNaCelula\":"+String(wallArrivals)+
   ",\"posicaoParadaFrontalMm\":"+nOrNull(wallStoppedMm)+",\"syncParadaFrontalMm\":"+nOrNull(wallStoppedSync)+
+  ",\"inerciaRetaMm\":"+nOrNull(coastMm)+
   ",\"offsetCelulaMm\":"+String(cellOffset,1)+",\"offsetInicioRetaMm\":"+String(moveStartOffset,1)+
   ",\"metaEncurtadaParedeMm\":"+nOrNull(wallTrimMm)+",\"encurtamentosPorParede\":"+String(trimCount)+
   ",\"reposicionamentosAntesDoGiro\":"+String(repositionCount)+",\"ultimoReposicionamentoMm\":"+String(repositionMm,1)+

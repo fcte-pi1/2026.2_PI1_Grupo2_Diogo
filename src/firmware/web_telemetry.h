@@ -24,6 +24,8 @@ void navigationDriveSetCenterRefs(float esquerdaMm,float direitaMm);
 // Para por parede sem notificar uma falha externa; navegacao verifica a pose depois.
 bool navigationDriveStopAtWall();
 bool navigationDriveSettledStraight(float& progressMm,float& syncMm);
+// Percurso da ultima reta pelos encoders, incluindo o deslize depois do corte.
+float navigationDriveFinalProgressMm();
 // alvoGraus: angulo final desejado (relativo ao yaw do inicio), corrigido pela IMU.
 bool navigationDriveStartTurn(bool right,float rpm,float alvoGraus);
 bool navigationDriveStartAlign(float graus);
