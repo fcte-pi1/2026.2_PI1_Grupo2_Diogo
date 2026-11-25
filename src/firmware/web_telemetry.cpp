@@ -587,7 +587,7 @@ bool navigationDriveReady(){
            !capturaLaserAtiva() && !bateriaCritica() && batteryAvailable();
 }
 bool navigationDriveStartStraight(float mm,float rpm){
-    if(!navigationDriveReady() || !isfinite(mm) || mm==0 || (mm<0 && !navigationReverseAllowed()) || rpm>NAV_RPM_RETO_MAX)return false;
+    if(!navigationDriveReady() || !isfinite(mm) || mm==0 || (mm<0 && !navigationReverseAllowed()) || rpm>FRENTE_RPM_MAX_TESTE)return false;
     const bool centralizar=mm>0 && navigationCenterEnabled() && NAV_LATERAIS_CALIBRADOS;
     if(!iniciarControleReto(mm,rpm,cprE,cprD,true,centralizar))return false;
     frenteProtegida=false; // protecao especifica no navigationTick()
